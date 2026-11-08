@@ -1,0 +1,49 @@
+ ; Copyright (c) 2022 Maciej Kobus
+ ; Copyright (c) 2025 Remko Kleinjan
+ ;
+ ; SPDX-License-Identifier: GPL-2.0-only
+
+.define PUBLIC CS_PIN 4         ; U10 chip select
+.define PUBLIC CLK_PIN 5        ; EXI clock signal
+
+.program on_transfer
+
+start:
+    wait 1 gpio CS_PIN          ; Wait for CS to go HIGH
+    wait 0 gpio CS_PIN          ; Wait for CS to go LOW
+    jmp x-- start               ; Skip 224 CS pulses (X = 224), continue on the 225th
+    irq set 0                   ; Set IRQ flag to start injecting payload
+
+.wrap_target
+    wait 1 gpio CS_PIN          ; Wait for CS to go HIGH
+    wait 0 gpio CS_PIN          ; Wait for CS to go LOW
+    irq set 0                   ; Let other SM inject the payload
+.wrap
+
+.program clocked_output
+
+start:
+    set x, 31                   ; x - 32 bits we need to skip (address)
+    wait 1 irq 0                ; Hold until SM0 tells us to start injecting
+
+wait_bit:
+    wait 0 gpio CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
+    wait 1 gpio CLK_PIN         ; ...then CLK high
+    jmp x-- wait_bit            ; Skip past address bytes
+    mov x, y                    ; Copy y value to x, it represents number of bits in the transfer
+    set pindirs 1               ; Set data line as output
+    jmp write_bit               ; Output first IPL bit from OSR
+
+on_rising_edge:
+    wait 0 gpio CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
+    wait 1 gpio CLK_PIN         ; ...then CLK high
+
+write_bit:
+    out pins, 1                 ; Output single IPL bit
+    jmp x-- on_rising_edge      ; Jump back to next clock pulse wait routine if there is more data to inject
+    jmp !osre start             ; More payload data (autopull refilled OSR from the FIFO)? Then wait for the next transfer
+    wait 1 gpio CS_PIN          ; Keep driving the last bit until the console ends the transfer (CS HIGH)
+    set pindirs 0               ; Leave data line floating so RTC-DOL can take over and load fonts etc.
+
+public disable_chip:
+    jmp disable_chip            ; Stay in the loop forever until power cycle

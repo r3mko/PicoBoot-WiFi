@@ -7,7 +7,7 @@
 #include "injection_pio.h"
 #include "injection.pio.h"
 
-// From PicoBoot-DX v0.10 (src/pio.c).
+// From PicoBoot-DX v0.10 (src/pio.c). Changed: the CS pull-up and the jump pin (design D36).
 // tests/test_pio_programs.py mirrors this state machine setup for its PIO simulator: keep both in sync
 
 void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin) {
@@ -15,6 +15,14 @@ void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint 
 
     pio_gpio_init(pio, clk_pin);
     pio_gpio_init(pio, cs_pin);
+
+    // Pull CS up (design D36): the console leaves CS undriven for ~42 ms after power-on, and the
+    // pad's reset pull-down would hold it low ("selected"), so a brief release by the console
+    // would read as a CS pulse and shift the 224 skipped transfers by one
+    gpio_pull_up(cs_pin);
+
+    // JMP PIN reads CS: a skipped transfer only counts if CLK rises while CS is still low (D36)
+    sm_config_set_jmp_pin(&c, cs_pin);
 
     // Set CS as input
     pio_sm_set_consecutive_pindirs(pio, sm, cs_pin, 1, false);

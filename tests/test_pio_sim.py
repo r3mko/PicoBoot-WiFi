@@ -13,6 +13,8 @@ OUT_NULL_1 = 0x6061         # out null, 1
 OUT_PINS_1 = 0x6001         # out pins, 1
 JMP_NOT_OSRE_0 = 0x00E0     # jmp !osre, 0
 JMP_X_DEC_0 = 0x0040        # jmp x--, 0
+JMP_NOT_X_0 = 0x0020        # jmp !x, 0
+JMP_PIN_0 = 0x00C0          # jmp pin, 0
 JMP_0 = 0x0000              # jmp 0
 WAIT_1_GPIO_5 = 0x2085      # wait 1 gpio, 5
 WAIT_1_IRQ_0 = 0x20C0       # wait 1 irq, 0
@@ -83,6 +85,24 @@ class InstructionTest(unittest.TestCase):
         pio.step(0)
         self.assertEqual((sm.pc, sm.x), (1, 0xFFFFFFFF), "not taken, but X still decremented")
 
+    def test_jmp_not_x_is_taken_only_when_x_is_zero(self):  # p.322
+        for x, pc in ((0, 0), (5, 1)):
+            with self.subTest(x=x):
+                pio, sm = machine([JMP_NOT_X_0, JMP_0], autopull=False)
+                sm.pc, sm.x = 0, x
+                sm.wrap_target, sm.wrap = 0, 1
+                pio.step(0)
+                self.assertEqual((sm.pc, sm.x), (pc, x), "X is not changed")
+
+    def test_jmp_pin_follows_the_jmp_pin_two_cycles_late(self):    # p.322, p.342
+        pio, sm = machine([JMP_PIN_0, JMP_0], autopull=False, jmp_pin=4,
+                          input_level=lambda gpio, t: int(gpio == 4 and t >= 10))
+        pio.step(11)
+        self.assertEqual(sm.pc, 1, "the pin is still low through the synchroniser at t=11")
+        sm.pc = 0
+        pio.step(12)
+        self.assertEqual(sm.pc, 0, "taken once the pin is high")
+
     def test_wait_irq_clears_the_flag(self):                 # p.324
         pio, sm = machine([WAIT_1_IRQ_0, JMP_0], autopull=False)
         pio.irq = 1
@@ -110,7 +130,7 @@ class InstructionTest(unittest.TestCase):
         self.assertEqual((sm.pc, sm.osr, sm.osr_count), (2, WORD, 0))
 
     def test_unsupported_instructions_raise(self):
-        for name, word in [("IN pins, 1", 0x4001), ("delay", 0x0100), ("jmp !x", 0x0020),
+        for name, word in [("IN pins, 1", 0x4001), ("delay", 0x0100), ("jmp !y", 0x0060),
                            ("wait pin", 0x20A0), ("irq clear", 0xC040), ("mov pins, x", 0xA001)]:
             with self.subTest(name), self.assertRaises(UnsupportedInstruction):
                 decode(word)

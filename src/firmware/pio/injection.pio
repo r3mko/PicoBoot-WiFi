@@ -1,5 +1,8 @@
  ; Copyright (c) 2022 Maciej Kobus
- ; Copyright (c) 2025 Remko Kleinjan
+ ; Copyright (c) 2025-2026 Remko Kleinjan
+ ;
+ ; From PicoBoot-DX v0.10 (src/picoboot-dx.pio). Changed: on_transfer counts a skipped transfer
+ ; only once it clocks while CS is low (design D36).
  ;
  ; SPDX-License-Identifier: GPL-2.0-only
 
@@ -11,7 +14,11 @@
 start:
     wait 1 gpio CS_PIN          ; Wait for CS to go HIGH
     wait 0 gpio CS_PIN          ; Wait for CS to go LOW
-    jmp x-- start               ; Skip 224 CS pulses (X = 224), continue on the 225th
+    jmp !x inject               ; 224 transfers skipped (X = 0): this is the 225th, inject now
+    wait 1 gpio CLK_PIN         ; A skipped transfer only counts once it clocks...
+    jmp pin start               ; ...while CS is still low (JMP_PIN = CS): a CS glitch doesn't count
+    jmp x-- start               ; Count the skipped transfer (X > 0 here, so this always jumps)
+inject:
     irq set 0                   ; Set IRQ flag to start injecting payload
 
 .wrap_target

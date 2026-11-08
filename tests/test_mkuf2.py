@@ -9,6 +9,7 @@ from helpers import load_tool, run_tool
 mk = load_tool("mkuf2")
 LAYOUT = mk.read_layout()
 XIP = mk.XIP_BASE
+BUILD_DIR = os.environ.get("PICOBOOT_BUILD_DIR")
 
 
 def build(loader=b"L" * 2740, firmware=b"F" * 186972, wifi=b"W" * 225304):
@@ -78,6 +79,35 @@ class InstallUf2Test(unittest.TestCase):
                 blocks = mk.read_uf2(f.read())
             # loader 1 page + boot control 32 + settings 32 + Wi-Fi 2 + firmware 4
             self.assertEqual(len(blocks), 1 + 32 + 32 + 2 + 4)
+
+
+@unittest.skipUnless(BUILD_DIR, "set PICOBOOT_BUILD_DIR to a build directory")
+class BuiltInstallUf2Test(unittest.TestCase):
+    """The install UF2 a build made holds that build's loader, Wi-Fi blob and firmware, byte for byte,
+    at the offsets in layout.h, and nothing else but blank boot control and settings."""
+
+    def read(self, *path):
+        with open(os.path.join(BUILD_DIR, *path), "rb") as f:
+            return f.read()
+
+    def test_built_uf2_holds_the_built_parts(self):
+        pages = {address - XIP: payload for address, payload, *_ in
+                 mk.read_uf2(self.read("picoboot-wifi-install.uf2"))}
+        expected = {
+            LAYOUT["LOADER_OFFSET"]: self.read("src", "loader", "loader.bin"),
+            LAYOUT["BOOTCTL_OFFSET"]: b"\xff" * LAYOUT["BOOTCTL_SIZE"],
+            LAYOUT["SETTINGS_OFFSET"]: b"\xff" * LAYOUT["SETTINGS_SIZE"],
+            LAYOUT["WIFI_A_OFFSET"]: self.read("wifi-blob.bin"),
+            LAYOUT["SLOT_A_OFFSET"]: self.read("src", "firmware", "firmware.bin"),
+        }
+        written = set()
+        for offset, data in expected.items():
+            padded = data + b"\xff" * (-len(data) % mk.PAGE)
+            for i in range(0, len(padded), mk.PAGE):
+                self.assertIn(offset + i, pages, f"no page at 0x{offset + i:06X}")
+                self.assertEqual(pages[offset + i], padded[i:i + mk.PAGE], f"page at 0x{offset + i:06X}")
+                written.add(offset + i)
+        self.assertEqual(set(pages), written, "the UF2 writes pages outside the install regions")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 Hardware tests from implementation plan phase 1, run by the owner on the `phase-1-core` builds.
 
+**Status:** approved by the owner with design v1.3 and plan v1.2; phase 1 merged into `main` on 2026-11-08.
+
 **Setup:** the Pico 2 W from phase 0 (SSID suffix C2C4). The page reports it as an **RP2350 A2** (boot ROM version 2), so RP2350-E9 applies to it.
 
 ## Bench check (2026-11-08, USB power, no console)

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.1; draft v1.2 (phase 1 additions and review) for approval at the end of phase 1 |
-| **Design** | [architecture.md](architecture.md), Approved v1.2 |
+| **Status** | Approved v1.2, 2026-11-08 |
+| **Design** | [architecture.md](architecture.md), Approved v1.3 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -13,7 +13,7 @@
 | v0.1 draft | 2026-11-08 | First draft. It splits the design's phases (D28) into steps, assigns models and lists what's needed from the owner. The owner's equipment (a current meter, no oscilloscope or logic analyzer) and console (DOL-001 only) don't fit the design's scope-based measurements. Design points DP1–DP5 propose the changes. |
 | v1.0 | 2026-11-08 | The owner approved the draft with DP1–DP5 ("approved, go ahead with phase 0"). DP1–DP5 are now design decisions D31–D35 (design v1.1). Phase 0 starts. |
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
-| v1.2 draft | 2026-11-08 | Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
+| v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
 
 ## How this plan works
 
@@ -164,7 +164,7 @@ docs/                       design, plan, research, API, update-file format
   - the payload for the next power-ons (payload 1, payload 2, built-in);
   - the CS test mode (PicoBoot's pull-down, for the glitch check), stored as a test flag in boot control.
 
-**Branch:** `phase-1-core`. **Done when (D28):**
+**Branch:** `phase-1-core`, **merged** into `main` on 2026-11-08. **Done when (D28):**
 - the console boots a payload through the loader on a cold and on a warm board;
 - a warm reboot doesn't inject;
 - the boot-time budget is met (D10);

@@ -113,3 +113,25 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 - With PicoBoot's pad setting, the false CS edge at power-up happened again (boot 68: 37.1 ms; phase 0: 42.0 and 44.2 ms).
 - The clock-qualified skip count (D36) didn't count it: the injection started at the real 225th transfer and completed. In phase 0 the same event gave a blue screen.
 - **Confirmed by the owner: Swiss started normally on boot 68.** The D36 fix works on hardware: the power-up glitch happened, and the console booted anyway.
+
+### Part D: glitch check, batch 2 (2026-11-08)
+
+**Setup:** the pull-down test mode, 20 more power-ons (boots 75–94).
+
+**Result:** **20/20 booted fine** (owner). The page with the glitch count of this batch is still to come.
+
+### Step 1.10 summary
+
+| Part | Boots | Result |
+|---|---|---|
+| A: cold, Swiss and gekkoboot | 20 | 20/20; margin 159.7–163.6 ms; the loader costs about 3–5 ms against phase 0 |
+| B: warm board | 6 | 6/6; margin 159.3–162.7 ms |
+| C: warm reboot during a game | 1 | No injection; the game kept running |
+| D: glitch check with PicoBoot's CS pad setting | 39 | 39/39 booted, including boot 68 with a real power-up glitch, which the injection ignored |
+
+**Done when (plan 1.10):**
+- results recorded;
+- the loader's cost known (3–5 ms);
+- no blue screens.
+
+**All three are met.**

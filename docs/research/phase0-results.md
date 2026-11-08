@@ -69,6 +69,32 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - **Possible causes** (not known yet): the console's power-up, the HDMI adapter, or noise. One suspect: the RP2350's GPIOs leave reset with their pull-downs on, and PicoBoot never changes them. If the console doesn't drive CS during part of its power-up, the Pico holds it low, and a brief drive high reads as an extra falling edge. Build `55ad372`+ records the CS level at "PIO ready" to test this.
    - **To check:** a CLK-qualified count would ignore such a pulse, because a real EXI transfer always clocks. A second passive counter, added in the next measurement build, tests that on hardware before the injection changes.
 
+## 0.3b Glitch series (2026-11-08)
+
+### Part 1: the CS pull-up
+
+**Setup:** build `0182c06`, board in position B, Swiss r2119 from flash, *Next boots: CS pull-up*, 5 cold boots.
+
+| | Pull-down (PicoBoot default; 0.3–0.7) | Pull-up (5 boots) |
+|---|---|---|
+| CS at "PIO ready" | **low**, first driven high ~41.7 ms later | **high** on every boot |
+| Result | ok (boot 12 aside) | **5/5** ok |
+| Margin | 164.0–168.5 ms | 167.4–168.0 ms |
+| CS / clocked count | 1544 / 1544 | 1544 / 1544 |
+| `main()` → PIO ready | 300–317 µs | 317–319 µs |
+
+**Findings:**
+
+1. **Nobody drives CS during the console's first ~42 ms.**
+   - With a pull-up the line reads high, so the low level seen before came from the Pico's own reset pull-down, not from the console. This is explanation (b) from 0.7.
+   - Boot 12's extra falling edge, 2.5 ms after the console first drove CS, was most likely a moment the console's driver let go of the line. The pull-down then pulled CS low [inference].
+2. **The pull-up doesn't change the injection:** same margin, same counts, all boots good. It costs about 17 µs before "PIO ready" (code fetched from flash), against a 167 ms margin.
+3. **Candidate fixes for phase 1, independent of each other:**
+   - a pull-up on CS, which prevents the glitch;
+   - a CLK-qualified count of the 224 skipped pulses, which ignores one that gets through.
+   - Parts 2 and 3 compare glitch rates with the pull-down and the pull-up.
+4. **The temperature reading dropped to 12.2 °C** after the board was moved and rewired. Since the reading tracks the rail voltage (see 0.4–0.5), the 3V3 at the Pico may now be a little lower. Worth a quick check with the meter.
+
 ## 0.4 Warm board (2026-11-08)
 
 **Setup:**

@@ -100,7 +100,7 @@ For each series, send me the report page afterwards (a screenshot, or copy the t
 - Boot 12 of step 0.3 failed because of one CS pulse without a transfer, at 44.2 ms after "PIO ready".
 - Step 0.7 showed that CS reads low at "PIO ready" on every boot, and is first driven high at about 41.7 ms. The PicoBoot pads keep their reset pull-down on CS.
 - This series checks two things: whether a CS pull-up changes that, and whether the clock-qualified count tells glitches apart.
-- It needs build `5…` or later, which has the CS pull-up switch. Install it when the console is open anyway (step 0.6).
+- It needs build `d8ba49a` or later, which has the CS pull-up switch. Install it when the console is open anyway (step 0.6).
 
 **Part 1: the pull-up (5 boots)**
 1. Tap *Next boots: CS pull-up* and *Clear boot log*.

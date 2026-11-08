@@ -60,3 +60,18 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 1. **The loader path costs about 3–5 ms** of margin: 2.6 ms for Swiss, 4.7 ms for gekkoboot. Phase 0's own series varied by about 2 ms from day to day. More than 158 ms of margin remains (design D10).
 2. **Swiss injects completely through the uncached flash window,** with the quad XIP setup at 83 MHz.
 3. **No glitches with the CS pull-up:** raw = clocked on all 20 boots.
+
+### Part B: warm board (2026-11-08)
+
+**Setup:** Swiss r2119 from payload 1; 30 minutes of play with the console closed (boot 27), then 5 power cycles with about 5 s off (boots 28–32).
+
+| | Result |
+|---|---|
+| Boots | **6/6** good |
+| Margin | 159.3–162.7 ms (cold, part A: 161.5–163.6 ms) |
+| CS raw / clocked | 1544 / 1544 on every boot |
+| Injection | complete, 406 ms |
+| `main()` → PIO ready | up to 347 µs |
+| RP2350 temperature reading | 21.5 °C (reads low on this console's rail, see phase 0 §0.5) |
+
+**Finding:** no warm-board effect, as in phase 0. As in phase 0, the board didn't get very warm in this console.

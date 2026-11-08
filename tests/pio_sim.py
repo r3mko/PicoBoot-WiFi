@@ -1,7 +1,7 @@
 """
 Minimal RP2040 PIO simulator for the PicoBoot-DX PIO programs (Python standard library only).
 
-It runs the real machine code that pioasm generates (build-<board>/picoboot-dx.pio.h) at
+It runs the real machine code that pioasm generates (build/src/firmware/injection.pio.h) at
 logic level: one instruction per enabled state machine per PIO cycle. Only the instructions
 and options PicoBoot-DX uses are implemented, each following the RP2040 datasheet
 (https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf, page numbers below).

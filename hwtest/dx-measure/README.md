@@ -110,7 +110,7 @@ Play for 30 minutes, then do 5 power cycles (off for about 5 s). Save the report
 
 ### 0.5 Current
 
-Put the meter in series with the Pico's 3.3 V feed, and write down the average reading in each state:
+Put the meter in series with the Pico's 3.3 V feed, and write down the average reading in each state. Also measure the **voltage between the Pico's 3V3 pin (pin 36) and GND** in the same states. The temperature readings of 0.3–0.4 hint at only about 3.18 V in the console, and the Wi-Fi chip wants at least 3.2 V for full performance.
 
 | State | How |
 |---|---|

@@ -69,9 +69,31 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - **Possible causes** (not known yet): the console's power-up, the HDMI adapter, or noise. One suspect: the RP2350's GPIOs leave reset with their pull-downs on, and PicoBoot never changes them. If the console doesn't drive CS during part of its power-up, the Pico holds it low, and a brief drive high reads as an extra falling edge. Build `55ad372`+ records the CS level at "PIO ready" to test this.
    - **To check:** a CLK-qualified count would ignore such a pulse, because a real EXI transfer always clocks. A second passive counter, added in the next measurement build, tests that on hardware before the injection changes.
 
-## 0.4 Warm board
+## 0.4 Warm board (2026-11-08)
 
-*To do.*
+**Setup:**
+- Build `97d31f6`, Swiss r2119 from flash.
+- 30 minutes of play with the console closed, then 5 power cycles with about 5 s off.
+
+| | Cold (0.3, Swiss) | Warm (0.4, Swiss) |
+|---|---|---|
+| Result | 10/10 | **5/5** |
+| Margin | 164.0–166.6 ms | 167.4–168.5 ms |
+| Injection | complete, 406 ms | complete, 406–407 ms |
+| CS at the end / expected | 1544 / 1543 | 1544 / 1543 |
+| `main()` → PIO ready | 300–314 µs | 303–305 µs |
+| RP2350 temperature reading | 18.7 °C | 20.6 °C |
+
+**Findings:**
+
+1. **No warm-board trouble,** and the margin barely moved.
+2. **The board hardly warmed up.** The reading rose only 2 °C, so this wasn't the hot board of upstream #148. A second warm test follows the 0.7 stress test, when the radio has been transmitting for minutes.
+3. **The 3.3 V rail may be low in the console** [inference].
+   - The RP2350 read 34.6–35.6 °C on the bench (USB) but 18.7–20.6 °C in the console. A console interior isn't 15 °C colder than the room.
+   - The ADC measures against the board's own 3.3 V, and the conversion assumes 3.30 V; a lower supply reads as a lower temperature.
+   - If the die is about as warm in both places, the readings fit about **3.18 V** in the console.
+   - The CYW43439 guarantees full RF performance only above 3.2 V (see [hardware.md](hardware.md) §1).
+   - To measure with a meter in step 0.5.
 
 ## 0.5 Current
 

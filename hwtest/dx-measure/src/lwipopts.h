@@ -6,7 +6,7 @@
 
 // lwIP options for the phase 0 measurement build: an access point with a raw-API
 // TCP server, polled from the main loop (pico_cyw43_arch_lwip_poll). Based on
-// pico-examples' lwipopts_examples_common.h, without the DHCP and DNS clients.
+// pico-examples' lwipopts_examples_common.h, without the DNS client.
 // See https://www.nongnu.org/lwip/2_1_x/group__lwip__opts.html
 
 #ifndef _LWIPOPTS_H
@@ -29,7 +29,10 @@
 #define LWIP_IPV4                   1
 #define LWIP_TCP                    1
 #define LWIP_UDP                    1       // DHCP and DNS servers
-#define LWIP_DHCP                   0       // We are the DHCP server, not a client
+// Needed although we are the DHCP server, not a client: it also sets
+// IP_ACCEPT_LINK_LAYER_ADDRESSING, without which lwIP drops packets from 0.0.0.0 (ip4.c),
+// and every DHCP DISCOVER comes from 0.0.0.0.
+#define LWIP_DHCP                   1
 #define LWIP_DNS                    0
 #define TCP_MSS                     1460
 #define TCP_WND                     (8 * TCP_MSS)

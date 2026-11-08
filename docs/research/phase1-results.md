@@ -171,4 +171,11 @@ The owner chose to keep the proven PIO programs (finding 5, a known limit in D36
 |---|---|
 | Bench: a test UF2 blanks slot A; the board must come up in BOOTSEL (the RP2350 drive) | **Passed:** the drive came back by itself |
 | Bench: reinstall; the page shows 150 MHz after the injection, Wi-Fi up | **Passed** |
-| Console: 10 Swiss cold boots | *to do* |
+| Console: 10 Swiss cold boots | **10/10** (boots 98–107), Swiss started every time; margin 159.8–161.7 ms, mean 160.9 ms; CS 1544/1544, high at "PIO ready" |
+
+**Notes on the re-test (build `63c1ed7`):**
+- The console page (boot 107, injection complete) shows SCK 50 MHz at 150 MHz: the clock is back at 150 MHz after the injection. The payload DMA reads 21.78 MB/s at 150 MHz (18.15 MB/s at 125 MHz before: it scales with the clock).
+- The margin mean is 2 ms below part A (162.9 ms), about phase 0's day-to-day spread. Against PicoBoot-DX (phase 0, 165.5 ms) the cost is 4.6 ms, within D10's 10 ms.
+- Boot 96 (USB plug-in, "no CS") and boot 97 (the ROM's reboot after the reinstall, "warm (not run)") follow the power-on rule (D8).
+
+**Step 1.12 done:** review fixes in, re-test passed.

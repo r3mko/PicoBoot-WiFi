@@ -19,6 +19,7 @@
 #define BOOT_FLAG_SKIPPED         (1u << 4)   // Not a power-on (design D8 rule): no injection
 #define BOOT_FLAG_MARKER          (1u << 5)   // The POWMAN scratch session marker was already set
 #define BOOT_FLAG_QUALIFIED       (1u << 6)   // cs_qual_* fields are valid (builds from 2026-11-08 on)
+#define BOOT_FLAG_PINS            (1u << 7)   // pins_at_ready and cs_high_us are valid
 
 typedef struct {
     uint32_t magic;             // BOOTLOG_MAGIC
@@ -35,7 +36,9 @@ typedef struct {
     uint32_t injection_us;      // First CS to the end of the injection (complete or timed out)
     uint32_t cs_qual_at_end;    // Clock-qualified CS count when the injection ended
     int32_t  margin_qual_us;    // "PIO ready" to the first clock-qualified CS, or -1 if not seen
-    uint32_t reserved[49];
+    uint32_t pins_at_ready;     // Levels at "PIO ready": bit 0 CS, bit 1 CLK, bit 2 DATA
+    int32_t  cs_high_us;        // "PIO ready" to the CPU first seeing CS high (0 if already high), or -1
+    uint32_t reserved[47];
     uint32_t crc;               // CRC-32 of everything above
 } boot_record_t;
 

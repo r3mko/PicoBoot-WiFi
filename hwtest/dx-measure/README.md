@@ -63,6 +63,7 @@ The firmware is `hwtest/dx-measure/build/dx-measure.uf2`.
 |---|---|
 | **Margin** | Time from "PIO ready" to the console's first CS. It has to be positive. The bigger it is, the more room the loader (phase 1) has |
 | **CS at the end** | Should be 224 + transfers; the console's next access usually adds one ("ok (+1 CS)"). Fewer means pulses were missed: the PIO started too late |
+| **CS@ready** | The CS level at "PIO ready": *high*, or *low* (with when the CPU first saw it high). CS starting low would point at the pads' reset pull-downs holding an undriven CS line |
 | **Clocked** | The clock-qualified count. It should equal *CS at the end*. More raw pulses than clocked ones shows up as "GLITCH": CS dropped without a transfer, which shifts PicoBoot-DX's injection |
 | **Injection** | *complete* = all words delivered and the data line released. *STALLED* = it didn't finish within 10 s |
 | **Reset reason** | POR = power-on; BOR = brown-out; WDOG = watchdog/reboot. Whether a cold boot shows up as POR or BOR matters for design D8 |

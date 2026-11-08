@@ -232,10 +232,18 @@ int main(void) {
     rec.payload_words = (uint32_t)payload_word_count;
     rec.margin_us = -1;
     rec.margin_qual_us = -1;
-    rec.flags |= BOOT_FLAG_QUALIFIED;
+    rec.flags |= BOOT_FLAG_QUALIFIED | BOOT_FLAG_PINS;
+
+    // phase 0: pin levels at "PIO ready". The pads keep their reset pull-downs (PicoBoot never
+    // changes them), so a CS line the console doesn't drive yet reads low.
+    const uint32_t gpio_in = sio_hw->gpio_in;
+    rec.pins_at_ready = ((gpio_in >> PIN_CS) & 1u) | (((gpio_in >> PIN_CLK) & 1u) << 1) | (((gpio_in >> PIN_DATA) & 1u) << 2);
+    rec.cs_high_us = (rec.pins_at_ready & 1u) ? 0 : -1;
 
     while (power_reset && !cs_counter_first_edge_seen() && time_us_64() - t_ready < FIRST_CS_TIMEOUT_US) {
-        tight_loop_contents();
+        if (rec.cs_high_us < 0 && gpio_get(PIN_CS)) {
+            rec.cs_high_us = (int32_t)(time_us_64() - t_ready);     // phase 0: CS first seen high
+        }
     }
     const uint64_t t_first_cs = time_us_64();
     bool complete = false;

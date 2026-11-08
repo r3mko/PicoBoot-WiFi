@@ -65,7 +65,8 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - `on_transfer` counts the 224 skipped pulses without checking them, so that one spurious pulse made the payload go out one transfer early. The console then got a shifted payload and crashed.
    - PicoBoot-DX and upstream PicoBoot use the same program, so they have the same weakness.
    - **Rate:** 1 in 20 boots here.
-   - **Possible causes** (not known yet): the console's power-up, the HDMI adapter, or noise.
+   - **Not new:** boot 12 was a normal cold boot. The owner has seen the same occasional blue screens on this console with PicoBoot-DX v0.9 and earlier, and with upstream PicoBoot.
+   - **Possible causes** (not known yet): the console's power-up, the HDMI adapter, or noise. One suspect: the RP2350's GPIOs leave reset with their pull-downs on, and PicoBoot never changes them. If the console doesn't drive CS during part of its power-up, the Pico holds it low, and a brief drive high reads as an extra falling edge. Build `55ad372`+ records the CS level at "PIO ready" to test this.
    - **To check:** a CLK-qualified count would ignore such a pulse, because a real EXI transfer always clocks. A second passive counter, added in the next measurement build, tests that on hardware before the injection changes.
 
 ## 0.4 Warm board

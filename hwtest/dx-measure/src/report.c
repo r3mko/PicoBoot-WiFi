@@ -145,6 +145,18 @@ static void put_boot(out_t *o, const boot_record_t *b) {
     } else {
         put(o, "  First CS             : not seen within the timeout (no console?)\n");
     }
+    if (b->flags & BOOT_FLAG_PINS) {
+        put(o, "  Pins at PIO ready    : CS %s, CLK %s, DATA %s",
+            (b->pins_at_ready & 1) ? "high" : "LOW", (b->pins_at_ready & 2) ? "high" : "low",
+            (b->pins_at_ready & 4) ? "high" : "low");
+        if (b->cs_high_us > 0) {
+            put(o, "; CS first seen high %ld us later\n", (long)b->cs_high_us);
+        } else if (b->cs_high_us < 0 && !(b->pins_at_ready & 1)) {
+            put(o, "; CS never seen high before the first CS\n");
+        } else {
+            put(o, "\n");
+        }
+    }
 }
 
 size_t report_render(char *buf, size_t size) {
@@ -179,21 +191,30 @@ size_t report_render(char *buf, size_t size) {
 
     uint n = bootlog_read(log_rows, LOG_ROWS);
     put(&o, "BOOT LOG (newest first, %u kept)\n", n);
-    put(&o, "  boot  reset  payload   xfers  margin_us  main>ready_us  inject_ms  CS_end/expected  clocked  result\n");
+    put(&o, "  boot  reset  payload   xfers  margin_us  main>ready_us  inject_ms  CS_end/expected  clocked  CS@ready  result\n");
     for (uint i = 0; i < n; i++) {
         const boot_record_t *b = &log_rows[i];
         bool cs = b->flags & BOOT_FLAG_FIRST_CS;
-        char clocked[12] = "-";
+        char clocked[12] = "-", cs_ready[16] = "-";
         if (b->flags & BOOT_FLAG_QUALIFIED) {
             snprintf(clocked, sizeof(clocked), "%lu", (unsigned long)b->cs_qual_at_end);
         }
-        put(&o, "  %4lu  %-5s  %-8s  %5lu  %9ld  %13lu  %9lu  %6lu/%-6lu    %7s  %s\n",
+        if (b->flags & BOOT_FLAG_PINS) {
+            if (b->pins_at_ready & 1) {
+                snprintf(cs_ready, sizeof(cs_ready), "high");
+            } else if (b->cs_high_us > 0) {
+                snprintf(cs_ready, sizeof(cs_ready), "low>%ldms", (long)(b->cs_high_us / 1000));
+            } else {
+                snprintf(cs_ready, sizeof(cs_ready), "low");
+            }
+        }
+        put(&o, "  %4lu  %-5s  %-8s  %5lu  %9ld  %13lu  %9lu  %6lu/%-6lu    %7s  %-8s  %s\n",
             (unsigned long)b->seq, reset_reason(b->chip_reset),
             (b->flags & BOOT_FLAG_FLASH_PAYLOAD) ? "flash" : "built-in",
             (unsigned long)transfers(b), cs ? (long)b->margin_us : -1L,
             (unsigned long)b->main_to_ready_us, cs ? (unsigned long)(b->injection_us / 1000) : 0UL,
             (unsigned long)b->cs_at_end, (unsigned long)(SKIPPED_TRANSFERS + transfers(b)),
-            clocked, verdict(b, tmp, sizeof(tmp)));
+            clocked, cs_ready, verdict(b, tmp, sizeof(tmp)));
     }
     put(&o, "</pre>"
             "<a href=\"/stream?mb=20\">Download 20 MB (Tx load)</a>"

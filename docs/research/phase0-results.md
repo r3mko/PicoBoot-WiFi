@@ -14,7 +14,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 | Is the PIO in time? (D10, R1) | Yes. 164–168 ms from "PIO ready" to the console's first IPL read, cold and warm; `main()` → "PIO ready" is 0.3 ms |
 | Does a warm reboot inject? (D8, R6) | No, but only thanks to the POWMAN marker: HAD_POR survives watchdog and ROM reboots |
 | Where do PicoBoot's occasional blue screens come from? | A false CS falling edge 42–44 ms after "PIO ready", as the console first drives CS: 2 of 56 cold boots with PicoBoot's pad defaults, and both blue-screened |
-| What prevents them? | A CS pull-up (0 in 30 boots) and a clock-qualified count (it caught the glitch on hardware): design D36 |
+| What prevents them? | A CS pull-up (0 in 50 boots) and a clock-qualified count (it caught the glitch on hardware): design D36 |
 | Is the console's rail good enough for the radio? | It works (stress test clean), but the 3.3 V at the Pico is 3.15–3.21 V, below the radio's 3.2 V full-RF level: design D38 recommends 5 V wiring |
 | Range from a closed console? (R3) | −42 dBm at 5 m in either board position: no problem |
 | Wi-Fi disturbing the console? (R5) | Not during a 10-minute full-load download with the SD2SP2 and HDMI adapter in use |
@@ -127,7 +127,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 
 | | Result |
 |---|---|
-| Boots | **25/25** good, none with a GLITCH row; with part 1, **30/30** with the pull-up |
+| Boots | **25/25** good, none with a GLITCH row; with part 1, **30/30** with the pull-up. The owner later did 20 more pull-up boots, all good: **50/50** |
 | CS at "PIO ready" | high on every boot |
 | Margin | 165.4–168.1 ms |
 | CS / clocked count | 1544 / 1544 on every boot |
@@ -136,7 +136,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 **Pull-down boots so far** (0.3, 0.4, 0.7): 1 glitch in 31 cold boots (boot 12 of 0.3).
 
 **Limits of this result:**
-- 0 in 30 supports the pull-up, but doesn't prove it: at a rate of 1 in 20, a clean run of 30 still happens about 21% of the time.
+- 0 in 50 supports the pull-up, but doesn't prove it: at the pull-down's rate (2 in 56, 3.6%), a clean run of 50 still happens about 16% of the time.
 - Part 2 (pull-down) adds the comparison, and a chance to see the clocked counter catch a glitch on hardware.
 
 ### Part 2: glitch rate with the pull-down (PicoBoot's default)
@@ -155,15 +155,15 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 | CS pull | Cold boots | Glitches |
 |---|---|---|
 | Down (PicoBoot default; 0.3, 0.4, 0.7, part 2) | 56 | **2** (0.3 boot 12, part 2 boot 2) |
-| Up (parts 1 and 3) | 30 | **0** |
+| Up (parts 1 and 3, plus 20 more boots) | 50 | **0** |
 
 1. **The clock-qualified counter catches the glitch on hardware.**
    - It ignored the one false CS pulse of part 2's boot 2.
    - It agreed with the raw count on every one of the 80+ good boots, so it doesn't miss real transfers.
    - A CLK-qualified count of the 224 skipped pulses would have avoided both failures.
 2. **The glitch is tied to the console's power-up.** Both happened 42–44 ms after "PIO ready", as the console first drove CS. Until then the line is undriven, and PicoBoot's reset pull-down holds it low.
-3. **The pull-up removes the undriven-low state** (CS reads high from the start). It had no failures in 30 boots, against 2 in 56 with the pull-down.
-   - As statistics that's thin (all 2 failures landing in the pull-down group has a probability of about 0.42 by chance). The mechanism supports it.
+3. **The pull-up removes the undriven-low state** (CS reads high from the start). It had no failures in 50 boots, against 2 in 56 with the pull-down.
+   - As statistics it's still thin (all 2 failures landing in the pull-down group has a probability of about 0.28 by chance). The mechanism supports it.
 
 ## 0.4 Warm board (2026-11-08)
 

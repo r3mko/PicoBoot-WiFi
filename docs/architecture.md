@@ -216,7 +216,7 @@ These follow from the research and bind every decision below.
   - Rate: 2 of 56 cold boots, and both blue-screened.
 - **Fix 1, a pull-up on CS:**
   - PicoBoot never sets the pad pulls, so CS keeps the RP2350's reset pull-down. That holds the undriven CS low ("selected") for the console's first ~42 ms.
-  - The firmware turns on the CS pull-up instead, before the PIO starts. Phase 0 had 0 failures in 30 boots that way.
+  - The firmware turns on the CS pull-up instead, before the PIO starts. Phase 0 had 0 failures in 50 boots that way.
   - It also avoids RP2350-E9 on A2 chips, where "the pad pull-up still works".
 - **Fix 2, a clock-qualified count:**
   - `on_transfer` counts a CS low period among the 224 only once CLK rises in it. A pulse without clocks merges with the next real transfer.

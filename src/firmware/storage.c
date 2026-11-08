@@ -39,6 +39,7 @@ static void program(void *ctx, uint32_t offset, const uint8_t *data, size_t leng
 
 static const record_flash_t bootctl_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTCTL_OFFSET};
 static const record_flash_t bootlog_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTLOG_OFFSET};
+static const record_flash_t settings_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_SETTINGS_OFFSET};
 static const ringlog_t bootlog = {FLASH_AREA(LAYOUT_BOOTLOG_OFFSET), LAYOUT_BOOTLOG_SIZE, &bootlog_flash};
 
 bool storage_bootctl_load(bootctl_t *out) {
@@ -51,6 +52,24 @@ bool storage_bootctl_load(bootctl_t *out) {
 bool storage_bootctl_store(const bootctl_t *b) {
     return record_write(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), &bootctl_flash, BOOTCTL_MAGIC, BOOTCTL_VERSION,
                         b, sizeof(*b));
+}
+
+bool storage_settings_load(settings_t *out) {
+    const record_header_t *rec = record_find(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), SETTINGS_MAGIC,
+                                             SETTINGS_VERSION, sizeof(settings_t), NULL);
+    *out = rec ? *(const settings_t *)record_payload(rec) : SETTINGS_DEFAULT;
+    // A stored value that isn't allowed falls back on its own default; the others stay
+    settings_sanitize(out);
+    return rec != NULL;
+}
+
+bool storage_settings_store(const settings_t *s) {
+    settings_t check = *s;
+    if (!settings_sanitize(&check)) {
+        return false;
+    }
+    return record_write(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), &settings_flash, SETTINGS_MAGIC, SETTINGS_VERSION,
+                        s, sizeof(*s));
 }
 
 bool storage_bootlog_append(const boot_report_t *r) {

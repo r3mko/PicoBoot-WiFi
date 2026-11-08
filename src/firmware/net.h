@@ -14,10 +14,10 @@ typedef size_t (*net_page_fn)(char *buf, size_t size);
 // Handles a POST to `path` (a button on the page); returns false if it isn't one
 typedef bool (*net_action_fn)(const char *path);
 
-// Starts the access point (WPA2-AES, design D30), the DHCP and DNS servers (every name answers
-// with 192.168.4.1, so phones open the page by themselves) and the HTTP server. cyw43_arch_init()
-// must have succeeded first. Returns false on failure.
-bool net_start(const char *ssid, const char *password, net_page_fn page, net_action_fn action);
+// Starts the access point (WPA2-AES, design D30) on `channel`, the DHCP and DNS servers (every
+// name answers with 192.168.4.1, so phones open the page by themselves) and the HTTP server.
+// cyw43_arch_init_with_country() must have succeeded first. Returns false on failure.
+bool net_start(const char *ssid, const char *password, unsigned channel, net_page_fn page, net_action_fn action);
 
 // One iteration of the main loop: lets the CYW43 driver and lwIP do their work
 void net_poll(void);

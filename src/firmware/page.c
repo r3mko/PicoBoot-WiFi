@@ -172,8 +172,8 @@ size_t page_render(char *buf, size_t size) {
             "<title>PicoBoot-WiFi</title>"
             "<style>body{font-family:monospace;margin:12px}pre{white-space:pre-wrap}"
             "form,a{display:inline-block;margin:6px 12px 6px 0}</style></head><body><pre>");
-    put(&o, "PicoBoot-WiFi %s (phase 1 test build)\n", PICOBOOT_WIFI_BUILD);
-    put(&o, "SSID: %s   Password: %s\n\n", info.ssid, info.password);
+    put(&o, "PicoBoot-WiFi %s (test build)\n", PICOBOOT_WIFI_BUILD);
+    put(&o, "SSID: %s   Password: %s\n\n", info.ssid, info.settings->password);
     if (store_failed) {
         put(&o, "LAST CHANGE NOT SAVED: the boot control write to flash failed\n\n");
     }
@@ -226,6 +226,17 @@ size_t page_render(char *buf, size_t size) {
         (unsigned long)(up_s / 60 % 60), (unsigned long)(up_s % 60));
     put(&o, "  Temperature        : %.1f C (RP2350 sensor; reads low on a low 3.3 V rail)\n", (double)temperature_c());
     put(&o, "  Wi-Fi clients      : %d\n", net_client_count());
+    {
+        static const char *const tx[SETTINGS_TX_LEVELS] = {"low", "medium", "high", "max"};
+        const settings_t *s = info.settings;
+        char off[16] = "never";
+        if (s->auto_off_minutes != SETTINGS_AUTO_OFF_NEVER) {
+            snprintf(off, sizeof(off), "%u min", s->auto_off_minutes);
+        }
+        put(&o, "  Settings           : channel %u, country %s, Tx power %s, Wi-Fi off after %s, LED %s%s\n",
+            s->channel, s->country, tx[s->tx_power], off, s->led ? "on" : "off",
+            info.settings_stored ? "" : " (settings empty: defaults)");
+    }
 
     bootctl_t b;
     const bool stored = storage_bootctl_load(&b);

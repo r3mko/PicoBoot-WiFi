@@ -10,6 +10,7 @@
 // reboot it doesn't (D8). Then it starts Wi-Fi with the report page (D9, D32).
 
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/platform.h"
 #include "pico/cyw43_arch.h"
@@ -42,8 +43,6 @@
 
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
-
-static const char *AP_PASSWORD = "picoboot";        // Design D30: documented default
 
 // Bench debugging (CMake option PICOBOOT_WIFI_USB_TRACE): start-up steps over USB serial
 #if PICOBOOT_WIFI_USB_TRACE
@@ -154,14 +153,21 @@ static uint32_t flash_dma_64k_us(void) {
 
 // The access point with the report page, after the injection (design D9). Doesn't return.
 static void run_wifi(uint64_t t_start) {
-    // SSID from the last four hex digits of the chip's unique ID (design D30)
-    static char ssid[16];
-    pico_unique_board_id_t id;
-    pico_get_unique_board_id(&id);
-    snprintf(ssid, sizeof(ssid), "PicoBoot-%02X%02X",
-             id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
+    static settings_t settings;
+    const bool settings_stored = storage_settings_load(&settings);
 
-    page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
+    // The SSID setting, or by default the last four hex digits of the chip's unique ID (design D30)
+    static char ssid[SETTINGS_SSID_MAX + 1];
+    if (settings.ssid[0]) {
+        memcpy(ssid, settings.ssid, sizeof(ssid));
+    } else {
+        pico_unique_board_id_t id;
+        pico_get_unique_board_id(&id);
+        snprintf(ssid, sizeof(ssid), "PicoBoot-%02X%02X",
+                 id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
+    }
+
+    page_info_t page = {.report = &report, .ssid = ssid, .settings = &settings, .settings_stored = settings_stored};
     page.qmi_rcmd = qmi_hw->m[0].rcmd;
     page.qmi_rfmt = qmi_hw->m[0].rfmt;
     page.qmi_timing = qmi_hw->m[0].timing;
@@ -171,14 +177,14 @@ static void run_wifi(uint64_t t_start) {
     TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
     if (page.wifi_area >= 0) {
         const uint64_t t_init = time_us_64();
-        const int err = cyw43_arch_init();
+        const int err = cyw43_arch_init_with_country(CYW43_COUNTRY(settings.country[0], settings.country[1], 0));
         page.cyw43_init_ms = (uint32_t)((time_us_64() - t_init) / 1000);
-        TRACE("cyw43_arch_init: %d\n", err);
+        TRACE("cyw43_arch_init_with_country(%s): %d\n", settings.country, err);
         if (err == 0) {
             const uint64_t t_net = time_us_64();
-            const bool up = net_start(ssid, AP_PASSWORD, page_render, page_action);
+            const bool up = net_start(ssid, settings.password, settings.channel, page_render, page_action);
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
-            TRACE("net_start: %s, SSID %s\n", up ? "ok" : "FAILED", ssid);
+            TRACE("net_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", ssid, settings.channel);
             if (up) {
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
                 page_init(&page);

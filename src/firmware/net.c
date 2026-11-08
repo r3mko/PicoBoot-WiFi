@@ -235,9 +235,10 @@ static err_t on_accept(void *arg, struct tcp_pcb *pcb, err_t err) {
     return ERR_OK;
 }
 
-bool net_start(const char *ssid, const char *password, net_page_fn page, net_action_fn action) {
+bool net_start(const char *ssid, const char *password, unsigned channel, net_page_fn page, net_action_fn action) {
     render_page = page;
     page_action = action;
+    cyw43_wifi_ap_set_channel(&cyw43_state, channel);      // Kept by cyw43_arch_enable_ap_mode()
     cyw43_arch_enable_ap_mode(ssid, password, CYW43_AUTH_WPA2_AES_PSK);
 
     ip4_addr_t gw, mask;

@@ -9,11 +9,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "report.h"
+#include "settings.h"
 
 typedef struct {
     const boot_report_t *report;
-    const char *ssid;
-    const char *password;
+    const char *ssid;           // The one in use: the setting or the default (design D30)
+    const settings_t *settings; // As loaded at start-up (D40)
+    bool settings_stored;       // false: the settings area is empty, so these are the defaults
     int wifi_area;              // BOOTCTL_SLOT_A / _B (Wi-Fi A / B), or -1
     uint32_t wifi_up_ms;        // From the end of the injection (or start-up) to the AP being up
     uint32_t cyw43_init_ms;     // ...of which cyw43_arch_init() (loads the blob from flash)

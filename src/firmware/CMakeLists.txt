@@ -11,6 +11,7 @@ set(FIRMWARE_SOURCES
     net.c
     page.c
     storage.c
+    settings.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )

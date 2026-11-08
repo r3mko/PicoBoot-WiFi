@@ -105,11 +105,11 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 
 ### Part 3: glitch rate with the pull-up
 
-**Setup:** build `0182c06`, *CS pull-up*, Swiss r2119 from flash, 25 cold boots (the 5 from part 1 plus 20 more).
+**Setup:** build `0182c06`, *CS pull-up*, Swiss r2119 from flash, a fresh run of 25 cold boots (log cleared after part 1).
 
 | | Result |
 |---|---|
-| Boots | **25/25** good, none with a GLITCH row |
+| Boots | **25/25** good, none with a GLITCH row; with part 1, **30/30** with the pull-up |
 | CS at "PIO ready" | high on every boot |
 | Margin | 165.4–168.1 ms |
 | CS / clocked count | 1544 / 1544 on every boot |
@@ -118,7 +118,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 **Pull-down boots so far** (0.3, 0.4, 0.7): 1 glitch in 31 cold boots (boot 12 of 0.3).
 
 **Limits of this result:**
-- 0 in 25 supports the pull-up, but doesn't prove it: at a rate of 1 in 20, a clean run of 25 still happens about 28% of the time.
+- 0 in 30 supports the pull-up, but doesn't prove it: at a rate of 1 in 20, a clean run of 30 still happens about 21% of the time.
 - Part 2 (pull-down) adds the comparison, and a chance to see the clocked counter catch a glitch on hardware.
 
 ## 0.4 Warm board (2026-11-08)

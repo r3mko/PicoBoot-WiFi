@@ -88,11 +88,13 @@ add_custom_target(wifi_blob ALL DEPENDS ${WIFI_BLOB_BIN})
 # left in the boot ROM's slowest mode (serial 03h at clk_sys/256: 0.06 MB/s on the bench, far too
 # slow for the payload DMA), and the SDK restores whatever XIP setup is in boot RAM after each flash
 # write. With PICO_EMBED_XIP_SETUP, crt0 runs this boot2 at start-up and copies it into boot RAM.
-# Divider 3: 83 MHz flash clock during the injection's 250 MHz, 50 MHz at 150 MHz (design D27).
+# Divider PICOBOOT_WIFI_FLASH_CLKDIV, 3 by default: 83 MHz flash clock during the injection's
+# 250 MHz, 50 MHz at 150 MHz (design D27).
 pico_define_boot_stage2(firmware_xip_setup ${PICO_SDK_PATH}/src/rp2350/boot_stage2/boot2_w25q080.S)
-target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=3)
+target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=${PICOBOOT_WIFI_FLASH_CLKDIV})
 pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
 
 if(PICOBOOT_WIFI_USB_TRACE)
     pico_enable_stdio_usb(firmware 1)

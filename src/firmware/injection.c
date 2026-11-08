@@ -18,14 +18,17 @@
 #include "hardware/pio.h"
 #include "hardware/structs/bus_ctrl.h"
 
-static const uint BOOST_CLOCK = 250000;   // Set 250MHz clock to get more cycles (design D27)
+#ifndef PICOBOOT_WIFI_INJECTION_KHZ
+#error "PICOBOOT_WIFI_INJECTION_KHZ (the clock during the injection) comes from CMakeLists.txt"
+#endif
+static const uint BOOST_CLOCK = PICOBOOT_WIFI_INJECTION_KHZ;   // More cycles per console clock (design D27)
 
 static const PIO pio = pio0;
 static uint transfer_start_sm, clocked_output_sm, clocked_output_offset;
 static int dma_chan = -1;
 
 void injection_prepare(const injection_payload_t *payload, bool cs_pullup) {
-    // Set 250MHz clock to get more cycles in between CLK pulses.
+    // Raise the clock (250MHz by default) to get more cycles in between CLK pulses.
     // This is the lowest value I was able to make the code work.
     // Should be still considered safe for most Pico boards.
     set_sys_clock_khz(BOOST_CLOCK, true);
@@ -123,8 +126,8 @@ void injection_finish(void) {
         pio_sm_set_consecutive_pindirs(pio, clocked_output_sm, INJECTION_PIN_DATA, 1, false);
     }
 
-    // Lower the clock to 125MHz (RP2040 default), the boost is no longer needed
-    set_sys_clock_khz((BOOST_CLOCK / 2), true);
+    // Back to the SDK's clock (150MHz), the same as on warm boots: the boost is no longer needed
+    set_sys_clock_khz(SYS_CLK_KHZ, true);
 
     // Stop PIO state machines
     pio_sm_set_enabled(pio, transfer_start_sm, false);

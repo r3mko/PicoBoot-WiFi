@@ -27,6 +27,11 @@ endif()
 # terminal). Not for the console.
 option(PICOBOOT_WIFI_USB_TRACE "Print the firmware's start-up steps over USB serial" OFF)
 
+# Clock and flash speed during the injection (design D27): 250 MHz with flash divider 3 (83 MHz),
+# as tested in phase 1. A board that takes the overclock or fast flash badly can try lower values.
+set(PICOBOOT_WIFI_INJECTION_KHZ 250000 CACHE STRING "CPU clock during the injection in kHz (design D27)")
+set(PICOBOOT_WIFI_FLASH_CLKDIV 3 CACHE STRING "Flash clock divider, from clk_sys (design D27)")
+
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
 set(PICOBOOT_WIFI_VERSION "0.1.0-dev")
 execute_process(

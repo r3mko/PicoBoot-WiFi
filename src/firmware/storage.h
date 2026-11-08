@@ -19,10 +19,10 @@
 bool storage_bootctl_load(bootctl_t *out);
 bool storage_bootctl_store(const bootctl_t *b);
 
-// Copies the newest valid settings into *out, or the defaults (each value that isn't allowed gets
-// its default); returns true if there was a record. Store refuses settings that aren't valid.
-bool storage_settings_load(settings_t *out);
-bool storage_settings_store(const settings_t *s);
+// Copies the newest valid settings record into *out, or the defaults (each value that isn't allowed
+// gets its default); returns true if there was a record. Store refuses a record that isn't valid.
+bool storage_settings_load(settings_record_t *out);
+bool storage_settings_store(const settings_record_t *r);
 
 // Room in the boot log (design D39). It keeps 17 to 32 reports: when it wraps, a sector of 16 is erased.
 #define STORAGE_BOOTLOG_ENTRIES 32

@@ -12,6 +12,9 @@ set(FIRMWARE_SOURCES
     page.c
     storage.c
     settings.c
+    json.c
+    wifi.c
+    api.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )

@@ -54,22 +54,22 @@ bool storage_bootctl_store(const bootctl_t *b) {
                         b, sizeof(*b));
 }
 
-bool storage_settings_load(settings_t *out) {
+bool storage_settings_load(settings_record_t *out) {
     const record_header_t *rec = record_find(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), SETTINGS_MAGIC,
-                                             SETTINGS_VERSION, sizeof(settings_t), NULL);
-    *out = rec ? *(const settings_t *)record_payload(rec) : SETTINGS_DEFAULT;
+                                             SETTINGS_VERSION, sizeof(settings_record_t), NULL);
+    *out = rec ? *(const settings_record_t *)record_payload(rec) : SETTINGS_RECORD_DEFAULT;
     // A stored value that isn't allowed falls back on its own default; the others stay
-    settings_sanitize(out);
+    settings_record_sanitize(out);
     return rec != NULL;
 }
 
-bool storage_settings_store(const settings_t *s) {
-    settings_t check = *s;
-    if (!settings_sanitize(&check)) {
+bool storage_settings_store(const settings_record_t *r) {
+    settings_record_t check = *r;
+    if (!settings_record_sanitize(&check)) {
         return false;
     }
     return record_write(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), &settings_flash, SETTINGS_MAGIC, SETTINGS_VERSION,
-                        s, sizeof(*s));
+                        r, sizeof(*r));
 }
 
 bool storage_bootlog_append(const boot_report_t *r) {

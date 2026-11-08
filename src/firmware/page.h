@@ -9,13 +9,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "report.h"
-#include "settings.h"
 
 typedef struct {
     const boot_report_t *report;
-    const char *ssid;           // The one in use: the setting or the default (design D30)
-    const settings_t *settings; // As loaded at start-up (D40)
-    bool settings_stored;       // false: the settings area is empty, so these are the defaults
+    uint32_t boot_number;       // This boot's number in the boot log (D39), 0 if it wasn't logged
     int wifi_area;              // BOOTCTL_SLOT_A / _B (Wi-Fi A / B), or -1
     uint32_t wifi_up_ms;        // From the end of the injection (or start-up) to the AP being up
     uint32_t cyw43_init_ms;     // ...of which cyw43_arch_init() (loads the blob from flash)
@@ -29,9 +26,11 @@ typedef struct {
 // Keeps the info and sets up the temperature sensor
 void page_init(const page_info_t *info);
 
+// The RP2350's temperature sensor (reads low on a low 3.3 V rail)
+float page_temperature_c(void);
+
 // The minimal report page of phase 1 (plan step 1.8; phase 2 brings the real web UI)
 size_t page_render(char *buf, size_t size);
 
-// The page's buttons: the payload for the next power-ons, the CS test mode (plan step 1.10) and
-// the channel (step 2.1)
+// The page's buttons: the payload for the next power-ons, and the CS test mode (plan step 1.10)
 bool page_action(const char *path);

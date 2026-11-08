@@ -10,11 +10,9 @@
 // reboot it doesn't (D8). Then it starts Wi-Fi with the report page (D9, D32).
 
 #include <stdio.h>
-#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/platform.h"
 #include "pico/cyw43_arch.h"
-#include "pico/unique_id.h"
 #include "hardware/gpio.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
@@ -31,6 +29,8 @@
 #include "net.h"
 #include "page.h"
 #include "storage.h"
+#include "wifi.h"
+#include "api.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/structs/qmi.h"
@@ -152,22 +152,12 @@ static uint32_t flash_dma_64k_us(void) {
 }
 
 // The access point with the report page, after the injection (design D9). Doesn't return.
-static void run_wifi(uint64_t t_start) {
-    static settings_t settings;
-    const bool settings_stored = storage_settings_load(&settings);
+static void run_wifi(uint64_t t_start, uint32_t boot_number) {
+    wifi_load();        // The settings, with an unconfirmed Wi-Fi change undone (design D41)
 
-    // The SSID setting, or by default the last four hex digits of the chip's unique ID (design D30)
-    static char ssid[SETTINGS_SSID_MAX + 1];
-    if (settings.ssid[0]) {
-        memcpy(ssid, settings.ssid, sizeof(ssid));
-    } else {
-        pico_unique_board_id_t id;
-        pico_get_unique_board_id(&id);
-        snprintf(ssid, sizeof(ssid), "PicoBoot-%02X%02X",
-                 id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
-    }
-
-    page_info_t page = {.report = &report, .ssid = ssid, .settings = &settings, .settings_stored = settings_stored};
+    static page_info_t page;
+    page.report = &report;
+    page.boot_number = boot_number;
     page.qmi_rcmd = qmi_hw->m[0].rcmd;
     page.qmi_rfmt = qmi_hw->m[0].rfmt;
     page.qmi_timing = qmi_hw->m[0].timing;
@@ -177,21 +167,23 @@ static void run_wifi(uint64_t t_start) {
     TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
     if (page.wifi_area >= 0) {
         const uint64_t t_init = time_us_64();
-        const int err = cyw43_arch_init_with_country(CYW43_COUNTRY(settings.country[0], settings.country[1], 0));
+        const int err = cyw43_arch_init_with_country(wifi_country());
         page.cyw43_init_ms = (uint32_t)((time_us_64() - t_init) / 1000);
-        TRACE("cyw43_arch_init_with_country(%s): %d\n", settings.country, err);
+        TRACE("cyw43_arch_init_with_country(%s): %d\n", wifi_settings()->country, err);
         if (err == 0) {
             const uint64_t t_net = time_us_64();
-            const bool up = net_start(ssid, settings.password, settings.channel, page_render, page_action);
+            const bool up = wifi_start(page_render, page_action, api_handle);
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
-            TRACE("net_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", ssid, settings.channel);
+            TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
             if (up) {
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
                 page_init(&page);
+                api_init(&page);
                 cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
                 TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
                 while (true) {
                     net_poll();
+                    wifi_poll();
                 }
             }
         }
@@ -240,7 +232,11 @@ int main(void) {
     const uint64_t t_end = time_us_64();
     const bool logged = storage_bootlog_append(&report);
     TRACE("boot log append: %s\n", logged ? "ok" : "FAILED");
-    (void)logged;
+    uint32_t boot_number = 0;
+    if (logged) {
+        boot_report_t newest;
+        storage_bootlog_read(&newest, &boot_number, 1);
+    }
 
-    run_wifi(t_end);
+    run_wifi(t_end, boot_number);
 }

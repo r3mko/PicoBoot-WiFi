@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.3; draft v1.4 (D40) for approval at the end of phase 2 |
+| **Status** | Approved v1.3; draft v1.4 (D40, D41) for approval at the end of phase 2 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -17,7 +17,7 @@
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
 | v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
 | v1.3 | 2026-11-08 | Approved by the owner at the end of phase 1. During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
-| v1.4 draft | 2026-11-08 | Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. |
+| v1.4 draft | 2026-11-08 | Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. |
 
 ## How to read the decisions
 
@@ -71,6 +71,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D38 | Wiring | Decision | README recommends 5 V to VSYS; 3V3 stays supported |
 | D39 | Boot log | Decision | Up to the last 32 boot reports in the loader region's upper 8K |
 | D40 | Settings | Decision | Their values and defaults: channel 6 (1–11), Tx power in named levels (medium), country worldwide |
+| D41 | Settings changes | Decision | At once; Wi-Fi changes restart the AP and stay on trial until a client joins; the password is write-only |
 
 ## 1. Goal and scope
 
@@ -404,6 +405,16 @@ Home Wi-Fi (D21) is left out of the first release.
 - **Only 1–11:** the Americas don't allow 12 and 13, and a channel the country doesn't allow could keep the AP from starting.
 - **Named Tx power levels:** the owner's choice, easier to pick on a phone than a dBm number. The default is below the maximum, since phase 0 found plenty of range.
 - **A stored value that isn't allowed** falls back on its own default, and the other settings stay. The firmware checks every value before it stores one, so this only guards against bugs.
+
+**D41 (Decision): how a settings change takes effect.**
+- **At once, without a reboot.**
+  - Tx power, LED and auto-off apply straight away.
+  - A change to the SSID, password, channel or country restarts only the access point, about a second after the answer: the firmware keeps running, and the console is untouched. Phones drop off and join again.
+- **Wi-Fi changes are on trial** until a client reaches the web server through the restarted access point. Phones' captive-portal probes do that by themselves when they join.
+  - Then the change is kept.
+  - If the firmware starts again before that, the previous Wi-Fi settings return, and the status says so.
+  - **Why:** the Pico sits inside the console. Without the trial, a mistyped password means opening the console for a USB install (D19). With it, power-cycling the console is enough.
+- **The password is write-only:** the API says only whether it is still the default (for the D19 banner).
 
 ## 9. Releases, install and tools
 

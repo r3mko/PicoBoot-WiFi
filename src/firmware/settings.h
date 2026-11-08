@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-// Settings (design D22, D40): Wi-Fi and user settings, stored as a record (records.h) in the
+// Settings (design D22, D40, D41): Wi-Fi and user settings, stored as a record (records.h) in the
 // settings area. A USB install blanks the area, which means the defaults (D19: the way back from
 // a forgotten password).
 //
@@ -13,9 +13,10 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include "json.h"
 
 #define SETTINGS_MAGIC              0x54544553u     // "SETT"
-#define SETTINGS_VERSION            1
+#define SETTINGS_VERSION            2               // 2: settings_record_t with the D41 trial
 
 #define SETTINGS_SSID_MAX           32              // 802.11
 #define SETTINGS_PASSWORD_MIN       8               // A WPA2 passphrase
@@ -51,6 +52,26 @@ _Static_assert(sizeof(settings_t) == 128, "settings_t is stored in flash: its si
 
 extern const settings_t SETTINGS_DEFAULT;
 
+// What the settings area holds: the settings, and during a D41 trial the ones to go back to
+typedef struct {
+    settings_t current;                         // In use
+    settings_t previous;                        // While on trial: the last confirmed settings
+    uint8_t trial;                              // 1: current has Wi-Fi changes no client has confirmed
+    uint8_t reserved[15];
+} settings_record_t;
+
+_Static_assert(sizeof(settings_record_t) == 272, "settings_record_t is stored in flash");
+
+// The record when the area is empty
+extern const settings_record_t SETTINGS_RECORD_DEFAULT;
+
+// Tx power level names, as in the API
+extern const char *const SETTINGS_TX_NAMES[SETTINGS_TX_LEVELS];
+
+// The allowed auto-off values, as the API lists them
+#define SETTINGS_AUTO_OFF_CHOICES   5
+extern const uint8_t SETTINGS_AUTO_OFF_MINUTES[SETTINGS_AUTO_OFF_CHOICES];
+
 // The countries the CYW43 firmware knows (cyw43_country.h), two letters each, "XX" first
 extern const char SETTINGS_COUNTRIES[];
 
@@ -68,3 +89,33 @@ bool settings_sanitize(settings_t *s);
 
 // The banner until the password is changed (D19)
 bool settings_default_password(const settings_t *s);
+
+// --- The D41 trial: pure functions on the record; the caller stores it when they return true ------
+
+// The SSID, password, channel or country differ: the access point has to restart
+bool settings_wifi_differs(const settings_t *a, const settings_t *b);
+
+// At start-up: a Wi-Fi change no client confirmed is undone
+bool settings_record_start(settings_record_t *r);
+
+// A change to `next` (already checked). Wi-Fi changes go on trial, keeping the last confirmed
+// settings to go back to. Returns true if the record changed; *restart tells if the AP restarts.
+bool settings_record_change(settings_record_t *r, const settings_t *next, bool *restart);
+
+// A client came through the restarted access point: the trial ends, the change is kept
+bool settings_record_confirm(settings_record_t *r);
+
+// Puts the default in place of every value that isn't allowed, in both settings and the trial flag;
+// returns true if nothing had to change
+bool settings_record_sanitize(settings_record_t *r);
+
+// --- POST /api/settings (docs/api.md) ------------------------------------------------------------
+
+typedef enum {
+    SETTINGS_SET_OK,
+    SETTINGS_SET_UNKNOWN_FIELD,
+    SETTINGS_SET_BAD_VALUE,
+} settings_set_t;
+
+// Sets one member of the body on *s. On SETTINGS_SET_BAD_VALUE, *message says what is allowed.
+settings_set_t settings_set_member(settings_t *s, const char *key, const json_value_t *v, const char **message);

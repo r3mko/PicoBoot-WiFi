@@ -93,3 +93,23 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 **Fix (`ddcca92`):** the test mode now leaves the pad exactly as reset left it. Part D is to be repeated with that build; CS should then read low at "PIO ready".
 
 **Side finding for D36:** on A2 chips, any code that switches CS from the pull-up to the pull-down doesn't get a pull-down. The D36 pull-up itself is unaffected: "the pad pull-up still works" (datasheet).
+
+### Part D: glitch check, batch 1 (2026-11-08)
+
+**Setup:**
+- Build `023c430`: the test mode leaves CS as reset left it.
+- Swiss r2119 from payload 1.
+- Boot 55 ran in the normal pull-up mode; boots 56–74 (19 boots) ran in the pull-down test mode.
+
+| | Result |
+|---|---|
+| CS at "PIO ready" in test mode | **low** on all 19 boots, as with PicoBoot (phase 0), so the test is faithful now |
+| Boots | **19/19** good from the Pico's side (injection complete) |
+| **Boot 68** | **GLITCH survived:** first raw CS 37.1 ms after PIO ready, raw 1545 / clocked 1544, injection complete |
+| Other boots | margin 161.3–163.4 ms, 1544/1544 |
+| Boot 54 | USB-powered with the console off: CS held low by the unpowered console, no CS. Harmless |
+
+**Finding:**
+- With PicoBoot's pad setting, the false CS edge at power-up happened again (boot 68: 37.1 ms; phase 0: 42.0 and 44.2 ms).
+- The clock-qualified skip count (D36) didn't count it: the injection started at the real 225th transfer and completed. In phase 0 the same event gave a blue screen.
+- *Console side to confirm with the owner: Swiss started on boot 68.*

@@ -8,8 +8,9 @@
 - **Why it breaks the boot:** `on_transfer` counts that edge as one of the 224 skipped transfers, so the payload goes out one transfer early and the console crashes.
 - **Two independent fixes:**
   1. Pull CS **up** instead of leaving the pads' reset pull-down.
-  2. In `on_transfer`'s skip loop, count a skipped transfer only once CLK clocks in it.
+  2. In `on_transfer`'s skip loop, count a skipped transfer only once CLK clocks in it while CS is still low.
 - **Status:** both were measured or simulated in PicoBoot-WiFi; details below. Neither is in PicoBoot-DX yet. It's up to the owner whether and how to take them.
+- **Revision 2026-11-08:** fix 2 now also checks that CS is still low when CLK rises, after a code review found a case the first version missed.
 
 ## 1. The evidence
 
@@ -63,64 +64,89 @@
 - **Other pins:** leave CLK and DATA as they are. CLK idles low anyway, and DATA is only driven during the injection.
 - **Side effect, a good one:** the real IPL chip (U10) stays deselected while the console powers up.
 
-## 4. Fix 2: count a skipped transfer only once it clocks
+## 4. Fix 2: count a skipped transfer only once it clocks, while CS is low
 
-**`src/picoboot-dx.pio`, `on_transfer`.** The jump of the skip loop goes through a new `skipped` block that waits for CLK before the next CS edge can count. The 225th transfer's path is unchanged.
+**`src/picoboot-dx.pio`, `on_transfer`:** among the 224 skipped transfers, a CS falling edge only counts if CLK then rises **while CS is still low**. The 225th transfer's path (X = 0) is checked first and raises the IRQ at once, as now.
 
 ```diff
  start:
      wait 1 gpio CS_PIN          ; Wait for CS to go HIGH
      wait 0 gpio CS_PIN          ; Wait for CS to go LOW
 -    jmp x-- start               ; Skip 224 CS pulses (X = 224), continue on the 225th
-+    jmp x-- skipped             ; Skip 224 CS pulses (X = 224), continue on the 225th
-     irq set 0                   ; Set IRQ flag to start injecting payload
+-    irq set 0                   ; Set IRQ flag to start injecting payload
++    jmp !x inject               ; 224 transfers skipped (X = 0): this is the 225th, inject now
++    wait 1 gpio CLK_PIN         ; A skipped transfer only counts once it clocks...
++    jmp pin start               ; ...while CS is still low (JMP_PIN = CS): a CS glitch doesn't count
++    jmp x-- start               ; Count the skipped transfer (X > 0 here, so this always jumps)
++inject:
++    irq set 0                   ; Set IRQ flag to start injecting payload
  
  .wrap_target
      wait 1 gpio CS_PIN          ; Wait for CS to go HIGH
-     wait 0 gpio CS_PIN          ; Wait for CS to go LOW
-     irq set 0                   ; Let other SM inject the payload
- .wrap
-+
-+skipped:
-+    wait 1 gpio CLK_PIN         ; A skipped transfer only counts once it clocks: a CS glitch
-+    jmp start                   ; without clocks merges with the next real transfer
 ```
 
-**Why it works:**
-- **A false edge** decrements X once. Then `wait 1 gpio CLK_PIN` holds until the next *real* transfer clocks, and `jmp start` waits for that transfer's CS to go high. The false edge and that real transfer together count once, so the 225th real transfer still raises the IRQ.
-- **Without a glitch,** each skipped transfer decrements X at its CS edge and then passes its first clock. That's the same count as now.
-- **The 225th transfer** (X = 0) falls through to `irq set 0` without waiting for CLK, so `clocked_output` still sees every address clock. `pio_prepare_transfer(..., 224, pio_x)` stays as it is.
+**`src/pio.c`, `on_transfer_program_init()`:** set the jump pin to CS, before `pio_sm_init()`:
 
-**Assembled:** with `pioasm` (SDK 2.3.1), `on_transfer` becomes 9 instructions instead of 7. Check that the W builds' CYW43 PIO program still fits next to it; if not, it moves to another PIO block.
+```c
+    // JMP PIN reads CS: a skipped transfer only counts if CLK rises while CS is still low
+    sm_config_set_jmp_pin(&c, cs_pin);
+```
 
-**Verified in PicoBoot-DX's own simulator** (`tests/pio_sim.py`, unchanged; one-off script in PicoBoot-WiFi):
+**How it works:**
+- **A real skipped transfer:** CS falls, CLK rises with CS still low, and X is decremented. That's the same count as v0.10.
+- **A CS glitch** (low, then high again without clocks): the program waits at `wait 1 gpio CLK_PIN`.
+  - If the next CLK rise comes from the next real transfer, CS is low, and the glitch and that transfer count once together.
+  - If CLK rises while CS is high (another EXI device on the shared clock, or a transient), `jmp pin` sees CS high, nothing is counted, and the program waits for CS again.
+- **The 225th transfer:** `jmp !x inject` raises the IRQ at its CS edge, without waiting for CLK. So `clocked_output` still sees every address clock.
+- **No C constant changes:** `pio_prepare_transfer(..., 224, pio_x)` stays as it is.
 
-| Case | v0.10 | With the fix |
-|---|---|---|
-| 3 transfers, no glitch | ok | ok, **bit-identical** to v0.10 |
-| Built-in gekkoboot (60 transfers), no glitch | ok | ok, **bit-identical** to v0.10 |
-| Glitch (CS low 2 cycles, no clocks) before the first transfer | broken ("data line driven during transfer 223") | ok |
-| Glitch between skipped transfers 0 and 1 | broken | ok |
-| Glitch between skipped transfers 100 and 101 | broken | ok |
+**Why not just a CLK wait:** an earlier version of this note had only the CLK wait (`jmp x-- skipped` / `skipped: wait 1 gpio CLK_PIN; jmp start`). A code review found the flaw: a glitch followed by a CLK pulse while CS is high still counted as a transfer. The simulator confirms it (last row below).
+
+**Assembled** with `pioasm` (SDK 2.3.1): `on_transfer` becomes 10 instructions instead of 7. Check that the W builds' CYW43 PIO program still fits next to it in `pio0`; if not, it goes to another PIO block.
+
+**Verified in PicoBoot-DX's simulator** (`tests/pio_sim.py`, with `JMP !X` and `JMP PIN` added, see §5; one-off script in PicoBoot-WiFi):
+
+| Case | v0.10 | CLK wait only | **This fix** |
+|---|---|---|---|
+| No glitch, 3 transfers | ok | ok | ok, **identical** to v0.10 |
+| No glitch, built-in gekkoboot (60 transfers) | ok | ok | ok, **identical** to v0.10 |
+| CS glitch (low 2 cycles, no clocks) before the first transfer | broken ("data line driven during transfer 223") | ok | **ok** |
+| CS glitch between skipped transfers 100 and 101 | broken | ok | **ok** |
+| CLK pulse while CS is high, no glitch | ok | ok | **ok** |
+| CS glitch, then a CLK pulse while CS is high | broken | **broken** | **ok** |
 
 **Known limit:** a glitch between the 224th and 225th transfer would still start the injection one transfer early. That's the X = 0 path, which deliberately doesn't wait for CLK. The glitches seen came about 120 ms before the console starts reading the IPL.
 
 ## 5. Tests to add in PicoBoot-DX
 
-**In `tests/test_pio_programs.py`:**
-1. **A glitch option for `simulate()`:** add a CS low pulse without clocks to the console, either before the first transfer or a few cycles after a transfer's CS rise.
+1. **`tests/pio_sim.py`:** add the two JMP conditions the fix uses (RP2040 datasheet p.322: `001` = `!X`, `110` = `PIN`), and a `jmp_pin` setting for a state machine.
    ```python
-   def add_cs_glitch(console, start, width=2):
-       """CS low for `width` cycles without clocks, at `start` (must fall while CS is high)."""
-       times, levels = console._times[console.cs_pin], console._levels[console.cs_pin]
-       k = next(i for i, t in enumerate(times) if t > start)
-       assert levels[k - 1] == 1 and times[k] > start + width
-       times[k:k] = [start, start + width]
-       levels[k:k] = [0, 1]
+   JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b110, 0b111
+   # decode(): accept JMP_X_ZERO and JMP_PIN as well
+   # StateMachine.__init__(..., jmp_pin=None): self.jmp_pin = jmp_pin   (EXECCTRL.JMP_PIN)
+   # _execute(), JMP:
+   #     elif a == JMP_X_ZERO: taken = self.x == 0
+   #     elif a == JMP_PIN:    taken = pio.synced_input(self.jmp_pin, t) == 1
    ```
-   Before the first transfer, use `start=4`; the first transfer starts at t = 16. Between transfers, use `start=console.cs_rises[n] + 5`.
-2. **Positive tests:** with a glitch before the first transfer, and between skipped transfers, `delivery_problems()` is empty.
-3. **Negative test,** in the style of `NegativeTest`: patch `jmp x-- skipped` back to `jmp x-- start` (the v0.10 program) and check that the glitch case reports a shifted payload. This shows the test can catch the bug.
+   Add unit tests for both conditions in `tests/test_pio_sim.py`.
+2. **`tests/test_pio_programs.py`, `simulate()`:**
+   - Configure `on_transfer` with `jmp_pin=CS_PIN`, mirroring `sm_config_set_jmp_pin()`.
+   - Add an option for extra pulses on the simulated console: a CS low pulse without clocks, and a CLK high pulse while CS is high, either before the first transfer (`start=4`; the first transfer starts at t = 16) or a few cycles after a transfer's CS rise (`console.cs_rises[n] + 3`).
+   ```python
+   def add_pulse(console, pin, start, width=2, level=0):
+       """Drive `pin` to `level` for `width` cycles at `start` (it must be at the other level then)."""
+       times, levels = console._times[pin], console._levels[pin]
+       k = next(i for i, t in enumerate(times) if t > start)
+       assert levels[k - 1] != level and times[k] > start + width
+       times[k:k] = [start, start + width]
+       levels[k:k] = [level, 1 - level]
+   ```
+3. **Positive tests:** every row of the table in §4 delivers the payload with `delivery_problems()` empty.
+4. **Negative tests,** in the style of `NegativeTest`:
+   - with v0.10's `on_transfer` (`jmp x-- start` and no CLK check), the glitch cases report a shifted payload;
+   - with the CLK wait but without `jmp pin`, the last row does.
+
+   This shows the tests catch both mistakes.
 
 **Fix 1 is a C change,** so the simulator can't test it. It needs a hardware check.
 

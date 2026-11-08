@@ -7,10 +7,17 @@ set(FIRMWARE_SOURCES
     injection_pio.c
     payload.c
     counters.c
+    wifiblob.c
+    net.c
+    page.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
 )
 
-add_executable(firmware ${FIRMWARE_SOURCES})
+add_executable(firmware
+    ${FIRMWARE_SOURCES}
+    net/dhcpserver/dhcpserver.c
+    net/dnsserver/dnsserver.c
+)
 
 # Extra warnings for our own sources only (the SDK sources are compiled into the same target)
 set_source_files_properties(${FIRMWARE_SOURCES} PROPERTIES
@@ -36,14 +43,44 @@ add_dependencies(firmware firmware_ipl)
 
 target_include_directories(firmware PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/net
+    ${CMAKE_CURRENT_LIST_DIR}/net/dhcpserver
+    ${CMAKE_CURRENT_LIST_DIR}/net/dnsserver
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(firmware PRIVATE
     pico_stdlib
+    pico_unique_id
+    pico_bootrom
+    boot_picoboot_headers
     hardware_pio
     hardware_dma
+    hardware_adc
+    pico_cyw43_arch_lwip_poll
 )
+
+# The CYW43 blob isn't compiled in: the driver reads it from Wi-Fi area A or B (design D14),
+# through the same include-file hook as the SDK's partition variant
+target_compile_definitions(firmware PRIVATE
+    CYW43_CHIPSET_FIRMWARE_INCLUDE_FILE="cyw43_fixed_firmware.h"
+)
+
+# The access point is at 192.168.4.1
+pico_configure_ip4_address(firmware PRIVATE
+    CYW43_DEFAULT_IP_AP_ADDRESS 192.168.4.1
+)
+
+# The Wi-Fi area image: the SDK's Wi-Fi-only CYW43439 blob behind our header (tools/mkwifiblob.py)
+set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+set(WIFI_BLOB_BIN ${CMAKE_BINARY_DIR}/wifi-blob.bin)
+add_custom_command(
+    OUTPUT ${WIFI_BLOB_BIN}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${WIFI_BLOB_BIN}
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${CMAKE_SOURCE_DIR}/src/common/layout.h
+    COMMENT "Building the Wi-Fi area image"
+)
+add_custom_target(wifi_blob ALL DEPENDS ${WIFI_BLOB_BIN})
 
 pico_add_linker_script_override_path(firmware ${CMAKE_BINARY_DIR}/linker/firmware FILES memory_extra.incl)
 

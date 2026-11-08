@@ -7,10 +7,13 @@
 // The firmware, started by the loader from slot A or B (design D7).
 //
 // At a power-on it injects the chosen payload, measured into the boot report (D31); after a warm
-// reboot it doesn't (D8). Step 1.8 adds Wi-Fi with the report page, started after the injection (D9).
+// reboot it doesn't (D8). Then it starts Wi-Fi with the report page (D9, D32).
 
+#include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/platform.h"
+#include "pico/cyw43_arch.h"
+#include "pico/unique_id.h"
 #include "hardware/gpio.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
@@ -23,6 +26,9 @@
 #include "injection.h"
 #include "counters.h"
 #include "report.h"
+#include "wifiblob.h"
+#include "net.h"
+#include "page.h"
 
 // The rest of flash is read through the untranslated XIP window: the loader maps only this
 // firmware's slot at XIP_BASE (boot ROM research §4)
@@ -32,6 +38,8 @@
 
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
+
+static const char *AP_PASSWORD = "picoboot";        // Design D30: documented default
 
 static boot_report_t report;
 static uint64_t t_main;
@@ -120,6 +128,32 @@ static void inject(const injection_payload_t *payload) {
     injection_finish();
 }
 
+// The access point with the report page, after the injection (design D9). Doesn't return.
+static void run_wifi(uint64_t t_start) {
+    // SSID from the last four hex digits of the chip's unique ID (design D30)
+    static char ssid[16];
+    pico_unique_board_id_t id;
+    pico_get_unique_board_id(&id);
+    snprintf(ssid, sizeof(ssid), "PicoBoot-%02X%02X",
+             id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
+
+    page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
+    page.wifi_area = wifiblob_select(report.slot);
+    if (page.wifi_area >= 0 && cyw43_arch_init() == 0 && net_start(ssid, AP_PASSWORD, page_render)) {
+        page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
+        page_init(&page);
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+        while (true) {
+            net_poll();
+        }
+    }
+
+    // No Wi-Fi blob, or Wi-Fi failed to start: idle, as PicoBoot-DX does
+    while (true) {
+        tight_loop_contents();
+    }
+}
+
 int main(void) {
     t_main = time_us_64();
     read_boot_info();
@@ -134,8 +168,5 @@ int main(void) {
     report.chip_version = rp2350_chip_version();
     report.rom_version = rp2350_rom_version();
 
-    // Idle
-    while (true) {
-        tight_loop_contents();
-    }
+    run_wifi(time_us_64());
 }

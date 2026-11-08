@@ -1,0 +1,54 @@
+/**
+ * Copyright (c) 2026 Remko Kleinjan
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
+// lwIP options for the firmware (from the phase 0 measurement build): an access point with a raw-API
+// TCP server, polled from the main loop (pico_cyw43_arch_lwip_poll). Based on
+// pico-examples' lwipopts_examples_common.h, without the DNS client.
+// See https://www.nongnu.org/lwip/2_1_x/group__lwip__opts.html
+
+#ifndef _LWIPOPTS_H
+#define _LWIPOPTS_H
+
+#define NO_SYS                      1
+#define LWIP_SOCKET                 0
+#define LWIP_NETCONN                0
+#define MEM_LIBC_MALLOC             1       // Fine in poll mode
+#define MEM_ALIGNMENT               4
+#define MEM_SIZE                    4000
+#define MEMP_NUM_TCP_SEG            32
+#define MEMP_NUM_ARP_QUEUE          10
+#define MEMP_NUM_TCP_PCB            8
+#define PBUF_POOL_SIZE              24
+#define LWIP_ARP                    1
+#define LWIP_ETHERNET               1
+#define LWIP_ICMP                   1
+#define LWIP_RAW                    0
+#define LWIP_IPV4                   1
+#define LWIP_TCP                    1
+#define LWIP_UDP                    1       // DHCP and DNS servers
+// Needed although we are the DHCP server, not a client: it also sets
+// IP_ACCEPT_LINK_LAYER_ADDRESSING, without which lwIP drops packets from 0.0.0.0 (ip4.c),
+// and every DHCP DISCOVER comes from 0.0.0.0.
+#define LWIP_DHCP                   1
+#define LWIP_DNS                    0
+#define TCP_MSS                     1460
+#define TCP_WND                     (8 * TCP_MSS)
+#define TCP_SND_BUF                 (8 * TCP_MSS)
+#define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
+#define LWIP_TCP_KEEPALIVE          0
+#define LWIP_NETIF_STATUS_CALLBACK  1
+#define LWIP_NETIF_LINK_CALLBACK    1
+#define LWIP_NETIF_HOSTNAME         1
+#define LWIP_NETIF_TX_SINGLE_PBUF   1
+#define LWIP_CHKSUM_ALGORITHM       3
+#define DHCP_DOES_ARP_CHECK         0
+#define LWIP_DHCP_DOES_ACD_CHECK    0
+#define MEM_STATS                   0
+#define SYS_STATS                   0
+#define MEMP_STATS                  0
+#define LINK_STATS                  0
+
+#endif

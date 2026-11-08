@@ -42,4 +42,21 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 
 ## 1.10 Console tests
 
-*To do.*
+**Setup:**
+- DOL-001 with SD2SP2 and HDMI adapter; Pico fed through 3V3 as in phase 0.
+- Build `1a70573`: the loader chains slot A.
+
+### Part A: cold boots (2026-11-08)
+
+| | Phase 0 (PicoBoot-DX, booted by the ROM) | Phase 1 (loader → slot A) |
+|---|---|---|
+| Swiss r2119, 10 boots | margin 164.0–166.6 ms, mean 165.5 ms | **10/10**, margin 161.5–163.6 ms, **mean 162.9 ms**; CS 1544/1544 |
+| gekkoboot, 10 boots | margin 165.8–167.3 ms, mean 166.8 ms | **10/10**, margin 159.7–163.0 ms, **mean 162.1 ms**; CS 285/285 |
+| `main()` → PIO ready | ~300 µs | 312 µs |
+| Injection time (gekkoboot) | 19 ms | 19 ms |
+
+**Findings:**
+
+1. **The loader path costs about 3–5 ms** of margin: 2.6 ms for Swiss, 4.7 ms for gekkoboot. Phase 0's own series varied by about 2 ms from day to day. More than 158 ms of margin remains (design D10).
+2. **Swiss injects completely through the uncached flash window,** with the quad XIP setup at 83 MHz.
+3. **No glitches with the CS pull-up:** raw = clocked on all 20 boots.

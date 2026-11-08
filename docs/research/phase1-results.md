@@ -75,3 +75,21 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 | RP2350 temperature reading | 21.5 °C (reads low on this console's rail, see phase 0 §0.5) |
 
 **Finding:** no warm-board effect, as in phase 0. As in phase 0, the board didn't get very warm in this console.
+
+### Part C: warm reboot during a game (2026-11-08)
+
+*Reboot (watchdog)* while a Swiss game ran: boot 33 was logged as "warm (not run)", so no injection; the game kept running. Design D8 holds with the loader, as in phase 0.
+
+### Part D: glitch check, first try (2026-11-08): not a valid test
+
+**Setup:** the pull-down test mode, boots 34–53 (20 boots).
+
+**Result:** 20/20 good, raw = clocked. But CS read **high** at "PIO ready" on every boot, where PicoBoot's setting reads low (phase 0, every boot). So the glitch condition never occurred.
+
+**Cause:** the test mode first set the pull-up, as normal, and then switched to the pull-down.
+- On this RP2350 A2, erratum RP2350-E9 then holds the released pin at about 2.2 V, which reads high: with the input enabled, a pin passing through the undefined range picks up a leakage current the pull-down can't overcome.
+- PicoBoot never touches the pulls. Its CS stays pulled down from reset, and its input is enabled while the pin is already low, which E9 doesn't disturb.
+
+**Fix (`ddcca92`):** the test mode now leaves the pad exactly as reset left it. Part D is to be repeated with that build; CS should then read low at "PIO ready".
+
+**Side finding for D36:** on A2 chips, any code that switches CS from the pull-up to the pull-down doesn't get a pull-down. The D36 pull-up itself is unaffected: "the pad pull-up still works" (datasheet).

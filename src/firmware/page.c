@@ -172,6 +172,10 @@ static void put_settings(out_t *o, const char *label, const settings_t *s, bool 
     put(o, "  %-19s: channel %u, country %s, Tx power %s, Wi-Fi off after %s, LED %s%s\n", label,
         s->channel, s->country, SETTINGS_TX_NAMES[s->tx_power], off, s->led ? "on" : "off",
         stored ? "" : " (settings empty: defaults)");
+    const int q = wifi_tx_power_qdbm();
+    if (q >= 0) {
+        put(o, "  Tx power (chip)    : %d.%02d dBm, as the CYW43 reports it\n", q / 4, q % 4 * 25);
+    }
 }
 
 size_t page_render(char *buf, size_t size) {

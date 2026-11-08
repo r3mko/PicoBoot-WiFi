@@ -34,6 +34,7 @@
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/structs/qmi.h"
+#include "hardware/sync.h"
 
 // The rest of flash is read through the untranslated XIP window: the loader maps only this
 // firmware's slot at XIP_BASE (boot ROM research §4)
@@ -79,6 +80,7 @@ static void read_boot_info(void) {
 // The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid
 static injection_payload_t choose_payload(const bootctl_t *b) {
     injection_payload_t payload = {0};
+    report.payload_chosen = b->active_payload;
     if (b->active_payload == BOOTCTL_PAYLOAD_1) {
         payload = (injection_payload_t){PAYLOAD1, payload_check(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE), true};
         report.payload = PAYLOAD_SOURCE_PAYLOAD1;
@@ -172,10 +174,13 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
         TRACE("cyw43_arch_init_with_country(%s): %d\n", wifi_settings()->country, err);
         if (err == 0) {
             const uint64_t t_net = time_us_64();
+            // The LED after the injection (design D26)
+            const wifi_led_t led = report.result == INJECTION_COMPLETE ? WIFI_LED_DONE :
+                                   report.result == INJECTION_STALLED ? WIFI_LED_STALLED : WIFI_LED_STEADY;
 #if PICOBOOT_WIFI_TEST_BUILD
-            const bool up = wifi_start(page_render, page_action, api_handle);   // With the test page
+            const bool up = wifi_start(page_render, page_action, api_handle, led);    // With the test page
 #else
-            const bool up = wifi_start(NULL, NULL, api_handle);
+            const bool up = wifi_start(NULL, NULL, api_handle, led);
 #endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
@@ -183,23 +188,23 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
                 page_init(&page);
                 api_init(&page);
-                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
                 TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
-                while (true) {
+                do {
                     net_poll();
-                    wifi_poll();
-                }
+                } while (wifi_poll());
+                TRACE("Wi-Fi off: no client for %u minutes (design D20)\n", wifi_settings()->auto_off_minutes);
             }
         }
     }
 
-    // No Wi-Fi blob, or Wi-Fi failed to start: idle, as PicoBoot-DX does
+    // Wi-Fi is off (D20), or there's no Wi-Fi blob, or Wi-Fi failed to start: idle until the next
+    // power-on, sleeping between interrupts to draw less from the console's rail
     while (true) {
 #if PICOBOOT_WIFI_USB_TRACE
-        TRACE("idle: Wi-Fi didn't start\n");
+        TRACE("idle: Wi-Fi is off\n");
         sleep_ms(5000);
 #else
-        tight_loop_contents();
+        __wfi();
 #endif
     }
 }
@@ -215,6 +220,7 @@ int main(void) {
           report.from_loader, report.power_on, report.slot == BOOTCTL_SLOT_B ? 'B' : 'A', report.fallback,
           report.bootctl_default, (unsigned long)report.chip_reset);
 
+    report.payload_chosen = BOOTCTL_NONE;
     if (report.power_on) {
         bootctl_t bootctl;
         storage_bootctl_load(&bootctl);

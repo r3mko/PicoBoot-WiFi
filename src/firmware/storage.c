@@ -16,7 +16,7 @@
 _Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, "ringlog_read() reads the whole log");
 
 #define BOOTLOG_MAGIC   0x31474C42u     // "BLG1"
-#define BOOTLOG_VERSION 1               // Bump when boot_report_t changes
+#define BOOTLOG_VERSION 2               // Bump when boot_report_t changes (2: payload_chosen)
 
 // Read through the untranslated, uncached XIP window: the loader maps only this firmware's slot at
 // XIP_BASE, and the cache mustn't hide what was just programmed

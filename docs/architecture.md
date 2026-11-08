@@ -17,7 +17,7 @@
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
 | v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
 | v1.3 | 2026-11-08 | Approved by the owner at the end of phase 1. During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
-| v1.4 draft | 2026-11-08 | Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. |
+| v1.4 draft | 2026-11-08 | Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
 
 ## How to read the decisions
 
@@ -397,7 +397,7 @@ Home Wi-Fi (D21) is left out of the first release.
 | Password | 8–63 printable ASCII characters (a WPA2 passphrase) | `picoboot` (D30) |
 | Country | worldwide, or one of the 51 countries the CYW43 driver lists | worldwide |
 | Channel | 1–11 | 6 |
-| Tx power | low, medium, high, max; step 2.6 sets their dBm values | medium |
+| Tx power | low 5 dBm, medium 10 dBm, high 15 dBm, max (the chip's own limit); the owner's choice in step 2.6 | medium |
 | Wi-Fi off after | 2, 5, 10 or 30 minutes, or never (D20) | 10 minutes |
 | LED | on, off (D26) | on |
 
@@ -449,7 +449,7 @@ Home Wi-Fi (D21) is left out of the first release.
 - **During the injection:** dark (D9).
 - **After it:**
   - three slow blinks if it completed (as in PicoBoot-DX);
-  - fast blinks if it stalled;
+  - fast blinks if it stalled, for as long as Wi-Fi is on (the owner's choice in phase 2; PicoBoot-DX also keeps blinking after a stall);
   - on while the AP is up, off when Wi-Fi is off.
 - **Setting:** LED off.
 

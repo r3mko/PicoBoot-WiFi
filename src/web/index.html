@@ -214,7 +214,10 @@ async function loadDiag() {
     row("Boot", "#" + esc(b.boot) + (b.power_on ? ", power-on (injects)" : ", warm boot"), esc(RESETS[b.reset] || b.reset)) +
     row("Loader", "slot " + esc(b.slot) + (b.from_loader ? "" : " (not started by the loader)"),
       [b.fallback ? "fallback: the first choice held no image" : "", b.bootctl_default ? "boot control empty: defaults" : ""].filter(Boolean).join("; ")) +
-    row("Payload", esc(PAYLOADS[b.payload] || b.payload), b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : "") +
+    row("Payload", esc(PAYLOADS[b.payload] || b.payload), [
+      b.payload_chosen && b.payload_chosen !== "none" && b.payload_chosen !== b.payload ?
+        esc(PAYLOADS[b.payload_chosen] || b.payload_chosen) + " isn't valid: the built-in one went instead" : "",
+      b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : ""].filter(Boolean).join("; ")) +
     row("Result", esc(RESULTS[b.result] || b.result)) +
     row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
     row("Margin", margin(b), "How long before the console's first read PicoBoot was ready") +

@@ -155,6 +155,7 @@ The last boot and the boot log (D22, D39).
 | `chip_reset` | POWMAN `CHIP_RESET` as read at start-up |
 | `from_loader`, `slot`, `fallback`, `bootctl_default` | The loader's decision: started by the loader, from slot `"A"` or `"B"`, because the first choice held no image, with boot control empty |
 | `payload` | `none`, `payload1`, `payload2` or `builtin` |
+| `payload_chosen` | Boot control's choice, in the same names; `none` without an injection. If it differs from `payload`, the chosen payload wasn't valid and the built-in one went instead |
 | `payload_words`, `words_delivered` | Words to send (256 per 1K transfer) and words sent |
 | `result` | `not_run` (warm boot), `no_cs` (no console), `complete` or `stalled` |
 | `main_to_ready_us` | `main()` to "PIO ready" |

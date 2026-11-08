@@ -48,6 +48,15 @@ static const char *payload_name(payload_source_t p) {
     }
 }
 
+static const char *chosen_name(uint8_t chosen) {
+    switch (chosen) {
+        case BOOTCTL_PAYLOAD_1: return "payload1";
+        case BOOTCTL_PAYLOAD_2: return "payload2";
+        case BOOTCTL_PAYLOAD_BUILTIN: return "builtin";
+        default: return "none";
+    }
+}
+
 static const char *result_name(injection_result_t r) {
     switch (r) {
         case INJECTION_NO_CS: return "no_cs";
@@ -160,6 +169,7 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "fallback", r->fallback);
     json_bool(j, "bootctl_default", r->bootctl_default);
     json_string(j, "payload", payload_name(r->payload));
+    json_string(j, "payload_chosen", chosen_name(r->payload_chosen));
     json_int(j, "payload_words", (long)r->payload_words);
     json_int(j, "words_delivered", (long)r->words_delivered);
     json_string(j, "result", result_name(r->result));

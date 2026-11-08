@@ -47,6 +47,20 @@ add_custom_command(
 add_custom_target(firmware_ipl DEPENDS ${IPL_H})
 add_dependencies(firmware firmware_ipl)
 
+# The web UI (src/web/), gzipped into lwIP httpd's built-in file table (fsdata_custom.c, which
+# lwIP's fs.c includes)
+set(WEB_DIR ${CMAKE_SOURCE_DIR}/src/web)
+set(FSDATA_C ${CMAKE_CURRENT_BINARY_DIR}/fsdata_custom.c)
+file(GLOB WEB_FILES CONFIGURE_DEPENDS ${WEB_DIR}/*)
+add_custom_command(
+    OUTPUT ${FSDATA_C}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkfsdata.py ${WEB_DIR} ${FSDATA_C}
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkfsdata.py ${WEB_FILES}
+    COMMENT "Generating fsdata_custom.c from src/web"
+)
+add_custom_target(firmware_fsdata DEPENDS ${FSDATA_C})
+add_dependencies(firmware firmware_fsdata)
+
 target_include_directories(firmware PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/net

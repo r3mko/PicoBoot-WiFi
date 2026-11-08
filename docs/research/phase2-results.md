@@ -35,3 +35,18 @@ Build `9312572`: the JSON API (`docs/api.md`) and the D41 settings trial, tried 
 | `POST /api/reboot` | **Passed:** `{"rebooting":true}` |
 
 **Steps 2.1–2.3 done:** settings survive reboots and power cycles; iPhone and Android open the page by themselves; the API answers as specified; a Wi-Fi change is kept once a client comes back and undone if none does.
+
+## Bench check of step 2.4 (2026-11-09, USB power, no console)
+
+Build `8616bc7`: the web UI (one page with Status, Diagnostics and Settings tabs, 6.4 KB gzipped), the test page at `/test`.
+
+| Check | Result |
+|---|---|
+| iPhone: the captive-portal pop-up shows the new UI; all three tabs work | **Passed** |
+| Android: the same through "Sign in to network" | **Passed** |
+| Password change in the UI: restart notice, rejoin with the new password, back to `picoboot` | **Passed** |
+| Reboot from the UI (inline confirm) | **Passed** |
+| Test page at `/test` | **Passed** |
+| Readable in the phone's dark mode | **Passed** |
+
+**Owner's finding:** the Diagnostics row "main() to PIO ready" isn't user friendly. Renamed "Start-up time" ("from the firmware's start until it can answer the console"); the Margin note no longer says "PIO ready" either.

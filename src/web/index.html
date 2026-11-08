@@ -216,8 +216,8 @@ async function loadDiag() {
       [b.fallback ? "fallback: the first choice held no image" : "", b.bootctl_default ? "boot control empty: defaults" : ""].filter(Boolean).join("; ")) +
     row("Payload", esc(PAYLOADS[b.payload] || b.payload), b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : "") +
     row("Result", esc(RESULTS[b.result] || b.result)) +
-    row("main() to PIO ready", us(b.main_to_ready_us)) +
-    row("Margin", margin(b), "PIO ready to the console's first transfer") +
+    row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
+    row("Margin", margin(b), "How long before the console's first read PicoBoot was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
     row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), glitch ? "Glitch ignored by the injection" : "") +
     (b.cs_pulldown_test ? row("CS pull-down test", "on") : "") +

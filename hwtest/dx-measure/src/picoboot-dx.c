@@ -52,6 +52,10 @@ static const uint64_t INJECTION_TIMEOUT_US = 10 * 1000 * 1000;  // Swiss (1.3 MB
 
 static const char *AP_PASSWORD = "picoboot";                    // phase 0: design D30
 
+// phase 0: design D8's session marker, in a POWMAN scratch register (cleared at power-on)
+#define SESSION_MARKER_SCRATCH 0
+#define SESSION_MARKER 0x50424F4Eu                              // "PBON"
+
 static int dma_chan;
 
 static bool dma_busy(void) {
@@ -198,12 +202,19 @@ int main(void) {
     cs_counter_init();
     cs_counter_start();
 
-    // phase 0: never inject after a reboot without a power reset (watchdog, BOOTSEL, debugger):
-    // the console may already be running (design C2). Brown-outs still inject, so a cold boot
-    // that shows up as BOR instead of POR is still measured; the log shows which it was.
-    const bool power_reset = rec.chip_reset & (POWMAN_CHIP_RESET_HAD_POR_BITS |
-                                               POWMAN_CHIP_RESET_HAD_BOR_BITS |
-                                               POWMAN_CHIP_RESET_HAD_RUN_LOW_BITS);
+    // phase 0: never inject after a warm reboot (watchdog, BOOTSEL, ROM reboot): the console
+    // may already be running (design C2). The design D8 rule: a power reset in CHIP_RESET *and*
+    // no session marker in POWMAN scratch, which survives warm reboots but not a power-on.
+    // Unlike D8, brown-outs still inject here, so a cold boot that shows up as BOR instead of
+    // POR is still measured; the log shows which it was.
+    const bool marker = powman_hw->scratch[SESSION_MARKER_SCRATCH] == SESSION_MARKER;
+    powman_hw->scratch[SESSION_MARKER_SCRATCH] = SESSION_MARKER;
+    if (marker) {
+        rec.flags |= BOOT_FLAG_MARKER;
+    }
+    const bool power_reset = !marker && (rec.chip_reset & (POWMAN_CHIP_RESET_HAD_POR_BITS |
+                                                           POWMAN_CHIP_RESET_HAD_BOR_BITS |
+                                                           POWMAN_CHIP_RESET_HAD_RUN_LOW_BITS));
     if (power_reset) {
         // Start PIO state machines
         pio_sm_set_enabled(pio, transfer_start_sm, true);

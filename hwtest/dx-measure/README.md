@@ -15,7 +15,7 @@ It's a test build, not a release. It doesn't touch the payload area, and install
 | Up to "PIO ready" | | The same code. Additions: two reset registers read, two flash reads (test switches), the counter set up in `pio1` (a few µs) |
 | Injection programs (`picoboot-dx.pio`) | | Byte-identical (checked by the tests) |
 | During the injection | Starts the CYW43 for the LED and blinks | Waits and measures; the CYW43 stays off (design D9) |
-| After a reboot without a power reset (watchdog, BOOTSEL) | Injects again | Doesn't inject (design C2); logs it as "skipped" |
+| After a warm reboot (watchdog, ROM reboot, BOOTSEL) | Injects again | Doesn't inject: design D8's rule, a power reset in CHIP_RESET *and* no session marker in POWMAN scratch. Logged as "skipped" |
 | After the injection | LED blinks, then idles | Logs the boot to flash, then starts the access point |
 
 ## Build and test
@@ -49,6 +49,7 @@ The firmware is `hwtest/dx-measure/build/dx-measure.uf2`.
      - *Upload* (Rx load);
      - *Next boots: built-in gekkoboot* / *flash payload*;
      - *Next boot: Wi-Fi 60 s late*;
+     - *Reboot (watchdog)* / *Reboot (ROM)*: warm reboots, to test the D8 rule;
      - *Clear boot log*.
 4. **LED** (only once Wi-Fi is up):
    - on: injection complete;
@@ -63,6 +64,7 @@ The firmware is `hwtest/dx-measure/build/dx-measure.uf2`.
 | **CS at the end** | Should be exactly 224 + transfers. Fewer means pulses were missed: the PIO started too late |
 | **Injection** | *complete* = all words delivered and the data line released. *STALLED* = it didn't finish within 10 s |
 | **Reset reason** | POR = power-on; BOR = brown-out; WDOG = watchdog/reboot. Whether a cold boot shows up as POR or BOR matters for design D8 |
+| **Session marker** | Set in a POWMAN scratch register at every boot. "Not set" means a power-on; "SET" means a warm reboot, even when CHIP_RESET still says POR |
 | **Flash 0x3FFF00** | Whether the UF2's RP2350-E10 block (`0xEF` × 256) landed in the last page of flash when you installed. Matters for the layout in phase 1 |
 
 ## Test procedure (plan steps 0.2–0.7)
@@ -71,18 +73,23 @@ For each series, send me the report page afterwards (a screenshot, or copy the t
 
 ### 0.2 Bench (USB, no console)
 
-1. Install `dx-measure.uf2`. Write down the reset reason the page shows, then unplug and plug in USB again and write down the reset reason once more.
-2. Check that the AP shows up, the page loads, and the *Download 20 MB* runs. The phone shows the speed.
-3. **What to record:**
-   - **After the UF2 install** (the ROM reboots the chip): "skipped: no power reset" means a reboot clears HAD_POR, as design D8 hopes. POR with "no CS" means HAD_POR survives a reboot (risk R6).
-   - **After replugging:** POR, "no CS (bench?)" and a slowly blinking LED are expected.
-   - **"Flash 0x3FFF00":** write down what it says.
+1. Install `dx-measure.uf2`, then *Clear boot log*.
+2. Unplug and plug in USB again.
+3. Tap *Reboot (watchdog)*, wait for the page to come back.
+4. Tap *Reboot (ROM)*, wait again.
+5. Run *Download 20 MB* and note the speed the phone shows.
+6. Send the page.
+
+**Expected:**
+- **The replug:** POR, session marker not set, "no CS (bench?)" and a slowly blinking LED.
+- **The two reboots:** each shows "skipped: warm (marker)". Their CHIP_RESET values show whether HAD_POR survives a warm reboot (risk R6); the marker covers it either way.
 
 ### 0.3 Cold boots in the console (3V3 wiring as today)
 
 1. **Swiss r2119** as the flash payload, *Next boots: flash payload*: 10 power-ons. Leave the console off for at least 10 s each time, and check that Swiss starts every time.
 2. *Next boots: built-in gekkoboot*: 10 more power-ons. Check that gekkoboot starts.
-3. Save the report.
+3. **Warm reboot in the console:** start a game from Swiss, then tap *Reboot (watchdog)*. The game must keep running, and the report must show "skipped: warm (marker)" for that boot.
+4. Save the report.
 
 ### 0.4 Warm board
 

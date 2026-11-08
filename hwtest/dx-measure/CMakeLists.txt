@@ -94,6 +94,8 @@ target_link_libraries(dx-measure PRIVATE
     hardware_flash
     hardware_adc
     pico_cyw43_arch_lwip_poll
+    pico_bootrom
+    boot_picoboot_headers
 )
 
 # The access point is at 192.168.4.1

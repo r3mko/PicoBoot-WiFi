@@ -10,6 +10,7 @@
 //   POST /clear        clears the boot log
 //   POST /builtin      next boots use the built-in IPL; POST /flash undoes that
 //   POST /late         next boot only: Wi-Fi starts 60 s after the injection
+//   POST /reboot-wd    warm reboot through the watchdog; POST /reboot-rom through rom_reboot()
 //   GET  anything else the report page (also answers phones' captive-portal probes)
 
 #include <stdio.h>
@@ -23,6 +24,9 @@
 #include "dnsserver.h"
 #include "lwip/tcp.h"
 #include "pico/cyw43_arch.h"
+#include "pico/bootrom.h"
+#include "boot/picoboot_constants.h"
+#include "hardware/watchdog.h"
 
 #define HTTP_PORT       80
 #define REQ_MAX         1024        // Request line and headers
@@ -51,6 +55,9 @@ static dns_server_t dns_server;
 static uint8_t pattern[TCP_MSS];
 static int client_count;
 static uint64_t next_client_check_us;
+static int open_conns;                  // While > 0, net_poll() doesn't sleep
+static enum { REBOOT_NONE, REBOOT_WATCHDOG, REBOOT_ROM } pending_reboot;
+static uint64_t reboot_at_us;
 
 static void conn_free(struct tcp_pcb *pcb, conn_t *c) {
     if (pcb) {
@@ -63,6 +70,7 @@ static void conn_free(struct tcp_pcb *pcb, conn_t *c) {
     if (c) {
         free(c->page);
         free(c);
+        open_conns--;
     }
 }
 
@@ -197,6 +205,13 @@ static void handle_request(struct tcp_pcb *pcb, conn_t *c, size_t body_start, ui
         }
         bootlog_set_switches(sw);
         respond(pcb, c, "303 See Other", "text/plain", "Location: /\r\n", "", 0, 0);
+    } else if (strcmp(method, "POST") == 0 && (strcmp(path, "/reboot-wd") == 0 || strcmp(path, "/reboot-rom") == 0)) {
+        // Reboot shortly after the response is out, from net_poll() (not inside lwIP)
+        pending_reboot = strcmp(path, "/reboot-wd") == 0 ? REBOOT_WATCHDOG : REBOOT_ROM;
+        reboot_at_us = time_us_64() + 500 * 1000;
+        static const char page[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/\">"
+                                   "<pre>Rebooting... this page reloads in 8 s (reconnect to the Wi-Fi if needed)</pre>";
+        respond(pcb, c, "200 OK", "text/html; charset=utf-8", "", page, sizeof(page) - 1, 0);
     } else {
         respond_page(pcb, c);
     }
@@ -281,6 +296,7 @@ static err_t on_accept(void *arg, struct tcp_pcb *pcb, err_t err) {
         tcp_abort(pcb);
         return ERR_ABRT;
     }
+    open_conns++;
     tcp_arg(pcb, c);
     tcp_recv(pcb, on_recv);
     tcp_sent(pcb, on_sent);
@@ -317,7 +333,20 @@ bool net_start(const char *ssid, const char *password) {
 
 void net_poll(void) {
     cyw43_arch_poll();
-    cyw43_arch_wait_for_work_until(make_timeout_time_ms(10));
+    if (open_conns == 0) {
+        cyw43_arch_wait_for_work_until(make_timeout_time_ms(10));
+    }
+
+    if (pending_reboot != REBOOT_NONE && time_us_64() >= reboot_at_us) {
+        if (pending_reboot == REBOOT_WATCHDOG) {
+            watchdog_reboot(0, 0, 0);
+        } else {
+            rom_reboot(REBOOT2_FLAG_REBOOT_TYPE_NORMAL, 10, 0, 0);
+        }
+        while (true) {
+            tight_loop_contents();
+        }
+    }
 
     if (time_us_64() >= next_client_check_us) {
         int num = 8;

@@ -92,7 +92,7 @@ static uint32_t transfers(const boot_record_t *b) {
 // One-word verdict for a boot, used in the log table
 static const char *verdict(const boot_record_t *b, char *tmp, size_t size) {
     if (b->flags & BOOT_FLAG_SKIPPED) {
-        return "skipped: no power reset";
+        return (b->flags & BOOT_FLAG_MARKER) ? "skipped: warm (marker)" : "skipped: no power reset";
     }
     if (!(b->flags & BOOT_FLAG_FIRST_CS)) {
         return "no CS (bench?)";
@@ -122,8 +122,10 @@ static void put_boot(out_t *o, const boot_record_t *b) {
         (unsigned long)t, (unsigned long)(t * 1024));
     put(o, "  Timer at main()      : %lu us\n", (unsigned long)b->timer_at_main_us);
     put(o, "  main() to PIO ready  : %lu us\n", (unsigned long)b->main_to_ready_us);
+    put(o, "  Session marker       : %s at start\n",
+        (b->flags & BOOT_FLAG_MARKER) ? "SET (a warm reboot)" : "not set (a power-on)");
     if (b->flags & BOOT_FLAG_SKIPPED) {
-        put(o, "  Injection            : skipped, not a power reset (POR/BOR/RUN)\n");
+        put(o, "  Injection            : skipped, not a power-on (design D8 rule)\n");
     } else if (b->flags & BOOT_FLAG_FIRST_CS) {
         put(o, "  MARGIN               : %ld us from PIO ready to the first CS\n", (long)b->margin_us);
         put(o, "  Injection            : %s, %lu of %lu words, %lu us after the first CS\n",
@@ -189,6 +191,8 @@ size_t report_render(char *buf, size_t size) {
             "<form method=post action=/builtin><button>Next boots: built-in gekkoboot</button></form>"
             "<form method=post action=/flash><button>Next boots: flash payload</button></form>"
             "<form method=post action=/late><button>Next boot: Wi-Fi 60 s late</button></form>"
+            "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
+            "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
             "<form method=post action=/clear><button>Clear boot log</button></form>"
             "<a href=\"/\">Refresh</a>"
             "</body></html>\n");

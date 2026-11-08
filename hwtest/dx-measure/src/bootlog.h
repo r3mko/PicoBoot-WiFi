@@ -16,7 +16,8 @@
 #define BOOT_FLAG_FIRST_CS        (1u << 1)   // The console's first CS was seen
 #define BOOT_FLAG_COMPLETE        (1u << 2)   // DMA done and clocked_output reached disable_chip
 #define BOOT_FLAG_STALLED         (1u << 3)   // First CS seen, but the injection didn't complete in time
-#define BOOT_FLAG_SKIPPED         (1u << 4)   // Not a power reset (POR/BOR/RUN): no injection
+#define BOOT_FLAG_SKIPPED         (1u << 4)   // Not a power-on (design D8 rule): no injection
+#define BOOT_FLAG_MARKER          (1u << 5)   // The POWMAN scratch session marker was already set
 
 typedef struct {
     uint32_t magic;             // BOOTLOG_MAGIC

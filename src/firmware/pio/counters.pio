@@ -1,0 +1,34 @@
+; Copyright (c) 2026 Remko Kleinjan
+;
+; SPDX-License-Identifier: GPL-2.0-only
+;
+; Passive CS counters for the boot diagnostics (design D31, D36). They run in pio1, apart from the
+; injection in pio0, and only read CS and CLK. Each counts X down from 0xFFFFFFFF; the CPU reads X
+; with exec'd `mov isr, x` and `push` (counters.c). They use PIO IRQ flags 2 and 3, which the
+; injection doesn't use, so they would stay harmless even in the injection's PIO block.
+
+.define CS_GPIO 4               ; U10 chip select, the same pin as CS_PIN in injection.pio
+.define CLK_GPIO 5              ; EXI clock, the same pin as CLK_PIN in injection.pio
+
+; Every CS falling edge, as PicoBoot-DX counted them. IRQ flag 2 marks the first one.
+.program cs_raw
+.wrap_target
+raw:
+    wait 1 gpio CS_GPIO         ; Wait for CS to go HIGH
+    wait 0 gpio CS_GPIO         ; Wait for CS to go LOW
+    irq set 2                   ; Flag it (the CPU timestamps the first one)
+    jmp x-- raw                 ; Count it; both branches continue at the top
+.wrap
+
+; Real transfers: a CS low period in which CLK rises while CS is still low, the same rule as the
+; injection's skip count (design D36). IRQ flag 3 marks the first one.
+.program cs_clocked
+.wrap_target
+clocked:
+    wait 1 gpio CS_GPIO         ; Wait for CS to go HIGH
+    wait 0 gpio CS_GPIO         ; Wait for CS to go LOW
+    wait 1 gpio CLK_GPIO        ; Wait for the transfer to clock...
+    jmp pin clocked             ; ...but if CS went high first (JMP_PIN = CS), it was a glitch
+    irq set 3                   ; Flag it (the CPU timestamps the first one)
+    jmp x-- clocked             ; Count it; both branches continue at the top
+.wrap

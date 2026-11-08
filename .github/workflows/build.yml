@@ -1,0 +1,50 @@
+name: Build PicoBoot-WiFi
+
+on: [push]
+
+jobs:
+  tests:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
+
+  build:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      # The same image as local builds (docker/Dockerfile): SDK 2.3.1, picotool 2.3.1, GCC 14.2
+      - name: Build the build image
+        run: docker build -t picoboot-wifi-build docker/
+
+      - name: Build
+        run: >
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
+          sh -c 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel'
+
+      - name: Check the layout
+        run: >
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
+          python3 tests/check_layout.py --loader build/src/loader/loader.elf --firmware build/src/firmware/firmware.elf
+
+      # With a build directory, the PIO simulator tests (injection and counters) run too
+      - name: Run all tests against the build
+        env:
+          PICOBOOT_BUILD_DIR: build
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v7
+        with:
+          name: picoboot-wifi-${{ github.sha }}
+          path: |
+            build/picoboot-wifi-install.uf2
+            build/src/loader/loader.elf
+            build/src/firmware/firmware.elf

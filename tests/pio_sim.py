@@ -1,7 +1,7 @@
 """
 Minimal RP2040 PIO simulator for the PicoBoot-DX PIO programs (Python standard library only).
 
-It runs the real machine code that pioasm generates (build-<board>/picoboot-dx.pio.h) at
+It runs the real machine code that pioasm generates (build/src/firmware/injection.pio.h) at
 logic level: one instruction per enabled state machine per PIO cycle. Only the instructions
 and options PicoBoot-DX uses are implemented, each following the RP2040 datasheet
 (https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf, page numbers below).
@@ -15,11 +15,13 @@ import re
 from collections import deque
 
 # Decoded instruction kinds
-JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET = range(8)
+JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET, PUSH = range(9)
 
-JMP_ALWAYS, JMP_X_DEC, JMP_NOT_OSRE = 0b000, 0b010, 0b111
+JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b110, 0b111
 OUT_PINS, OUT_NULL = 0b000, 0b011
-REG_X, REG_Y, REG_OSR = 0b001, 0b010, 0b111          # MOV destination/source codes
+REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR = 0b001, 0b010, 0b011, 0b110, 0b111   # MOV destination/source codes
+MOV_NONE, MOV_INVERT = 0b00, 0b01                    # MOV operations
+RX_FIFO_DEPTH = 4
 SET_X, SET_Y, SET_PINDIRS = 0b001, 0b010, 0b100
 
 
@@ -37,7 +39,7 @@ def decode(word):
         raise unsupported("delay/side-set bits are not supported")
     if op == 0b000:                                   # JMP, p.322-323
         cond, addr = arg >> 5, arg & 0x1F
-        if cond not in (JMP_ALWAYS, JMP_X_DEC, JMP_NOT_OSRE):
+        if cond not in (JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE):
             raise unsupported(f"JMP condition {cond:03b}")
         return (JMP, cond, addr)
     if op == 0b001:                                   # WAIT, p.324
@@ -55,12 +57,14 @@ def decode(word):
     if op == 0b100:                                   # PULL, p.327
         if arg & 0x80 and not arg & 0x1F:
             return (PULL, (arg >> 6) & 1, (arg >> 5) & 1)   # (IfEmpty, Block)
-        raise unsupported("PUSH")
+        if not arg & 0x80 and not arg & 0x5F:          # PUSH, p.326 (IfFull only matters with autopush)
+            return (PUSH, (arg >> 5) & 1, 0)            # (Block, -)
+        raise unsupported("PUSH iffull")
     if op == 0b101:                                   # MOV, p.328
         dest, mov_op, src = arg >> 5, (arg >> 3) & 0b11, arg & 0b111
-        if mov_op == 0 and dest in (REG_X, REG_Y) and src in (REG_X, REG_Y, REG_OSR):
-            return (MOV, dest, src)
-        raise unsupported("MOV other than X/Y <- X/Y/OSR")
+        if mov_op in (MOV_NONE, MOV_INVERT) and dest in (REG_X, REG_Y, REG_ISR) and src in (REG_X, REG_Y, REG_NULL, REG_OSR):
+            return (MOV, dest, (src, mov_op))
+        raise unsupported("MOV other than X/Y/ISR <- X/Y/NULL/OSR, plain or inverted")
     if op == 0b110:                                   # IRQ, p.330
         if arg & 0xE0 or arg & 0x18:
             raise unsupported("IRQ clear/wait or relative index")
@@ -98,7 +102,7 @@ def program(words, wrap_target=0, wrap=None, labels=None):
 
 class StateMachine:
     def __init__(self, pio, prog, *, autopull=False, threshold=32, shift_right=True,
-                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4):
+                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4, jmp_pin=None):
         self.pio = pio
         self.words = list(prog["instructions"])
         self.instructions = [decode(w) for w in self.words]
@@ -107,8 +111,10 @@ class StateMachine:
         self.out_base, self.out_count = out_base, out_count
         self.set_base, self.set_count = set_base, set_count
         self.fifo_depth = fifo_depth                  # 8 when the TX FIFO is joined, p.335
+        self.jmp_pin = jmp_pin                        # EXECCTRL.JMP_PIN, p.322
         self.fifo = deque()
-        self.pc = self.x = self.y = self.osr = 0
+        self.pc = self.x = self.y = self.osr = self.isr = 0
+        self.rx = deque()                             # RX FIFO, filled by PUSH
         self.osr_count = 32                           # empty after reset/restart, p.338
         self.enabled = False
 
@@ -168,6 +174,10 @@ class StateMachine:
         if kind == JMP:                               # p.322-323
             if a == JMP_ALWAYS:
                 taken = True
+            elif a == JMP_X_ZERO:
+                taken = self.x == 0                   # "!X: scratch X zero"
+            elif a == JMP_PIN:
+                taken = pio.synced_input(self.jmp_pin, t) == 1   # "PIN: branch on input pin"
             elif a == JMP_X_DEC:
                 taken = self.x != 0                   # "non-zero, prior to decrement"
                 self.x = (self.x - 1) & 0xFFFFFFFF    # X is always decremented
@@ -198,12 +208,25 @@ class StateMachine:
                     pio.pin_dir[self.set_base + i] = (b >> i) & 1
             self._next()
         elif kind == MOV:                             # p.328
-            value = {REG_X: self.x, REG_Y: self.y, REG_OSR: self.osr}[b]
+            src, mov_op = b
+            value = {REG_X: self.x, REG_Y: self.y, REG_NULL: 0, REG_OSR: self.osr}[src]
+            if mov_op == MOV_INVERT:
+                value ^= 0xFFFFFFFF
             if a == REG_X:
                 self.x = value
-            else:
+            elif a == REG_Y:
                 self.y = value
+            else:
+                self.isr = value
             self._next()
+        elif kind == PUSH:                            # p.326
+            if len(self.rx) < RX_FIFO_DEPTH:
+                self.rx.append(self.isr)
+                self.isr = 0
+                self._next()
+            elif not a:                               # noblock on a full FIFO: the data is lost
+                self.isr = 0
+                self._next()
         elif kind == PULL:                            # p.327; with autopull: no-op unless empty, p.339
             if_empty, block = a, b
             if (if_empty or self.autopull) and self.osr_count < self.threshold:

@@ -17,6 +17,7 @@ set_source_files_properties(${LOADER_SOURCES} PROPERTIES
 target_link_libraries(loader PRIVATE
     pico_stdlib
     pico_bootrom
+    hardware_ticks
 )
 
 target_compile_definitions(loader PRIVATE

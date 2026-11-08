@@ -13,6 +13,7 @@
 
 #include "pico/bootrom.h"
 #include "hardware/regs/addressmap.h"
+#include "hardware/ticks.h"
 #include "hardware/structs/powman.h"
 #include "layout.h"
 #include "records.h"
@@ -56,7 +57,10 @@ int main(void) {
                         XIP_BASE + slot_offset[d.slots[i]], LAYOUT_SLOT_SIZE);
     }
 
-    // Neither slot holds a valid image: wait in BOOTSEL for a USB install
+    // Neither slot holds a valid image: wait in BOOTSEL for a USB install. The boot ROM reboots
+    // through the watchdog after a delay counted in watchdog ticks, and only the SDK's clock setup,
+    // which the loader skips, starts that tick. Start it here; its exact rate doesn't matter.
     powman_hw->scratch[BOOTINFO_SCRATCH_INFO] = 0;
+    tick_start(TICK_WATCHDOG, 12);
     reset_usb_boot(0, 0);
 }

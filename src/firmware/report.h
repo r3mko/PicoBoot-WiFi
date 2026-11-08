@@ -28,7 +28,11 @@ typedef struct {
     uint32_t chip_reset;        // POWMAN CHIP_RESET (HAD_POR is sticky across warm reboots: phase 0)
     uint8_t chip_version;       // RP2350 stepping: 2 = A2 (RP2350-E9), 3 = A3, 4 = A4
     uint8_t rom_version;        // Boot ROM version
-    bool power_on;              // The loader's power-on decision (design D8)
+    bool power_on;              // The power-on decision (design D8)
+    bool from_loader;           // The decision came from the loader (else: no loader, own D8 check)
+    uint8_t slot;               // The slot this firmware runs from (BOOTCTL_SLOT_A / _B)
+    bool fallback;              // The loader's first choice held no valid image
+    bool bootctl_default;       // No valid boot control record: defaults used
 
     payload_source_t payload;
     uint32_t payload_words;     // Words to send (256 per 1K transfer)

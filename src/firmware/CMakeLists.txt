@@ -7,6 +7,7 @@ set(FIRMWARE_SOURCES
     injection_pio.c
     payload.c
     counters.c
+    ${CMAKE_SOURCE_DIR}/src/common/records.c
 )
 
 add_executable(firmware ${FIRMWARE_SOURCES})

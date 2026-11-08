@@ -42,6 +42,13 @@
 
 static const char *AP_PASSWORD = "picoboot";        // Design D30: documented default
 
+// Bench debugging (CMake option PICOBOOT_WIFI_USB_TRACE): start-up steps over USB serial
+#if PICOBOOT_WIFI_USB_TRACE
+#define TRACE(...) printf("[%7lu ms] ", (unsigned long)(time_us_64() / 1000)), printf(__VA_ARGS__)
+#else
+#define TRACE(...) ((void)0)
+#endif
+
 static boot_report_t report;
 static uint64_t t_main;
 
@@ -136,31 +143,57 @@ static void run_wifi(uint64_t t_start) {
 
     page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
     page.wifi_area = wifiblob_select(report.slot);
-    if (page.wifi_area >= 0 && cyw43_arch_init() == 0 && net_start(ssid, AP_PASSWORD, page_render, page_action)) {
-        page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
-        page_init(&page);
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
-        while (true) {
-            net_poll();
+    TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
+    if (page.wifi_area >= 0) {
+        const int err = cyw43_arch_init();
+        TRACE("cyw43_arch_init: %d\n", err);
+        if (err == 0) {
+            const bool up = net_start(ssid, AP_PASSWORD, page_render, page_action);
+            TRACE("net_start: %s, SSID %s\n", up ? "ok" : "FAILED", ssid);
+            if (up) {
+                page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
+                page_init(&page);
+                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+                TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
+                while (true) {
+                    net_poll();
+                }
+            }
         }
     }
 
     // No Wi-Fi blob, or Wi-Fi failed to start: idle, as PicoBoot-DX does
     while (true) {
+#if PICOBOOT_WIFI_USB_TRACE
+        TRACE("idle: Wi-Fi didn't start\n");
+        sleep_ms(5000);
+#else
         tight_loop_contents();
+#endif
     }
 }
 
 int main(void) {
     t_main = time_us_64();
+#if PICOBOOT_WIFI_USB_TRACE
+    stdio_init_all();           // Waits up to 10 s for a terminal (bench only: this delays the injection)
+    TRACE("PicoBoot-WiFi %s, USB trace build\n", PICOBOOT_WIFI_BUILD);
+#endif
     read_boot_info();
+    TRACE("boot info: from loader %d, power-on %d, slot %c, fallback %d, defaults %d, CHIP_RESET 0x%08lx\n",
+          report.from_loader, report.power_on, report.slot == BOOTCTL_SLOT_B ? 'B' : 'A', report.fallback,
+          report.bootctl_default, (unsigned long)report.chip_reset);
 
     if (report.power_on) {
         bootctl_t bootctl;
         storage_bootctl_load(&bootctl);
         report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
         const injection_payload_t payload = choose_payload(&bootctl);
+        TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
+              report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
         inject(&payload, !report.cs_pulldown_test);
+        TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
+              (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
     } else {
         report.result = INJECTION_NOT_RUN;      // A warm reboot: the console may be running (C2)
     }
@@ -170,7 +203,9 @@ int main(void) {
 
     // The injection has ended and Wi-Fi isn't running yet: nothing reads flash in the background
     const uint64_t t_end = time_us_64();
-    storage_bootlog_append(&report);
+    const bool logged = storage_bootlog_append(&report);
+    TRACE("boot log append: %s\n", logged ? "ok" : "FAILED");
+    (void)logged;
 
     run_wifi(t_end);
 }

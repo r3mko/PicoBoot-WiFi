@@ -84,6 +84,14 @@ add_custom_command(
 )
 add_custom_target(wifi_blob ALL DEPENDS ${WIFI_BLOB_BIN})
 
+if(PICOBOOT_WIFI_USB_TRACE)
+    pico_enable_stdio_usb(firmware 1)
+    target_compile_definitions(firmware PRIVATE
+        PICOBOOT_WIFI_USB_TRACE=1
+        PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=10000
+    )
+endif()
+
 pico_add_linker_script_override_path(firmware ${CMAKE_BINARY_DIR}/linker/firmware FILES memory_extra.incl)
 
 picoboot_wifi_target(firmware "picoboot-wifi" "PicoBoot-WiFi: GameCube IPL injection with Wi-Fi updates")

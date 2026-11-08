@@ -23,6 +23,10 @@ if(NOT PICO_BOARD STREQUAL "pico2_w")
     message(FATAL_ERROR "PicoBoot-WiFi is for the Pico 2 W only (PICO_BOARD=pico2_w), see design D1")
 endif()
 
+# Bench debugging: the firmware prints its start-up steps over USB serial (waits up to 10 s for a
+# terminal). Not for the console.
+option(PICOBOOT_WIFI_USB_TRACE "Print the firmware's start-up steps over USB serial" OFF)
+
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
 set(PICOBOOT_WIFI_VERSION "0.1.0-dev")
 execute_process(

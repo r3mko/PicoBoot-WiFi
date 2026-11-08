@@ -22,6 +22,10 @@ target_link_libraries(loader PRIVATE
 target_compile_definitions(loader PRIVATE
     # Stay on the clocks the boot ROM left running; the firmware sets up its own
     PICO_RUNTIME_SKIP_INIT_CLOCKS=1
+    # ...and so also skip taking the peripherals that need those clocks (clk_peri, clk_adc, clk_usb,
+    # clk_hstx) out of reset: that step waits for them and would hang without their clocks. The
+    # loader uses none of them; the firmware's own start-up resets everything again.
+    PICO_RUNTIME_SKIP_INIT_POST_CLOCK_RESETS=1
 )
 
 pico_minimize_runtime(loader)

@@ -115,9 +115,26 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 3. **Short dips during Tx bursts** can't be seen with a meter. The 0.7 stress test checks for their effects (brown-outs, Wi-Fi drops, console glitches).
 4. **Design consequence to consider in 0.8:** recommend, or require, the 5 V-to-VSYS wiring. The Pico's own regulator then makes 3.3 V from 5 V, and the radio no longer loads the console's 3.3 V rail.
 
-## 0.6 Range
+## 0.6 Range (2026-11-08)
 
-*To do.*
+**Setup:**
+- DOL-001 closed, in its usual place.
+- RSSI of `PicoBoot-Measure-C2C4` read on the phone, from the side where the owner sits.
+- Download test at 5 m.
+
+| Board position | 1 m | 3 m | 5 m | Download at 5 m |
+|---|---|---|---|---|
+| A (the install position) | −29 dBm | −33 dBm | −44 dBm | 400–600 KB/s |
+| B (antenna end away from metal) | −28 dBm | −32 dBm | −42 dBm | 400–600 KB/s |
+
+**Findings:**
+
+1. **Range isn't a problem** (risk R3).
+   - −42 to −44 dBm at 5 m through the closed console is a strong signal; above about −60 dBm counts as excellent.
+   - The shielding costs little, and the board's position hardly matters (1–2 dB).
+2. **The download at 5 m is slower than on the bench** (400–600 against 800–950 KB/s), despite the strong signal.
+   - Likely limits: lwIP's small send buffer (see 0.2) and possibly the radio on the 3.15 V rail (see 0.5).
+   - Still enough for OTA: a 256 KB firmware in under a second, Swiss in about 3 s.
 
 ## 0.7 Stress test (2026-11-08)
 

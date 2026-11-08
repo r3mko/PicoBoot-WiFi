@@ -116,9 +116,18 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 
 ### Part D: glitch check, batch 2 (2026-11-08)
 
-**Setup:** the pull-down test mode, 20 more power-ons (boots 75–94).
+**Setup:** the pull-down test mode, 20 more power-ons (boots 75–94), plus boot 95, after which the owner switched back to the pull-up.
 
-**Result:** **20/20 booted fine** (owner). The page with the glitch count of this batch is still to come.
+| | Result |
+|---|---|
+| Boots 75–94 | **20/20 booted fine** (owner); margin 161.1–163.2 ms, 1544/1544, CS low at "PIO ready" |
+| **Boot 95** | **GLITCH survived:** first raw CS 36.3 ms after PIO ready, raw 1545 / clocked 1544, first real transfer at 162.5 ms, injection complete |
+
+**Notes on boot 95:**
+- Its injection time reads 533 ms instead of 406 ms because it is counted from the first CS, the false one, 126 ms before the real start.
+- The boot log's margin column shows the false edge (36306 µs); only the page's "first real transfer" gives the real margin. To fix in step 1.12: the log records the first real transfer too.
+
+**Glitch rate with PicoBoot's CS setting:** 2 in 40 boots here (boots 68 and 95), against 2 in 56 in phase 0. Here both were survived; in phase 0 both gave blue screens.
 
 ### Step 1.10 summary
 
@@ -127,7 +136,7 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 | A: cold, Swiss and gekkoboot | 20 | 20/20; margin 159.7–163.6 ms; the loader costs about 3–5 ms against phase 0 |
 | B: warm board | 6 | 6/6; margin 159.3–162.7 ms |
 | C: warm reboot during a game | 1 | No injection; the game kept running |
-| D: glitch check with PicoBoot's CS pad setting | 39 | 39/39 booted, including boot 68 with a real power-up glitch, which the injection ignored |
+| D: glitch check with PicoBoot's CS pad setting | 40 | 40/40 booted, including boots 68 and 95 with a real power-up glitch, which the injection ignored |
 
 **Done when (plan 1.10):**
 - results recorded;
@@ -143,7 +152,7 @@ Set by the owner from the results above, in the design (draft v1.3):
 | | Value | Basis |
 |---|---|---|
 | D10 boot-time budget | **at most 10 ms** over PicoBoot-DX before "PIO ready" | The loader path costs 3–5 ms; the margin stays above about 155 ms |
-| D27 clock during the injection | **250 MHz** | 86 console boots in phase 1, cold and warm, no stall or fault |
+| D27 clock during the injection | **250 MHz** | 87 console boots in phase 1, cold and warm, no stall or fault |
 | D27 flash divider | **3** (83 MHz at 250 MHz) | The payload DMA reads 18 MB/s at 125 MHz, about 5.5 times what the console needs |
 
 The R1 fallback (the loader starts the PIO) isn't needed.

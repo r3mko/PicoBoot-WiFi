@@ -101,6 +101,10 @@ static const char *verdict(const boot_record_t *b, char *tmp, size_t size) {
         return "STALLED";
     }
     uint32_t expected = SKIPPED_TRANSFERS + transfers(b);
+    if ((b->flags & BOOT_FLAG_QUALIFIED) && b->cs_at_end > b->cs_qual_at_end) {
+        snprintf(tmp, size, "GLITCH: %lu unclocked CS", (unsigned long)(b->cs_at_end - b->cs_qual_at_end));
+        return tmp;
+    }
     if (b->cs_at_end < expected) {
         snprintf(tmp, size, "MISSED %lu CS", (unsigned long)(expected - b->cs_at_end));
         return tmp;
@@ -134,6 +138,10 @@ static void put_boot(out_t *o, const boot_record_t *b) {
         put(o, "  CS at the end        : %lu, expected %lu (224 + %lu): %s\n",
             (unsigned long)b->cs_at_end, (unsigned long)(SKIPPED_TRANSFERS + t), (unsigned long)t,
             verdict(b, tmp, sizeof(tmp)));
+        if (b->flags & BOOT_FLAG_QUALIFIED) {
+            put(o, "  Clocked CS at the end: %lu (first one %ld us after PIO ready)\n",
+                (unsigned long)b->cs_qual_at_end, (long)b->margin_qual_us);
+        }
     } else {
         put(o, "  First CS             : not seen within the timeout (no console?)\n");
     }
@@ -171,17 +179,21 @@ size_t report_render(char *buf, size_t size) {
 
     uint n = bootlog_read(log_rows, LOG_ROWS);
     put(&o, "BOOT LOG (newest first, %u kept)\n", n);
-    put(&o, "  boot  reset  payload   xfers  margin_us  main>ready_us  inject_ms  CS_end/expected  result\n");
+    put(&o, "  boot  reset  payload   xfers  margin_us  main>ready_us  inject_ms  CS_end/expected  clocked  result\n");
     for (uint i = 0; i < n; i++) {
         const boot_record_t *b = &log_rows[i];
         bool cs = b->flags & BOOT_FLAG_FIRST_CS;
-        put(&o, "  %4lu  %-5s  %-8s  %5lu  %9ld  %13lu  %9lu  %6lu/%-6lu    %s\n",
+        char clocked[12] = "-";
+        if (b->flags & BOOT_FLAG_QUALIFIED) {
+            snprintf(clocked, sizeof(clocked), "%lu", (unsigned long)b->cs_qual_at_end);
+        }
+        put(&o, "  %4lu  %-5s  %-8s  %5lu  %9ld  %13lu  %9lu  %6lu/%-6lu    %7s  %s\n",
             (unsigned long)b->seq, reset_reason(b->chip_reset),
             (b->flags & BOOT_FLAG_FLASH_PAYLOAD) ? "flash" : "built-in",
             (unsigned long)transfers(b), cs ? (long)b->margin_us : -1L,
             (unsigned long)b->main_to_ready_us, cs ? (unsigned long)(b->injection_us / 1000) : 0UL,
             (unsigned long)b->cs_at_end, (unsigned long)(SKIPPED_TRANSFERS + transfers(b)),
-            verdict(b, tmp, sizeof(tmp)));
+            clocked, verdict(b, tmp, sizeof(tmp)));
     }
     put(&o, "</pre>"
             "<a href=\"/stream?mb=20\">Download 20 MB (Tx load)</a>"

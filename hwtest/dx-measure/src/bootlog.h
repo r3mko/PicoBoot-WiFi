@@ -18,6 +18,7 @@
 #define BOOT_FLAG_STALLED         (1u << 3)   // First CS seen, but the injection didn't complete in time
 #define BOOT_FLAG_SKIPPED         (1u << 4)   // Not a power-on (design D8 rule): no injection
 #define BOOT_FLAG_MARKER          (1u << 5)   // The POWMAN scratch session marker was already set
+#define BOOT_FLAG_QUALIFIED       (1u << 6)   // cs_qual_* fields are valid (builds from 2026-11-08 on)
 
 typedef struct {
     uint32_t magic;             // BOOTLOG_MAGIC
@@ -32,7 +33,9 @@ typedef struct {
     uint32_t main_to_ready_us;  // main() to "PIO ready" (injection state machines enabled)
     int32_t  margin_us;         // "PIO ready" to the first CS, or -1 if not seen
     uint32_t injection_us;      // First CS to the end of the injection (complete or timed out)
-    uint32_t reserved[51];
+    uint32_t cs_qual_at_end;    // Clock-qualified CS count when the injection ended
+    int32_t  margin_qual_us;    // "PIO ready" to the first clock-qualified CS, or -1 if not seen
+    uint32_t reserved[49];
     uint32_t crc;               // CRC-32 of everything above
 } boot_record_t;
 

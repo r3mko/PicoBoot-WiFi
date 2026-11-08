@@ -1,6 +1,8 @@
 """
-Phase 0 measurement build (implementation plan step 0.1): checks that the passive CS counter
-(src/measure.pio) doesn't change the injection, and that it counts what it should.
+Phase 0 measurement build (implementation plan step 0.1): checks that the passive CS counters
+(src/measure.pio) don't change the injection, and that they count what they should. Also
+reproduces boot 12 of step 0.3: one CS glitch without clocks before the console's IPL read
+shifts PicoBoot-DX's injection by a transfer, and the clock-qualified counter ignores it.
 
 Runs the real PIO programs from a build (generated picoboot-dx.pio.h and measure.pio.h) in the
 PicoBoot-DX simulator (tests/pio_sim.py) against a simulated console. Build first, then:
@@ -54,16 +56,26 @@ def prepare_transfer(sm, count, mov):
         sm.exec_instruction(word)
 
 
-def simulate(words, *, with_counter=True, extra_transfers=3):
+def add_cs_glitch(console, start=4, width=2):
+    """A CS low pulse without clocks before the first transfer (which starts at t=16)."""
+    times, levels = console._times[console.cs_pin], console._levels[console.cs_pin]
+    assert times[0] < start and start + width < times[1]
+    times[1:1] = [start, start + width]
+    levels[1:1] = [0, 1]
+
+
+def simulate(words, *, with_counter=True, extra_transfers=3, glitch=False):
     """
-    The injection state machines in one PIO block and the CS counter in another (pio1), both
+    The injection state machines in one PIO block and the CS counters in another (pio1), all
     watching the same simulated console: 224 short transfers, one 1K transfer per 256 words,
-    then a few short transfers (fonts, RTC).
+    then a few short transfers (fonts, RTC). With glitch=True, CS first drops once without clocks.
     """
     programs, defines = load_programs()
     transfers = len(words) // WORDS_PER_TRANSFER
     console = pio_sim.Console(defines["CS_PIN"], defines["CLK_PIN"],
                               [64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * transfers + [64] * extra_transfers)
+    if glitch:
+        add_cs_glitch(console)
 
     inj = pio_sim.PIO(console.level)
     on_transfer = inj.add_sm(programs["on_transfer"])
@@ -74,16 +86,17 @@ def simulate(words, *, with_counter=True, extra_transfers=3):
 
     cnt = pio_sim.PIO(console.level)
     counter = cnt.add_sm(programs["cs_counter"])
-    counter.x = 0xFFFFFFFF                      # pio_encode_mov_not(pio_x, pio_null) in measure.c
+    qualified = cnt.add_sm(programs["cs_qualified"])
+    counter.x = qualified.x = 0xFFFFFFFF        # pio_encode_mov_not(pio_x, pio_null) in measure.c
 
-    counter.enabled = with_counter              # cs_counter_start() comes first...
+    counter.enabled = qualified.enabled = with_counter  # cs_counter_start() comes first...
     on_transfer.enabled = clocked_output.enabled = True
 
     # pio_sim.run(), stepping both PIO blocks every cycle
     feed = deque(words)
     received, changes = {}, []
     direction = inj.pin_dir[DATA_PIN]
-    first_irq = None
+    first_irq = first_irq_q = None
     s = 0
     for t in range(console.end + 64):
         if feed and len(clocked_output.fifo) < clocked_output.fifo_depth:
@@ -95,6 +108,8 @@ def simulate(words, *, with_counter=True, extra_transfers=3):
         cnt.step(t)
         if first_irq is None and cnt.irq & 1:
             first_irq = t
+        if first_irq_q is None and cnt.irq & 2:
+            first_irq_q = t
         if inj.pin_dir[DATA_PIN] != direction:
             direction = inj.pin_dir[DATA_PIN]
             changes.append((t, direction))
@@ -102,6 +117,7 @@ def simulate(words, *, with_counter=True, extra_transfers=3):
         "received": received, "changes": changes, "console": console, "transfers": transfers,
         "pc": clocked_output.pc, "disable_chip": programs["clocked_output"]["labels"]["disable_chip"],
         "count": 0xFFFFFFFF - counter.x, "first_irq": first_irq, "sync": cnt.sync_cycles,
+        "count_q": 0xFFFFFFFF - qualified.x, "first_irq_q": first_irq_q,
     }
 
 
@@ -155,6 +171,9 @@ class CounterTest(unittest.TestCase):
         self.assertIsNotNone(with_counter["first_irq"])
         self.assertGreater(with_counter["first_irq"], first_fall)
         self.assertLessEqual(with_counter["first_irq"], first_fall + with_counter["sync"] + 3)
+        # Without glitches the clock-qualified counter counts the same, from the first transfer
+        self.assertEqual(with_counter["count_q"], with_counter["count"])
+        self.assertGreater(with_counter["first_irq_q"], first_fall)
 
     def test_three_transfers(self):
         self.check(random_words(3, seed=1))
@@ -165,6 +184,27 @@ class CounterTest(unittest.TestCase):
             words = [int(w, 16) for w in re.findall(r"0x([0-9A-F]{8})", f.read())]
         self.assertEqual(len(words), 60 * WORDS_PER_TRANSFER)
         self.check(words)
+
+
+@unittest.skipUnless(BUILD_DIR, "set DX_MEASURE_BUILD_DIR to a dx-measure build directory")
+class GlitchTest(unittest.TestCase):
+    """Boot 12 of step 0.3: one CS glitch without clocks before the IPL read."""
+
+    def setUp(self):
+        self.words = random_words(3, seed=5)
+        self.r = simulate(self.words, glitch=True)
+
+    def test_glitch_shifts_picoboot_dx_injection(self):
+        """PicoBoot-DX counts the glitch as one of the 224 and sends the payload a transfer early."""
+        problems = delivery_problems(self.words, self.r)
+        self.assertIn("payload transfer 0 differs", problems)
+
+    def test_counters_tell_the_glitch_apart(self):
+        falls = len(self.r["console"].cs_falls)            # real transfers only
+        self.assertEqual(self.r["count"], falls + 1)          # the raw counter counts the glitch
+        self.assertEqual(self.r["count_q"], falls)            # the clock-qualified one doesn't
+        self.assertLess(self.r["first_irq"], self.r["console"].cs_falls[0])
+        self.assertGreater(self.r["first_irq_q"], self.r["console"].cs_falls[0])
 
 
 if __name__ == "__main__":

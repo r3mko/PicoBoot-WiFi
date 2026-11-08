@@ -19,3 +19,8 @@ bool cs_counter_first_edge_seen(void);
 
 // Number of CS falling edges seen so far
 uint32_t cs_counter_read(void);
+
+// The clock-qualified counter (cs_qualified in measure.pio): the same, but a CS low period
+// counts only once CLK rises in it, so glitches without clocks don't count
+bool cs_qualified_first_seen(void);
+uint32_t cs_qualified_read(void);

@@ -7,6 +7,7 @@
 ; so it can't change what the injection programs in picoboot-dx.pio do.
 
 .define CS_GPIO 4               ; U10 chip select, the same pin as CS_PIN in picoboot-dx.pio
+.define CLK_GPIO 5              ; EXI clock, the same pin as CLK_PIN in picoboot-dx.pio
 
 .program cs_counter
     wait 1 gpio CS_GPIO         ; CS idles high
@@ -17,4 +18,22 @@
 count:
     wait 1 gpio CS_GPIO         ; Wait for CS to go HIGH
     wait 0 gpio CS_GPIO         ; Wait for CS to go LOW
+.wrap
+
+; Clock-qualified CS counter: counts a CS low period only once CLK rises in it, as every real
+; EXI transfer clocks its address in. A CS glitch without clocks merges with the next real
+; transfer instead of counting on its own. Runs passively next to cs_counter, so the two counts
+; can be compared on hardware before the injection itself changes (phase 0, boot 12).
+
+.program cs_qualified
+    wait 1 gpio CS_GPIO         ; CS idles high
+    wait 0 gpio CS_GPIO         ; CS low...
+    wait 1 gpio CLK_GPIO        ; ...and clocking: the first real transfer
+    irq set 1                   ; raises IRQ flag 1 for the CPU to timestamp
+.wrap_target
+    jmp x-- count               ; X counts down from 0xFFFFFFFF, once per clocked transfer
+count:
+    wait 1 gpio CS_GPIO         ; Wait for CS to go HIGH
+    wait 0 gpio CS_GPIO         ; Wait for CS to go LOW
+    wait 1 gpio CLK_GPIO        ; Wait for the transfer to clock
 .wrap

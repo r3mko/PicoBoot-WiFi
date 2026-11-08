@@ -231,6 +231,8 @@ int main(void) {
     rec.main_to_ready_us = (uint32_t)(t_ready - t_main);
     rec.payload_words = (uint32_t)payload_word_count;
     rec.margin_us = -1;
+    rec.margin_qual_us = -1;
+    rec.flags |= BOOT_FLAG_QUALIFIED;
 
     while (power_reset && !cs_counter_first_edge_seen() && time_us_64() - t_ready < FIRST_CS_TIMEOUT_US) {
         tight_loop_contents();
@@ -245,6 +247,9 @@ int main(void) {
         // The DMA is done once the last word is in the PIO FIFO, wait until the PIO
         // has also shifted it out and released the data line (disable_chip)
         while (time_us_64() - t_first_cs < INJECTION_TIMEOUT_US) {
+            if (rec.margin_qual_us < 0 && cs_qualified_first_seen()) {
+                rec.margin_qual_us = (int32_t)(time_us_64() - t_ready);     // phase 0
+            }
             if (!dma_busy() &&
                 pio_sm_get_pc(pio, clocked_output_sm) == clocked_output_offset + clocked_output_offset_disable_chip) {
                 complete = true;
@@ -256,6 +261,7 @@ int main(void) {
     const uint64_t t_end = time_us_64();
     rec.injection_us = (rec.flags & BOOT_FLAG_FIRST_CS) ? (uint32_t)(t_end - t_first_cs) : 0;
     rec.cs_at_end = cs_counter_read();
+    rec.cs_qual_at_end = cs_qualified_read();
     rec.words_delivered = (uint32_t)payload_word_count -
                           (dma_channel_hw_addr(dma_chan)->transfer_count & DMA_CH0_TRANS_COUNT_COUNT_BITS);
 

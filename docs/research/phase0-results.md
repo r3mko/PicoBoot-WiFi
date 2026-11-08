@@ -35,9 +35,38 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - Fast enough for OTA (a 256 KB firmware in under a second, Swiss in about 1.5 s).
    - To tune in phase 2.
 
-## 0.3 Cold boots in the console
+## 0.3 Cold boots in the console (2026-11-08)
 
-*To do.*
+**Setup:**
+- DOL-001 with SD2SP2 and HDMI adapter; Pico fed through 3V3.
+- Build `97d31f6`.
+- Boots 1–10 with Swiss r2119 from flash, boots 11–20 with the built-in gekkoboot, boot 21 a watchdog reboot while a game ran.
+
+| | Swiss r2119 (boots 1–10) | gekkoboot (boots 11, 13–20) | Boot 12 (gekkoboot) |
+|---|---|---|---|
+| Result | 10/10 booted | 9/9 booted | **Blue screen** |
+| Margin (PIO ready → first CS) | 164.0–166.6 ms | 165.8–167.3 ms | **44.2 ms** |
+| Injection (first CS → end) | 406 ms | 19 ms | **142 ms** |
+| CS at the end / expected | 1544 / 1543 | 285 / 284 | **286** / 284 |
+| `main()` → PIO ready | 300–314 µs | 303–312 µs | 307 µs |
+
+**Warm reboot in a running game (boot 21):**
+- The game kept running, and the boot was skipped through the session marker.
+- `CHIP_RESET` was again `0x00010000`, with watchdog reason `0x2` (FORCE).
+
+**Findings:**
+
+1. **The margin is large and steady:** about 166 ms from "PIO ready" to the console's first IPL read, ±1.5 ms over 19 boots. A loader that costs a few milliseconds (D10) doesn't come close, on this console at least.
+2. **The EXI rate:** Swiss's 1259 extra 1 KB transfers took 387 ms more than gekkoboot's, so about 0.31 ms per transfer (≈3.3 MB/s). The 224 skipped transfers take well under a millisecond.
+3. **One extra CS pulse after the injection,** on every good boot: the console's next access, right after the payload.
+4. **Boot 12 shows how PicoBoot boots fail** [inference from the numbers].
+   - The console's real IPL read came at the normal time: 44.2 + 142 = 186.2 ms, against 166 + 19 ≈ 185.6 ms on the good boots.
+   - But one extra CS falling edge came about 122 ms earlier.
+   - `on_transfer` counts the 224 skipped pulses without checking them, so that one spurious pulse made the payload go out one transfer early. The console then got a shifted payload and crashed.
+   - PicoBoot-DX and upstream PicoBoot use the same program, so they have the same weakness.
+   - **Rate:** 1 in 20 boots here.
+   - **Possible causes** (not known yet): the console's power-up, the HDMI adapter, or noise.
+   - **To check:** a CLK-qualified count would ignore such a pulse, because a real EXI transfer always clocks. A second passive counter, added in the next measurement build, tests that on hardware before the injection changes.
 
 ## 0.4 Warm board
 

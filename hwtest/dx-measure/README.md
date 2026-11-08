@@ -3,6 +3,7 @@
 Implementation plan step 0.1. This is **PicoBoot-DX v0.10 for the Pico 2 W**, with three additions to measure what the design couldn't know:
 
 - **Boot timing (design D31):** a passive PIO state machine in `pio1` watches CS. It timestamps the console's first CS after "PIO ready" (the *margin*) and counts every CS pulse. The DMA count gives the 1 KB transfers delivered.
+- **Glitch check:** a second passive counter counts only CS pulses during which CLK clocks, as every real EXI transfer does. If the two counts differ, CS glitched (step 0.3, boot 12).
 - **Readout (design D32):** after the injection, an access point with a report page, plus load tests for the radio.
 - **Boot log:** every boot's numbers go to flash (`0x3F0000`, 64 boots), so you can do a series of power-ons and read them all at once.
 
@@ -61,7 +62,8 @@ The firmware is `hwtest/dx-measure/build/dx-measure.uf2`.
 | Field | Meaning |
 |---|---|
 | **Margin** | Time from "PIO ready" to the console's first CS. It has to be positive. The bigger it is, the more room the loader (phase 1) has |
-| **CS at the end** | Should be exactly 224 + transfers. Fewer means pulses were missed: the PIO started too late |
+| **CS at the end** | Should be 224 + transfers; the console's next access usually adds one ("ok (+1 CS)"). Fewer means pulses were missed: the PIO started too late |
+| **Clocked** | The clock-qualified count. It should equal *CS at the end*. More raw pulses than clocked ones shows up as "GLITCH": CS dropped without a transfer, which shifts PicoBoot-DX's injection |
 | **Injection** | *complete* = all words delivered and the data line released. *STALLED* = it didn't finish within 10 s |
 | **Reset reason** | POR = power-on; BOR = brown-out; WDOG = watchdog/reboot. Whether a cold boot shows up as POR or BOR matters for design D8 |
 | **Session marker** | Set in a POWMAN scratch register at every boot. "Not set" means a power-on; "SET" means a warm reboot, even when CHIP_RESET still says POR |
@@ -90,6 +92,16 @@ For each series, send me the report page afterwards (a screenshot, or copy the t
 2. *Next boots: built-in gekkoboot*: 10 more power-ons. Check that gekkoboot starts.
 3. **Warm reboot in the console:** start a game from Swiss, then tap *Reboot (watchdog)*. The game must keep running, and the report must show "skipped: warm (marker)" for that boot.
 4. Save the report.
+
+### 0.3b Glitch series (added after boot 12)
+
+Boot 12 of step 0.3 failed because of one CS pulse without a transfer, about 122 ms before the console's IPL read. This series checks whether the clock-qualified count tells glitches apart on hardware.
+
+1. Install a build that has the *clocked* column; do this when the console is open anyway (step 0.6).
+2. *Clear boot log*.
+3. Do 40 power-ons (off for at least 10 s; any payload).
+4. Write down anything special about a failed boot: a quick off/on, the HDMI adapter in use or not, touching the console.
+5. Save the report. Every "GLITCH" row tells us the qualified count works.
 
 ### 0.4 Warm board
 

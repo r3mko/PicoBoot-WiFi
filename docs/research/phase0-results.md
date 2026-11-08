@@ -121,6 +121,32 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 - 0 in 30 supports the pull-up, but doesn't prove it: at a rate of 1 in 20, a clean run of 30 still happens about 21% of the time.
 - Part 2 (pull-down) adds the comparison, and a chance to see the clocked counter catch a glitch on hardware.
 
+### Part 2: glitch rate with the pull-down (PicoBoot's default)
+
+**Setup:** build `0182c06`, *CS pull-down*, Swiss r2119 from flash, a fresh run of 25 cold boots.
+
+| | Result |
+|---|---|
+| Boots | 24 ok; **boot 2: GLITCH** |
+| CS at "PIO ready" | low on every boot, first driven high 40.9–42.x ms later |
+| Boot 2 | First raw CS **42.0 ms** after PIO ready, right as CS was first driven high (`low>42ms`). Raw count **1545**, clocked count **1544**: "GLITCH: 1 unclocked CS". Injection 532 ms instead of 406 ms (it started counting at the false edge) |
+| Other boots | Margin 166.0–168.2 ms, raw = clocked = 1544 |
+
+### Conclusions of 0.3b
+
+| CS pull | Cold boots | Glitches |
+|---|---|---|
+| Down (PicoBoot default; 0.3, 0.4, 0.7, part 2) | 56 | **2** (0.3 boot 12, part 2 boot 2) |
+| Up (parts 1 and 3) | 30 | **0** |
+
+1. **The clock-qualified counter catches the glitch on hardware.**
+   - It ignored the one false CS pulse of part 2's boot 2.
+   - It agreed with the raw count on every one of the 80+ good boots, so it doesn't miss real transfers.
+   - A CLK-qualified count of the 224 skipped pulses would have avoided both failures.
+2. **The glitch is tied to the console's power-up.** Both happened 42–44 ms after "PIO ready", as the console first drove CS. Until then the line is undriven, and PicoBoot's reset pull-down holds it low.
+3. **The pull-up removes the undriven-low state** (CS reads high from the start). It had no failures in 30 boots, against 2 in 56 with the pull-down.
+   - As statistics that's thin (all 2 failures landing in the pull-down group has a probability of about 0.42 by chance). The mechanism supports it.
+
 ## 0.4 Warm board (2026-11-08)
 
 **Setup:**

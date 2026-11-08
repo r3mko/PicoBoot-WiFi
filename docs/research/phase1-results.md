@@ -112,4 +112,4 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 **Finding:**
 - With PicoBoot's pad setting, the false CS edge at power-up happened again (boot 68: 37.1 ms; phase 0: 42.0 and 44.2 ms).
 - The clock-qualified skip count (D36) didn't count it: the injection started at the real 225th transfer and completed. In phase 0 the same event gave a blue screen.
-- *Console side to confirm with the owner: Swiss started on boot 68.*
+- **Confirmed by the owner: Swiss started normally on boot 68.** The D36 fix works on hardware: the power-up glitch happened, and the console booted anyway.

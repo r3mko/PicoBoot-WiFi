@@ -103,6 +103,24 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - **Documentation:** none found on what the GameCube does with CS during power-up. The measurements here are the evidence.
 5. **The temperature reading dropped to 12.2 °C** after the board was moved and rewired. Since the reading tracks the rail voltage (see 0.4–0.5), the 3V3 at the Pico may now be a little lower. Worth a quick check with the meter.
 
+### Part 3: glitch rate with the pull-up
+
+**Setup:** build `0182c06`, *CS pull-up*, Swiss r2119 from flash, 25 cold boots (the 5 from part 1 plus 20 more).
+
+| | Result |
+|---|---|
+| Boots | **25/25** good, none with a GLITCH row |
+| CS at "PIO ready" | high on every boot |
+| Margin | 165.4–168.1 ms |
+| CS / clocked count | 1544 / 1544 on every boot |
+| `main()` → PIO ready | 316–327 µs |
+
+**Pull-down boots so far** (0.3, 0.4, 0.7): 1 glitch in 31 cold boots (boot 12 of 0.3).
+
+**Limits of this result:**
+- 0 in 25 supports the pull-up, but doesn't prove it: at a rate of 1 in 20, a clean run of 25 still happens about 28% of the time.
+- Part 2 (pull-down) adds the comparison, and a chance to see the clocked counter catch a glitch on hardware.
+
 ## 0.4 Warm board (2026-11-08)
 
 **Setup:**

@@ -94,15 +94,30 @@ For each series, send me the report page afterwards (a screenshot, or copy the t
 3. **Warm reboot in the console:** start a game from Swiss, then tap *Reboot (watchdog)*. The game must keep running, and the report must show "skipped: warm (marker)" for that boot.
 4. Save the report.
 
-### 0.3b Glitch series (added after boot 12)
+### 0.3b Glitch series (added after boot 12 and step 0.7)
 
-Boot 12 of step 0.3 failed because of one CS pulse without a transfer, about 122 ms before the console's IPL read. This series checks whether the clock-qualified count tells glitches apart on hardware.
+**Background:**
+- Boot 12 of step 0.3 failed because of one CS pulse without a transfer, at 44.2 ms after "PIO ready".
+- Step 0.7 showed that CS reads low at "PIO ready" on every boot, and is first driven high at about 41.7 ms. The PicoBoot pads keep their reset pull-down on CS.
+- This series checks two things: whether a CS pull-up changes that, and whether the clock-qualified count tells glitches apart.
+- It needs build `5…` or later, which has the CS pull-up switch. Install it when the console is open anyway (step 0.6).
 
-1. Install a build that has the *clocked* column; do this when the console is open anyway (step 0.6).
-2. *Clear boot log*.
-3. Do 40 power-ons (off for at least 10 s; any payload).
-4. Write down anything special about a failed boot: a quick off/on, the HDMI adapter in use or not, touching the console.
-5. Save the report. Every "GLITCH" row tells us the qualified count works.
+**Part 1: the pull-up (5 boots)**
+1. Tap *Next boots: CS pull-up* and *Clear boot log*.
+2. Do 5 power-ons, with at least 10 s off each time.
+3. Look at the *CS@ready* column:
+   - **`U:high`** means nobody drives CS during the console's first ~42 ms, and the old pull-down was holding it low;
+   - **`U:low>41ms`** means the console itself holds CS low.
+4. Send the report.
+
+**Part 2: catch glitches (40 boots, pull-down as in PicoBoot)**
+1. Tap *Next boots: CS pull-down* and *Clear boot log*.
+2. Do 40 power-ons, with at least 10 s off each time.
+3. Note anything special about a failed boot.
+4. Send the report. A "GLITCH" row (raw and clocked counts differ) shows the clock-qualified count works on hardware.
+
+**Part 3, only if part 1 showed `U:high`: the same 40 boots with the pull-up.**
+- Fewer or no glitches would make the pull-up a second fix, next to the clock-qualified count.
 
 ### 0.4 Warm board
 

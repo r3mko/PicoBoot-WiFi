@@ -119,6 +119,32 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 
 *To do.*
 
-## 0.7 Stress test
+## 0.7 Stress test (2026-11-08)
 
-*To do.*
+**Setup:**
+- Build `c031e24`, Swiss r2119 from flash.
+- A 500 MB download (`/stream?mb=500`, about 10 minutes) to the phone, while a game loaded from the SD2SP2 and played through the HDMI adapter.
+- Then 5 power cycles with about 5 s off.
+
+**Results:**
+
+| Check | Result |
+|---|---|
+| Game, SD loading, video, download | **No problems** seen during the run |
+| Pico resets during the run | **None** (no BOR or WDOG entry; uptime continuous) |
+| Boots (stress-run boot + 5 hot) | **6/6** good, margin 167.8–168.4 ms, CS 1544/1543 |
+| Clocked CS count | 1544 on every boot: **equal to the raw count**, first one 6 µs after the first raw CS |
+| RP2350 temperature reading | 22.6 °C (20.6 °C in 0.4; reads low because of the low rail, see 0.5) |
+| CS at "PIO ready" | **LOW on every boot**, first seen high 41.7 ms later |
+
+**Findings:**
+
+1. **The console's rail carried the radio at full load, as far as anything visible goes.** No brown-outs, no Wi-Fi drops, and no console glitches with the SD2SP2 and HDMI adapter in use, despite the low 3.15 V average from 0.5.
+2. **The clock-qualified counter agrees with the raw counter on hardware** on every good boot, so a CLK-qualified count of the 224 skipped pulses doesn't miss real transfers.
+3. **CS isn't driven high for the first ~42 ms.**
+   - CS reads low at "PIO ready" and goes high about 41.7 ms later, on every boot. The console's first IPL read follows at about 168 ms.
+   - Boot 12's extra CS pulse came at 44.2 ms, about 2.5 ms after that first rise. The glitch belongs to the console's power-up.
+   - Two explanations fit, and a CS pull-up separates them:
+     - **(a) The console drives CS low until about 42 ms.** Then the glitch comes from the console, and a pull-up changes nothing.
+     - **(b) Nobody drives CS until then, and the Pico's reset pull-down holds it low.** Then the glitch is the console letting go of the line for a moment, and a pull-up would keep CS high.
+   - Build `5…`+ has a "CS pull-up" test switch for step 0.3b.

@@ -10,6 +10,7 @@
 //   POST /clear        clears the boot log
 //   POST /builtin      next boots use the built-in IPL; POST /flash undoes that
 //   POST /late         next boot only: Wi-Fi starts 60 s after the injection
+//   POST /csup         next boots pull CS up; POST /csdown back to the reset pull-down
 //   POST /reboot-wd    warm reboot through the watchdog; POST /reboot-rom through rom_reboot()
 //   GET  anything else the report page (also answers phones' captive-portal probes)
 
@@ -194,12 +195,17 @@ static void handle_request(struct tcp_pcb *pcb, conn_t *c, size_t body_start, ui
         bootlog_clear();
         respond(pcb, c, "303 See Other", "text/plain", "Location: /\r\n", "", 0, 0);
     } else if (strcmp(method, "POST") == 0 &&
-               (strcmp(path, "/builtin") == 0 || strcmp(path, "/flash") == 0 || strcmp(path, "/late") == 0)) {
+               (strcmp(path, "/builtin") == 0 || strcmp(path, "/flash") == 0 || strcmp(path, "/late") == 0 ||
+                strcmp(path, "/csup") == 0 || strcmp(path, "/csdown") == 0)) {
         uint32_t sw = bootlog_switches();
         if (strcmp(path, "/builtin") == 0) {
             sw |= SWITCH_FORCE_BUILTIN;
         } else if (strcmp(path, "/flash") == 0) {
             sw &= ~SWITCH_FORCE_BUILTIN;
+        } else if (strcmp(path, "/csup") == 0) {
+            sw |= SWITCH_CS_PULLUP;
+        } else if (strcmp(path, "/csdown") == 0) {
+            sw &= ~SWITCH_CS_PULLUP;
         } else {
             sw |= SWITCH_WIFI_LATE;
         }

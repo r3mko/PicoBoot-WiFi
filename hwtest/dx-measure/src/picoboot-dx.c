@@ -180,6 +180,12 @@ int main(void) {
         payload_word_count = PAYLOAD_INVALID;
     }
 
+    // phase 0: optionally pull CS up instead of down (step 0.7: CS reads low until ~42 ms)
+    if (switches & SWITCH_CS_PULLUP) {
+        gpio_pull_up(PIN_CS);
+        rec.flags |= BOOT_FLAG_CS_PULLUP;
+    }
+
     if (payload_word_count != PAYLOAD_INVALID) {
         payload = flash_payload;
         channel_config_set_bswap(&c, true);

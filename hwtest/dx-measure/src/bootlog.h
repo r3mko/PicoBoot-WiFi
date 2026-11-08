@@ -20,6 +20,7 @@
 #define BOOT_FLAG_MARKER          (1u << 5)   // The POWMAN scratch session marker was already set
 #define BOOT_FLAG_QUALIFIED       (1u << 6)   // cs_qual_* fields are valid (builds from 2026-11-08 on)
 #define BOOT_FLAG_PINS            (1u << 7)   // pins_at_ready and cs_high_us are valid
+#define BOOT_FLAG_CS_PULLUP       (1u << 8)   // CS had its pull-up on instead of the reset pull-down
 
 typedef struct {
     uint32_t magic;             // BOOTLOG_MAGIC
@@ -61,6 +62,7 @@ uint bootlog_read(boot_record_t *out, uint max_count);
 // erases flash (same rules as bootlog_append).
 #define SWITCH_FORCE_BUILTIN  (1u << 0)   // Boot the built-in IPL even with a valid flash payload
 #define SWITCH_WIFI_LATE      (1u << 1)   // Next boot only: start Wi-Fi 60 s after the injection
+#define SWITCH_CS_PULLUP      (1u << 2)   // Pull CS up instead of keeping the pads' reset pull-down
 
 uint32_t bootlog_switches(void);
 void bootlog_set_switches(uint32_t switches);

@@ -146,9 +146,9 @@ static void put_boot(out_t *o, const boot_record_t *b) {
         put(o, "  First CS             : not seen within the timeout (no console?)\n");
     }
     if (b->flags & BOOT_FLAG_PINS) {
-        put(o, "  Pins at PIO ready    : CS %s, CLK %s, DATA %s",
-            (b->pins_at_ready & 1) ? "high" : "LOW", (b->pins_at_ready & 2) ? "high" : "low",
-            (b->pins_at_ready & 4) ? "high" : "low");
+        put(o, "  Pins at PIO ready    : CS %s (pull-%s), CLK %s, DATA %s",
+            (b->pins_at_ready & 1) ? "high" : "LOW", (b->flags & BOOT_FLAG_CS_PULLUP) ? "up" : "down",
+            (b->pins_at_ready & 2) ? "high" : "low", (b->pins_at_ready & 4) ? "high" : "low");
         if (b->cs_high_us > 0) {
             put(o, "; CS first seen high %ld us later\n", (long)b->cs_high_us);
         } else if (b->cs_high_us < 0 && !(b->pins_at_ready & 1)) {
@@ -185,8 +185,9 @@ size_t report_render(char *buf, size_t size) {
     put(&o, "  Wi-Fi clients        : %d\n", net_client_count());
     put(&o, "  Flash 0x3FFF00       : %s\n", last_page_state());
     uint32_t sw = bootlog_switches();
-    put(&o, "  Next power-on boots  : %s%s\n\n",
+    put(&o, "  Next power-on boots  : %s, CS pull-%s%s\n\n",
         (sw & SWITCH_FORCE_BUILTIN) ? "the built-in gekkoboot (forced)" : "the flash payload if valid, else built-in",
+        (sw & SWITCH_CS_PULLUP) ? "UP (test)" : "down (as PicoBoot)",
         (sw & SWITCH_WIFI_LATE) ? "; Wi-Fi starts 60 s late (once)" : "");
 
     uint n = bootlog_read(log_rows, LOG_ROWS);
@@ -200,12 +201,13 @@ size_t report_render(char *buf, size_t size) {
             snprintf(clocked, sizeof(clocked), "%lu", (unsigned long)b->cs_qual_at_end);
         }
         if (b->flags & BOOT_FLAG_PINS) {
+            const char *pull = (b->flags & BOOT_FLAG_CS_PULLUP) ? "U:" : "";
             if (b->pins_at_ready & 1) {
-                snprintf(cs_ready, sizeof(cs_ready), "high");
+                snprintf(cs_ready, sizeof(cs_ready), "%shigh", pull);
             } else if (b->cs_high_us > 0) {
-                snprintf(cs_ready, sizeof(cs_ready), "low>%ldms", (long)(b->cs_high_us / 1000));
+                snprintf(cs_ready, sizeof(cs_ready), "%slow>%ldms", pull, (long)(b->cs_high_us / 1000));
             } else {
-                snprintf(cs_ready, sizeof(cs_ready), "low");
+                snprintf(cs_ready, sizeof(cs_ready), "%slow", pull);
             }
         }
         put(&o, "  %4lu  %-5s  %-8s  %5lu  %9ld  %13lu  %9lu  %6lu/%-6lu    %7s  %-8s  %s\n",
@@ -224,6 +226,8 @@ size_t report_render(char *buf, size_t size) {
             "<form method=post action=/builtin><button>Next boots: built-in gekkoboot</button></form>"
             "<form method=post action=/flash><button>Next boots: flash payload</button></form>"
             "<form method=post action=/late><button>Next boot: Wi-Fi 60 s late</button></form>"
+            "<form method=post action=/csup><button>Next boots: CS pull-up</button></form>"
+            "<form method=post action=/csdown><button>Next boots: CS pull-down</button></form>"
             "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
             "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
             "<form method=post action=/clear><button>Clear boot log</button></form>"

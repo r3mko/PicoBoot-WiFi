@@ -15,11 +15,13 @@ import re
 from collections import deque
 
 # Decoded instruction kinds
-JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET = range(8)
+JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET, PUSH = range(9)
 
 JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b110, 0b111
 OUT_PINS, OUT_NULL = 0b000, 0b011
-REG_X, REG_Y, REG_OSR = 0b001, 0b010, 0b111          # MOV destination/source codes
+REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR = 0b001, 0b010, 0b011, 0b110, 0b111   # MOV destination/source codes
+MOV_NONE, MOV_INVERT = 0b00, 0b01                    # MOV operations
+RX_FIFO_DEPTH = 4
 SET_X, SET_Y, SET_PINDIRS = 0b001, 0b010, 0b100
 
 
@@ -55,12 +57,14 @@ def decode(word):
     if op == 0b100:                                   # PULL, p.327
         if arg & 0x80 and not arg & 0x1F:
             return (PULL, (arg >> 6) & 1, (arg >> 5) & 1)   # (IfEmpty, Block)
-        raise unsupported("PUSH")
+        if not arg & 0x80 and not arg & 0x5F:          # PUSH, p.326 (IfFull only matters with autopush)
+            return (PUSH, (arg >> 5) & 1, 0)            # (Block, -)
+        raise unsupported("PUSH iffull")
     if op == 0b101:                                   # MOV, p.328
         dest, mov_op, src = arg >> 5, (arg >> 3) & 0b11, arg & 0b111
-        if mov_op == 0 and dest in (REG_X, REG_Y) and src in (REG_X, REG_Y, REG_OSR):
-            return (MOV, dest, src)
-        raise unsupported("MOV other than X/Y <- X/Y/OSR")
+        if mov_op in (MOV_NONE, MOV_INVERT) and dest in (REG_X, REG_Y, REG_ISR) and src in (REG_X, REG_Y, REG_NULL, REG_OSR):
+            return (MOV, dest, (src, mov_op))
+        raise unsupported("MOV other than X/Y/ISR <- X/Y/NULL/OSR, plain or inverted")
     if op == 0b110:                                   # IRQ, p.330
         if arg & 0xE0 or arg & 0x18:
             raise unsupported("IRQ clear/wait or relative index")
@@ -109,7 +113,8 @@ class StateMachine:
         self.fifo_depth = fifo_depth                  # 8 when the TX FIFO is joined, p.335
         self.jmp_pin = jmp_pin                        # EXECCTRL.JMP_PIN, p.322
         self.fifo = deque()
-        self.pc = self.x = self.y = self.osr = 0
+        self.pc = self.x = self.y = self.osr = self.isr = 0
+        self.rx = deque()                             # RX FIFO, filled by PUSH
         self.osr_count = 32                           # empty after reset/restart, p.338
         self.enabled = False
 
@@ -203,12 +208,25 @@ class StateMachine:
                     pio.pin_dir[self.set_base + i] = (b >> i) & 1
             self._next()
         elif kind == MOV:                             # p.328
-            value = {REG_X: self.x, REG_Y: self.y, REG_OSR: self.osr}[b]
+            src, mov_op = b
+            value = {REG_X: self.x, REG_Y: self.y, REG_NULL: 0, REG_OSR: self.osr}[src]
+            if mov_op == MOV_INVERT:
+                value ^= 0xFFFFFFFF
             if a == REG_X:
                 self.x = value
-            else:
+            elif a == REG_Y:
                 self.y = value
+            else:
+                self.isr = value
             self._next()
+        elif kind == PUSH:                            # p.326
+            if len(self.rx) < RX_FIFO_DEPTH:
+                self.rx.append(self.isr)
+                self.isr = 0
+                self._next()
+            elif not a:                               # noblock on a full FIFO: the data is lost
+                self.isr = 0
+                self._next()
         elif kind == PULL:                            # p.327; with autopull: no-op unless empty, p.339
             if_empty, block = a, b
             if (if_empty or self.autopull) and self.osr_count < self.threshold:

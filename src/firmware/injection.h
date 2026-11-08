@@ -19,9 +19,12 @@ typedef struct {
     bool byteswap;              // Flash payloads are stored big-endian; the built-in IPL is not
 } injection_payload_t;
 
-// Boosts the clock, sets up both state machines and the DMA, and starts them. Returns as soon
-// as the state machines run ("PIO ready"); the console's first CS may come any time after that.
-void injection_start(const injection_payload_t *payload);
+// Boosts the clock and sets up both state machines (with the CS pull-up, design D36) and the DMA,
+// which starts filling the PIO FIFO. The state machines don't run yet.
+void injection_prepare(const injection_payload_t *payload);
+
+// Starts the state machines ("PIO ready"); the console's first CS may come any time after that.
+void injection_go(void);
 
 // True once the DMA has fed every word and the PIO has shifted out the last one and released
 // the data line (clocked_output reached disable_chip).

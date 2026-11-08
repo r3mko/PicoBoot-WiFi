@@ -15,6 +15,10 @@ JMP_NOT_OSRE_0 = 0x00E0     # jmp !osre, 0
 JMP_X_DEC_0 = 0x0040        # jmp x--, 0
 JMP_NOT_X_0 = 0x0020        # jmp !x, 0
 JMP_PIN_0 = 0x00C0          # jmp pin, 0
+MOV_X_NOT_NULL = 0xA02B     # mov x, ~null
+MOV_ISR_X = 0xA0C1          # mov isr, x
+PUSH_NOBLOCK = 0x8000       # push noblock
+PUSH_BLOCK = 0x8020         # push block
 JMP_0 = 0x0000              # jmp 0
 WAIT_1_GPIO_5 = 0x2085      # wait 1 gpio, 5
 WAIT_1_IRQ_0 = 0x20C0       # wait 1 irq, 0
@@ -102,6 +106,27 @@ class InstructionTest(unittest.TestCase):
         sm.pc = 0
         pio.step(12)
         self.assertEqual(sm.pc, 0, "taken once the pin is high")
+
+    def test_mov_inverted_null_sets_all_ones(self):          # p.328
+        pio, sm = machine([JMP_0, JMP_0], autopull=False)
+        sm.exec_instruction(MOV_X_NOT_NULL)
+        self.assertEqual(sm.x, 0xFFFFFFFF)
+
+    def test_mov_isr_and_push_read_out_x(self):             # p.326, p.328
+        pio, sm = machine([JMP_0, JMP_0], autopull=False)
+        sm.x = 0xFFFFFF00
+        sm.exec_instruction(MOV_ISR_X)
+        sm.exec_instruction(PUSH_NOBLOCK)
+        self.assertEqual((list(sm.rx), sm.isr), ([0xFFFFFF00], 0))
+
+    def test_push_block_stalls_on_a_full_rx_fifo(self):     # p.326
+        pio, sm = machine([PUSH_BLOCK, JMP_0], autopull=False)
+        sm.rx.extend([1, 2, 3, 4])
+        pio.step(0)
+        self.assertEqual(sm.pc, 0)
+        sm.rx.popleft()
+        pio.step(1)
+        self.assertEqual(sm.pc, 1)
 
     def test_wait_irq_clears_the_flag(self):                 # p.324
         pio, sm = machine([WAIT_1_IRQ_0, JMP_0], autopull=False)

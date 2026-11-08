@@ -24,7 +24,7 @@ static const PIO pio = pio0;
 static uint transfer_start_sm, clocked_output_sm, clocked_output_offset;
 static int dma_chan = -1;
 
-void injection_start(const injection_payload_t *payload) {
+void injection_prepare(const injection_payload_t *payload) {
     // Set 250MHz clock to get more cycles in between CLK pulses.
     // This is the lowest value I was able to make the code work.
     // Should be still considered safe for most Pico boards.
@@ -94,7 +94,9 @@ void injection_start(const injection_payload_t *payload) {
         payload->count,                 // Number of words
         true                            // Start immediately
     );
+}
 
+void injection_go(void) {
     // Start PIO state machines
     pio_sm_set_enabled(pio, transfer_start_sm, true);
     pio_sm_set_enabled(pio, clocked_output_sm, true);

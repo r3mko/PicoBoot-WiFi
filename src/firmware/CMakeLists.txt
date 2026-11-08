@@ -6,6 +6,7 @@ set(FIRMWARE_SOURCES
     injection.c
     injection_pio.c
     payload.c
+    counters.c
 )
 
 add_executable(firmware ${FIRMWARE_SOURCES})
@@ -16,6 +17,7 @@ set_source_files_properties(${FIRMWARE_SOURCES} PROPERTIES
 )
 
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/injection.pio)
+pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/counters.pio)
 
 # Built-in IPL (gekkoboot r9.4), scrambled into ipl.h as in PicoBoot-DX; used when there is no
 # valid payload

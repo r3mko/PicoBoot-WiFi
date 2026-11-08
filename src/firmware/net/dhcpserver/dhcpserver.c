@@ -143,8 +143,13 @@ static int dhcp_socket_sendto(struct udp_pcb **udp, struct netif *nif, const voi
     return len;
 }
 
+// `opt` is the 308 option bytes after the magic cookie. Only an option whose length byte and data
+// lie inside them is returned, so callers can read all of it.
 static uint8_t *opt_find(uint8_t *opt, uint8_t cmd) {
-    for (int i = 0; i < 308 && opt[i] != DHCP_OPT_END;) {
+    for (int i = 0; i + 1 < 308 && opt[i] != DHCP_OPT_END;) {
+        if (i + 2 + opt[i + 1] > 308) {
+            break;
+        }
         if (opt[i] == cmd) {
             return &opt[i];
         }

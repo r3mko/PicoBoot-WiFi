@@ -170,6 +170,13 @@ static void dns_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p, 
     }
     DEBUG_printf("\n");
 
+    // The name must end, with QTYPE and QCLASS after it, inside the received message; otherwise
+    // the reply would be built from (and send back) bytes past the query
+    if (question_ptr > question_ptr_end || question_ptr_end - question_ptr < 4) {
+        DEBUG_printf("Truncated question\n");
+        goto ignore_request;
+    }
+
     // Check question length
     if (question_ptr - question_ptr_start > 255) {
         DEBUG_printf("Invalid question length\n");

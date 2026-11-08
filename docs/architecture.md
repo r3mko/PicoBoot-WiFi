@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.2; draft v1.3 (D10, D27, D39) for approval at the end of phase 1 |
+| **Status** | Approved v1.2; draft v1.3 (D10, D27, D36, D39) for approval at the end of phase 1 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -16,7 +16,7 @@
 | v1.0 | 2026-11-08 | The owner approved v0.2 with all its proposals ("ok, go ahead"). Every proposal is now a decision; nothing else changed. Step 1 of the design cycle is closed; the implementation plan (`docs/implementation-plan.md`) follows. |
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
 | v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
-| v1.3 draft | 2026-11-08 | During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). For approval at the end of phase 1. |
+| v1.3 draft | 2026-11-08 | During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
 
 ## How to read the decisions
 
@@ -68,7 +68,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D36 | CS glitch protection | Decision | CS pull-up, and a clock-qualified count of the 224 skipped pulses |
 | D37 | Last flash sector | Decision | Kept free; payload 2 is 4K shorter |
 | D38 | Wiring | Decision | README recommends 5 V to VSYS; 3V3 stays supported |
-| D39 | Boot log | Decision | The last 32 boot reports in the loader region's upper 8K |
+| D39 | Boot log | Decision | Up to the last 32 boot reports in the loader region's upper 8K |
 
 ## 1. Goal and scope
 
@@ -123,7 +123,7 @@ These follow from the research and bind every decision below.
 | Region | Flash offset | Size | Holds | Written by |
 |---|---|---|---|---|
 | Loader | `0x000000`–`0x002000` | 8K | The loader (D7), 2.7K | USB install only |
-| Boot log | `0x002000`–`0x004000` | 8K | The last 32 boot reports (D39) | Firmware |
+| Boot log | `0x002000`–`0x004000` | 8K | Up to the last 32 boot reports (D39) | Firmware |
 | Boot control | `0x004000`–`0x006000` | 8K | Active and pending slot, payload choice (D23) | Firmware |
 | Settings | `0x006000`–`0x008000` | 8K | Wi-Fi and user settings (D23) | Firmware |
 | Wi-Fi A | `0x008000`–`0x044000` | 240K | CYW43 blob for slot A (D14) | Install, OTA |
@@ -145,7 +145,7 @@ These follow from the research and bind every decision below.
 
 **D39 (Decision): a boot log in the loader region** (changes D6).
 - **Why:** step 1.10's console tests need 60+ power-ons. Phase 0 showed that a log read over Wi-Fi makes that practical: one phone connection for a whole series.
-- **Where:** the loader region shrinks to 8K, since the loader is 2.7K. The freed 8K (`0x002000`–`0x004000`), two sectors, keep a ring of 256-byte entries: the last 32 boot reports.
+- **Where:** the loader region shrinks to 8K, since the loader is 2.7K. The freed 8K (`0x002000`–`0x004000`), two sectors, keep a ring of 256-byte entries: up to the last 32 boot reports. When the ring wraps it erases a sector of 16, so it holds 17 to 32.
 - **When it's written:** every boot, warm ones included, after the injection and before Wi-Fi starts, so nothing reads flash in the background (C6).
 - **Torn entries:** a torn entry in the middle of a sector makes the ring move on to the next sector, so the newest entries are never erased (phase 0 review finding 2).
 - **After release:** it stays as part of the diagnostics (D22).
@@ -237,6 +237,12 @@ These follow from the research and bind every decision below.
   - The 225th transfer's first address clock must still reach `clocked_output`; phase 1 checks this in the simulator.
   - A passive counter with this rule caught the glitch on hardware, and agreed with the raw count on every good boot.
 - **Diagnostics:** the D31 raw and clocked counters stay. The boot report flags a difference: a glitch the injection survived.
+- **Proven in phase 1:** with PicoBoot's pad setting deliberately restored (a test mode), 2 power-up glitches in 40 boots, 36–37 ms after "PIO ready". Both were ignored, and Swiss started.
+- **Known limit (phase 1 code review; the owner chose to keep the proven programs):**
+  - "CLK rises" is checked as "CLK reads high" (`wait 1 gpio`), not as an edge.
+  - If CLK already reads high when a false CS pulse comes, the pulse still counts. On A2 chips that could happen if the console drives CLK high at power-up and then releases it, since RP2350-E9 can then hold the pad at about 2.2 V.
+  - Not seen: CLK was low in both glitches caught.
+  - The fix, if it's ever needed, is one `wait 0 gpio CLK` before each of the two waits (`on_transfer` and the passive counter).
 - **Compatibility:** the injection programs now differ from PicoBoot-DX v0.10. D4's compatibility covers the wiring, the payload format and the address, not the PIO code.
 
 **Boot flow:**

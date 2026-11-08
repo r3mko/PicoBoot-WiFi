@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.1; draft v1.2 (phase 1 additions) for approval at the end of phase 1 |
+| **Status** | Approved v1.1; draft v1.2 (phase 1 additions and review) for approval at the end of phase 1 |
 | **Design** | [architecture.md](architecture.md), Approved v1.2 |
 | **Owner** | Remko Kleinjan |
 
@@ -13,7 +13,7 @@
 | v0.1 draft | 2026-11-08 | First draft. It splits the design's phases (D28) into steps, assigns models and lists what's needed from the owner. The owner's equipment (a current meter, no oscilloscope or logic analyzer) and console (DOL-001 only) don't fit the design's scope-based measurements. Design points DP1–DP5 propose the changes. |
 | v1.0 | 2026-11-08 | The owner approved the draft with DP1–DP5 ("approved, go ahead with phase 0"). DP1–DP5 are now design decisions D31–D35 (design v1.1). Phase 0 starts. |
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
-| v1.2 draft | 2026-11-08 | Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. |
+| v1.2 draft | 2026-11-08 | Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
 
 ## How this plan works
 
@@ -184,6 +184,25 @@ docs/                       design, plan, research, API, update-file format
 | 1.10 | **Console tests**:<br>• 10 cold boots each with gekkoboot and Swiss;<br>• warm board;<br>• *reboot* from the page while a game runs (the console keeps running and the report says "warm, no injection");<br>• the glitch check: 40 cold boots with a test switch that restores PicoBoot's CS pull-down, where every boot must start and any glitch must show as survived in the report.<br>Compare the margin with phase 0 | Owner | Results recorded; the margin difference gives the loader's cost; no blue screens |
 | 1.11 | **Budget and clock**: set the D10 budget and the D27 clock and flash divider from phase 0 and 1.10. If the loader is too slow, the R1 fallback (loader starts the PIO) | Opus + owner | Values written into the design; budget met |
 | 1.12 | **End of phase**: fresh Opus review, fixes, design and plan updated, merge | Opus, owner | Merged |
+
+**Code review of phase 1** (a fresh Opus 5.5 reviewer, 2026-11-08):
+- **Overall:** no high or medium defects. The loader and D8 rule, the injection port, records and ring log, flash writes and payload bounds held when traced. The build is clean, the tests pass, and the built install UF2 places every part at its `layout.h` offset with nothing at or above `0x3FF000`.
+- **Re-test before the merge** (the owner's choice): on the bench, a test UF2 blanks slot A and the board must come up in BOOTSEL (finding 3); after a reinstall, the page; then 10 Swiss cold boots.
+
+| # | Finding (all low) | Where it's handled |
+|---|---|---|
+| 1 | The Wi-Fi blob header check could wrap (`clm_offset + clm_len`), so a bad header could send the CYW43 driver past the area | Fixed in phase 1; host test. Checking the blob's SHA-256 after the injection: phase 3 (D14) |
+| 2 | `ringlog_read()` rechecked every entry's CRC for each entry returned, about 1,000 CRCs over uncached flash per page load | Fixed: one pass |
+| 3 | With both slots empty, the loader's reboot into BOOTSEL waits on the watchdog tick, which only the SDK's clock setup (skipped) starts | Fixed: the loader starts the tick. Bench test before the merge |
+| 4 | The DNS server could reply with bytes past the query; the DHCP option search could return an option past its buffer (both from pico-examples) | Fixed. The phase 5 security review looks at both again |
+| 5 | The D36 check is "CLK reads high", not "CLK rises": a false CS pulse while CLK already reads high still counts | **Not changed** (the owner's choice): a known limit in D36, not seen on hardware |
+| 6 | The CS pull-down test flag lives in boot control: one POST turns the D36 pull-up off for every later power-on | 2.4: the release web UI has no test switches; the firmware ignores the flag outside test builds; bit 7 stays reserved |
+| 7 | 250 MHz was a constant, and after the injection the clock dropped to half of it (125 MHz) | Fixed: `PICOBOOT_WIFI_INJECTION_KHZ` and `PICOBOOT_WIFI_FLASH_CLKDIV` are build settings (D27); after the injection the clock returns to the SDK's 150 MHz, as on warm boots |
+| 8 | The ring log holds 17 to 32 entries, not "the last 32" | D39 says "up to 32" |
+| 9 | A button's failed boot control write still looked successful | Fixed: the page says so |
+| 10 | CI uploaded the stand-alone `firmware.uf2`, which writes over the loader, boot control and Wi-Fi A | Fixed: only the install UF2 and the ELFs |
+| — | Test gaps: `payload_check()`, the Wi-Fi blob check, the built install UF2 against the built parts | Added. Not added: a power cut during a ring-log erase, sequence wrap-around in the log, a shared boot-info encoder (later phases) |
+| — | From the boot 95 page: the log's margin column showed the false CS edge on glitch boots | Fixed: it shows the margin to the first real transfer |
 
 ## Phase 2: Wi-Fi
 

@@ -156,3 +156,19 @@ Set by the owner from the results above, in the design (draft v1.3):
 | D27 flash divider | **3** (83 MHz at 250 MHz) | The payload DMA reads 18 MB/s at 125 MHz, about 5.5 times what the console needs |
 
 The R1 fallback (the loader starts the PIO) isn't needed.
+
+## 1.12 Code review and re-test
+
+**Code review** (a fresh Opus 5.5 reviewer): no high or medium defects; 10 low findings. The fixes are listed in the implementation plan (phase 1, "Code review of phase 1"). Two of them change behaviour on the hardware:
+- after the injection, the clock goes back to the SDK's 150 MHz (as on warm boots) instead of 125 MHz;
+- with both slots empty, the loader starts the watchdog tick before rebooting into BOOTSEL.
+
+The owner chose to keep the proven PIO programs (finding 5, a known limit in D36).
+
+**Re-test before the merge** (the owner's choice):
+
+| Check | Result |
+|---|---|
+| Bench: a test UF2 blanks slot A; the board must come up in BOOTSEL (the RP2350 drive) | *to do* |
+| Bench: reinstall; the page shows 150 MHz after the injection, Wi-Fi up | *to do* |
+| Console: 10 Swiss cold boots | *to do* |

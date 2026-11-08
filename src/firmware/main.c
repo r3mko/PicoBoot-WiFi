@@ -29,6 +29,7 @@
 #include "wifiblob.h"
 #include "net.h"
 #include "page.h"
+#include "storage.h"
 
 // The rest of flash is read through the untranslated XIP window: the loader maps only this
 // firmware's slot at XIP_BASE (boot ROM research §4)
@@ -67,11 +68,7 @@ static void read_boot_info(void) {
 }
 
 // The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid
-static injection_payload_t choose_payload(void) {
-    const record_header_t *rec = record_find(FLASH_UNTRANSLATED(LAYOUT_BOOTCTL_OFFSET), BOOTCTL_MAGIC,
-                                             BOOTCTL_VERSION, sizeof(bootctl_t), NULL);
-    const bootctl_t *b = rec ? record_payload(rec) : &BOOTCTL_DEFAULT;
-
+static injection_payload_t choose_payload(const bootctl_t *b) {
     injection_payload_t payload = {0};
     if (b->active_payload == BOOTCTL_PAYLOAD_1) {
         payload = (injection_payload_t){PAYLOAD1, payload_check(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE), true};
@@ -90,8 +87,8 @@ static injection_payload_t choose_payload(void) {
 
 // Runs the injection and measures it into the report. Nothing slow may run before "PIO ready",
 // and nothing may write flash until the injection has ended (design C1, C6).
-static void inject(const injection_payload_t *payload) {
-    injection_prepare(payload);
+static void inject(const injection_payload_t *payload, bool cs_pullup) {
+    injection_prepare(payload, cs_pullup);
     counters_init();
     counters_start();           // The counters run before the injection, so they see every edge
     injection_go();
@@ -139,7 +136,7 @@ static void run_wifi(uint64_t t_start) {
 
     page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
     page.wifi_area = wifiblob_select(report.slot);
-    if (page.wifi_area >= 0 && cyw43_arch_init() == 0 && net_start(ssid, AP_PASSWORD, page_render)) {
+    if (page.wifi_area >= 0 && cyw43_arch_init() == 0 && net_start(ssid, AP_PASSWORD, page_render, page_action)) {
         page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
         page_init(&page);
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
@@ -159,8 +156,11 @@ int main(void) {
     read_boot_info();
 
     if (report.power_on) {
-        const injection_payload_t payload = choose_payload();
-        inject(&payload);
+        bootctl_t bootctl;
+        storage_bootctl_load(&bootctl);
+        report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
+        const injection_payload_t payload = choose_payload(&bootctl);
+        inject(&payload, !report.cs_pulldown_test);
     } else {
         report.result = INJECTION_NOT_RUN;      // A warm reboot: the console may be running (C2)
     }
@@ -168,5 +168,9 @@ int main(void) {
     report.chip_version = rp2350_chip_version();
     report.rom_version = rp2350_rom_version();
 
-    run_wifi(time_us_64());
+    // The injection has ended and Wi-Fi isn't running yet: nothing reads flash in the background
+    const uint64_t t_end = time_us_64();
+    storage_bootlog_append(&report);
+
+    run_wifi(t_end);
 }

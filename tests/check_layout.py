@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Checks the flash layout in src/common/layout.h (design D6, D37), and optionally that built
+Checks the flash layout in src/common/layout.h (design D6, D37, D39), and optionally that built
 ELFs fit their regions (run by CI after the build):
 
     python3 tests/check_layout.py
@@ -26,6 +26,7 @@ PICOBOOT_PAYLOAD_SIZE = 0x180000        # 1.5 MB (design C4)
 # (name, offset define, size define), in flash order
 REGIONS = [
     ("loader", "LOADER_OFFSET", "LOADER_SIZE"),
+    ("boot log", "BOOTLOG_OFFSET", "BOOTLOG_SIZE"),
     ("boot control", "BOOTCTL_OFFSET", "BOOTCTL_SIZE"),
     ("settings", "SETTINGS_OFFSET", "SETTINGS_SIZE"),
     ("Wi-Fi A", "WIFI_A_OFFSET", "WIFI_SIZE"),
@@ -75,6 +76,8 @@ def check_layout(layout):
     for name in ("BOOTCTL_SIZE", "SETTINGS_SIZE"):
         if layout[name] != 2 * sector:
             problems.append(f"LAYOUT_{name} must be two sectors (design D23)")
+    if layout["BOOTLOG_SIZE"] < 2 * sector:
+        problems.append("LAYOUT_BOOTLOG_SIZE must be at least two sectors (design D39)")
     return problems
 
 

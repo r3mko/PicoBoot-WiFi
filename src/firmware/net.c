@@ -11,6 +11,7 @@
 //
 //   POST /reboot-wd    warm reboot through the watchdog (test of design D8)
 //   POST /reboot-rom   warm reboot through rom_reboot()
+//   POST other paths   the page's actions (net_action_fn), then back to the page
 //   GET  anything else the page (also answers phones' captive-portal probes)
 
 #include <stdio.h>
@@ -27,7 +28,7 @@
 
 #define HTTP_PORT       80
 #define REQ_MAX         1024        // Request line and headers
-#define PAGE_MAX        6144        // Rendered page
+#define PAGE_MAX        10240       // Rendered page (with the boot log table)
 #define POLL_INTERVAL   2           // tcp_poll() in coarse timer ticks (0.5 s each)
 #define IDLE_POLLS      10          // Close a connection after ~10 s without progress
 
@@ -43,6 +44,7 @@ typedef struct {
 static dhcp_server_t dhcp_server;
 static dns_server_t dns_server;
 static net_page_fn render_page;
+static net_action_fn page_action;
 static int open_conns;              // While > 0, net_poll() doesn't sleep
 static int client_count;
 static uint64_t next_client_check_us;
@@ -100,7 +102,8 @@ static void send_more(struct tcp_pcb *pcb, conn_t *c) {
 }
 
 // May free c: don't use it afterwards
-static void respond(struct tcp_pcb *pcb, conn_t *c, const char *status, const char *body, size_t body_len) {
+static void respond(struct tcp_pcb *pcb, conn_t *c, const char *status, const char *extra_headers,
+                    const char *body, size_t body_len) {
     size_t cap = 256 + body_len;
     c->out = malloc(cap);
     if (!c->out) {
@@ -109,7 +112,8 @@ static void respond(struct tcp_pcb *pcb, conn_t *c, const char *status, const ch
     }
     int n = snprintf(c->out, cap,
                      "HTTP/1.1 %s\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n"
-                     "Cache-Control: no-store\r\nConnection: close\r\n\r\n", status, (unsigned)body_len);
+                     "%sCache-Control: no-store\r\nConnection: close\r\n\r\n", status, (unsigned)body_len,
+                     extra_headers);
     if (n < 0 || (size_t)n + body_len > cap) {
         conn_close(pcb, c);
         return;
@@ -131,7 +135,12 @@ static void handle_request(struct tcp_pcb *pcb, conn_t *c) {
         reboot_at_us = time_us_64() + 500 * 1000;
         static const char body[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/\">"
                                    "<pre>Rebooting... this page reloads in 8 s (reconnect to the Wi-Fi if needed)</pre>";
-        respond(pcb, c, "200 OK", body, sizeof(body) - 1);
+        respond(pcb, c, "200 OK", "", body, sizeof(body) - 1);
+        return;
+    }
+
+    if (strcmp(method, "POST") == 0 && page_action && page_action(path)) {
+        respond(pcb, c, "303 See Other", "Location: /\r\n", "", 0);
         return;
     }
 
@@ -141,7 +150,7 @@ static void handle_request(struct tcp_pcb *pcb, conn_t *c) {
         return;
     }
     size_t len = render_page(page, PAGE_MAX);
-    respond(pcb, c, "200 OK", page, len);
+    respond(pcb, c, "200 OK", "", page, len);
     free(page);
 }
 
@@ -226,8 +235,9 @@ static err_t on_accept(void *arg, struct tcp_pcb *pcb, err_t err) {
     return ERR_OK;
 }
 
-bool net_start(const char *ssid, const char *password, net_page_fn page) {
+bool net_start(const char *ssid, const char *password, net_page_fn page, net_action_fn action) {
     render_page = page;
+    page_action = action;
     cyw43_arch_enable_ap_mode(ssid, password, CYW43_AUTH_WPA2_AES_PSK);
 
     ip4_addr_t gw, mask;

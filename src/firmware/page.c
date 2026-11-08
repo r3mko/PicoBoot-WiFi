@@ -6,9 +6,11 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include "page.h"
 #include "net.h"
 #include "bootctl.h"
+#include "storage.h"
 #include "hardware/adc.h"
 #include "hardware/structs/powman.h"
 #include "pico/time.h"
@@ -17,6 +19,8 @@
 #define WORDS_PER_TRANSFER 256
 
 static page_info_t info;
+static boot_report_t log_rows[STORAGE_BOOTLOG_ENTRIES];
+static uint32_t log_seq[STORAGE_BOOTLOG_ENTRIES];
 
 typedef struct {
     char *buf;
@@ -78,6 +82,63 @@ static const char *result_name(injection_result_t r) {
         case INJECTION_NO_CS: return "no CS seen (no console?)";
         default: return "not run: a warm boot (design D8)";
     }
+}
+
+static const char *short_result(const boot_report_t *r) {
+    const uint32_t expected = SKIPPED_TRANSFERS + r->payload_words / WORDS_PER_TRANSFER;
+    switch (r->result) {
+        case INJECTION_NOT_RUN: return "warm (not run)";
+        case INJECTION_NO_CS: return "no CS";
+        case INJECTION_STALLED: return "STALLED";
+        default: break;
+    }
+    if (r->cs_raw > r->cs_clocked) return "ok, GLITCH survived";
+    if (r->cs_clocked < expected) return "MISSED";
+    return "ok";
+}
+
+// The last boots from the boot log (design D39), newest first
+static void put_log(out_t *o) {
+    const unsigned n = storage_bootlog_read(log_rows, log_seq, STORAGE_BOOTLOG_ENTRIES);
+    put(o, "\nBOOT LOG (newest first, %u kept)\n", n);
+    put(o, "  boot slot reset payload   xfers  margin_us  raw/clocked  CS@ready      result\n");
+    for (unsigned i = 0; i < n; i++) {
+        const boot_report_t *r = &log_rows[i];
+        const bool ran = r->result == INJECTION_COMPLETE || r->result == INJECTION_STALLED;
+        char counts[24] = "-", margin[12] = "-", cs[16] = "-";
+        if (ran) {
+            snprintf(counts, sizeof(counts), "%lu/%lu", (unsigned long)r->cs_raw, (unsigned long)r->cs_clocked);
+            snprintf(margin, sizeof(margin), "%ld", (long)r->margin_raw_us);
+        }
+        if (r->result != INJECTION_NOT_RUN) {
+            snprintf(cs, sizeof(cs), "%s%s", r->cs_high_at_ready ? "high" : "low", r->cs_pulldown_test ? " (pd)" : "");
+        }
+        put(o, "  %4lu  %c   %-5s %-9s %5lu  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
+            r->slot == BOOTCTL_SLOT_B ? 'B' : 'A', r->power_on ? reset_reason(r->chip_reset) : "warm",
+            r->result == INJECTION_NOT_RUN ? "-" : (r->payload == PAYLOAD_SOURCE_BUILTIN ? "built-in" :
+                                                    r->payload == PAYLOAD_SOURCE_PAYLOAD2 ? "payload 2" : "payload 1"),
+            (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), margin, counts, cs, short_result(r));
+    }
+}
+
+bool page_action(const char *path) {
+    bootctl_t b;
+    storage_bootctl_load(&b);
+    if (strcmp(path, "/payload1") == 0) {
+        b.active_payload = BOOTCTL_PAYLOAD_1;
+    } else if (strcmp(path, "/payload2") == 0) {
+        b.active_payload = BOOTCTL_PAYLOAD_2;
+    } else if (strcmp(path, "/builtin") == 0) {
+        b.active_payload = BOOTCTL_PAYLOAD_BUILTIN;
+    } else if (strcmp(path, "/cs-pullup") == 0) {
+        b.flags &= (uint8_t)~BOOTCTL_FLAG_TEST_CS_PULLDOWN;
+    } else if (strcmp(path, "/cs-pulldown") == 0) {
+        b.flags |= BOOTCTL_FLAG_TEST_CS_PULLDOWN;
+    } else {
+        return false;
+    }
+    storage_bootctl_store(&b);
+    return true;
 }
 
 // The CS counts against what the payload needs: 224 skipped transfers plus one per 1K, and the
@@ -145,7 +206,22 @@ size_t page_render(char *buf, size_t size) {
     put(&o, "  Temperature        : %.1f C (RP2350 sensor; reads low on a low 3.3 V rail)\n", (double)temperature_c());
     put(&o, "  Wi-Fi clients      : %d\n", net_client_count());
 
+    bootctl_t b;
+    const bool stored = storage_bootctl_load(&b);
+    put(&o, "  Next power-on      : %s; CS %s%s\n",
+        b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in gekkoboot" :
+        b.active_payload == BOOTCTL_PAYLOAD_2 ? "payload 2 (built-in if not valid)" : "payload 1 (built-in if not valid)",
+        (b.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN) ? "PULL-DOWN (test, as PicoBoot)" : "pull-up (D36)",
+        stored ? "" : " (boot control empty: defaults)");
+
+    put_log(&o);
+
     put(&o, "</pre>"
+            "<form method=post action=/payload1><button>Next: payload 1</button></form>"
+            "<form method=post action=/payload2><button>Next: payload 2</button></form>"
+            "<form method=post action=/builtin><button>Next: built-in gekkoboot</button></form><br>"
+            "<form method=post action=/cs-pullup><button>CS pull-up (normal)</button></form>"
+            "<form method=post action=/cs-pulldown><button>CS pull-down (test)</button></form><br>"
             "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
             "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
             "<a href=\"/\">Refresh</a></body></html>\n");

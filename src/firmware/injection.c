@@ -24,7 +24,7 @@ static const PIO pio = pio0;
 static uint transfer_start_sm, clocked_output_sm, clocked_output_offset;
 static int dma_chan = -1;
 
-void injection_prepare(const injection_payload_t *payload) {
+void injection_prepare(const injection_payload_t *payload, bool cs_pullup) {
     // Set 250MHz clock to get more cycles in between CLK pulses.
     // This is the lowest value I was able to make the code work.
     // Should be still considered safe for most Pico boards.
@@ -47,6 +47,9 @@ void injection_prepare(const injection_payload_t *payload) {
     uint transfer_start_offset = pio_add_program(pio, &on_transfer_program);
 
     on_transfer_program_init(pio, transfer_start_sm, transfer_start_offset, INJECTION_PIN_CLK, INJECTION_PIN_CS);
+    if (!cs_pullup) {
+        gpio_pull_down(INJECTION_PIN_CS);       // Test only: PicoBoot's pad reset default (plan step 1.10)
+    }
     // Wait for 224 CS pulses before firing the IRQ
     // this marks the boundary where the first 1 kB (1024 bytes) transfer is about to start
     pio_prepare_transfer(pio, transfer_start_sm, 224, pio_x);

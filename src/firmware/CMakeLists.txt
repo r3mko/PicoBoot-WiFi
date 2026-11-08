@@ -10,7 +10,9 @@ set(FIRMWARE_SOURCES
     wifiblob.c
     net.c
     page.c
+    storage.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
+    ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )
 
 add_executable(firmware

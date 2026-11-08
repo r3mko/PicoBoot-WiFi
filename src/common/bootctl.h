@@ -22,12 +22,16 @@
 #define BOOTCTL_PAYLOAD_2       1
 #define BOOTCTL_PAYLOAD_BUILTIN 2
 
+#define BOOTCTL_FLAG_ORIGINAL_IPL_ONCE  (1u << 0)   // Phase 4: skip the injection once
+#define BOOTCTL_FLAG_TEST_CS_PULLDOWN   (1u << 7)   // Test: PicoBoot's CS pull-down instead of the
+                                                    // D36 pull-up (plan step 1.10's glitch check)
+
 typedef struct {
     uint8_t active_slot;        // BOOTCTL_SLOT_A or _B
     uint8_t pending_slot;       // Phase 3: the slot on trial (D12), or BOOTCTL_NONE
     uint8_t slot_state[2];      // Phase 3: empty / kept / trial / failed, per slot
     uint8_t active_payload;     // Phase 4: BOOTCTL_PAYLOAD_* (D15)
-    uint8_t flags;              // Phase 4: e.g. "original IPL once"
+    uint8_t flags;              // BOOTCTL_FLAG_*
     uint8_t reserved[2];
     uint32_t payload1_fingerprint;  // Phase 4: detects USB payload installs (D17)
 } bootctl_t;

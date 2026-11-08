@@ -20,6 +20,7 @@ CC = os.environ.get("CC", "cc")
 PROGRAMS = {
     "test_records.c": ["records.c"],
     "test_bootdecide.c": ["bootdecide.c"],
+    "test_ringlog.c": ["ringlog.c", "records.c"],
 }
 
 

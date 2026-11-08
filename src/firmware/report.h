@@ -46,4 +46,5 @@ typedef struct {
     uint32_t cs_raw;            // CS falling edges counted at the end of the injection
     uint32_t cs_clocked;        // Real transfers counted then; fewer than cs_raw: a glitch (D36)
     bool cs_high_at_ready;      // CS level at "PIO ready" (high with the D36 pull-up)
+    bool cs_pulldown_test;      // Test mode: PicoBoot's CS pull-down instead of the pull-up
 } boot_report_t;

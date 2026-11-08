@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-// The flash layout of PicoBoot-WiFi (design D6, D37). This is the only place it is written
+// The flash layout of PicoBoot-WiFi (design D6, D37, D39). This is the only place it is written
 // down: CMake reads it for the linker checks, and the tools and tests/check_layout.py parse it.
 //
 // Offsets are from the start of flash. Keep every value a plain hex number without a suffix,
@@ -15,7 +15,10 @@
 #define LAYOUT_FLASH_SIZE           0x00400000  // 4 MB W25Q32RV on the Pico 2 W
 
 #define LAYOUT_LOADER_OFFSET        0x00000000  // The loader (D7); only a USB install writes it
-#define LAYOUT_LOADER_SIZE          0x00004000
+#define LAYOUT_LOADER_SIZE          0x00002000
+
+#define LAYOUT_BOOTLOG_OFFSET       0x00002000  // Boot log: the last boot reports, two sectors (D39)
+#define LAYOUT_BOOTLOG_SIZE         0x00002000
 
 #define LAYOUT_BOOTCTL_OFFSET       0x00004000  // Boot control: two sectors, one record each (D23)
 #define LAYOUT_BOOTCTL_SIZE         0x00002000

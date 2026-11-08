@@ -5,6 +5,7 @@
  */
 
 #pragma once
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "report.h"
@@ -22,3 +23,6 @@ void page_init(const page_info_t *info);
 
 // The minimal report page of phase 1 (plan step 1.8; phase 2 brings the real web UI)
 size_t page_render(char *buf, size_t size);
+
+// The page's buttons: the payload for the next power-ons, and the CS test mode (plan step 1.10)
+bool page_action(const char *path);

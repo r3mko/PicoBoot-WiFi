@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Draft v1.2 (phase 0 results), waiting for the owner's approval |
+| **Status** | Approved v1.2, 2026-11-08 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -15,7 +15,7 @@
 | v0.2 | 2026-11-08 | The owner answered four rounds of questions. Fifteen items became decisions (D6, D7, D9, D11, D12, D14–D17, D19–D22, D27, D28). Home Wi-Fi (D21) moves out of the first release and stays an option for later releases, so it leaves the phase plan. New proposals: the license (D29) and the access point's security details (D30). Proposals D4, D5, D8, D10, D13, D18, D23–D26, D29, D30 and the phase plan in D28 wait for approval with the rest of the design. |
 | v1.0 | 2026-11-08 | The owner approved v0.2 with all its proposals ("ok, go ahead"). Every proposal is now a decision; nothing else changed. Step 1 of the design cycle is closed; the implementation plan (`docs/implementation-plan.md`) follows. |
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
-| v1.2 | 2026-11-08 | Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
+| v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
 
 ## How to read the decisions
 

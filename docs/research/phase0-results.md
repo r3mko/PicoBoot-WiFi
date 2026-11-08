@@ -2,6 +2,8 @@
 
 Hardware checks from implementation plan phase 0, measured by the owner with the measurement build `hwtest/dx-measure`.
 
+**Status:** approved by the owner with design v1.2 and plan v1.1; phase 0 merged into `main` on 2026-11-08.
+
 **Setup:**
 - A Pico 2 W (SSID suffix C2C4), in a DOL-001 with an SD2SP2 and an HDMI adapter, fed through 3V3.
 - Swiss r2119 and gekkoboot r9.4 as payloads.

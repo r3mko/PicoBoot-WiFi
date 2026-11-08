@@ -108,7 +108,9 @@ static void put_log(out_t *o) {
         char counts[24] = "-", margin[12] = "-", cs[16] = "-";
         if (ran) {
             snprintf(counts, sizeof(counts), "%lu/%lu", (unsigned long)r->cs_raw, (unsigned long)r->cs_clocked);
-            snprintf(margin, sizeof(margin), "%ld", (long)r->margin_raw_us);
+            // The real margin: to the first clocked transfer, which a glitch doesn't move
+            snprintf(margin, sizeof(margin), "%ld",
+                     (long)(r->margin_clocked_us >= 0 ? r->margin_clocked_us : r->margin_raw_us));
         }
         if (r->result != INJECTION_NOT_RUN) {
             snprintf(cs, sizeof(cs), "%s%s", r->cs_high_at_ready ? "high" : "low", r->cs_pulldown_test ? " (pd)" : "");
@@ -120,6 +122,9 @@ static void put_log(out_t *o) {
             (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), margin, counts, cs, short_result(r));
     }
 }
+
+// Set when the last button's boot control write failed (shown on the page until one succeeds)
+static bool store_failed;
 
 bool page_action(const char *path) {
     bootctl_t b;
@@ -137,7 +142,7 @@ bool page_action(const char *path) {
     } else {
         return false;
     }
-    storage_bootctl_store(&b);
+    store_failed = !storage_bootctl_store(&b);
     return true;
 }
 
@@ -169,6 +174,9 @@ size_t page_render(char *buf, size_t size) {
             "form,a{display:inline-block;margin:6px 12px 6px 0}</style></head><body><pre>");
     put(&o, "PicoBoot-WiFi %s (phase 1 test build)\n", PICOBOOT_WIFI_BUILD);
     put(&o, "SSID: %s   Password: %s\n\n", info.ssid, info.password);
+    if (store_failed) {
+        put(&o, "LAST CHANGE NOT SAVED: the boot control write to flash failed\n\n");
+    }
 
     put(&o, "THIS BOOT\n");
     if (r->from_loader) {

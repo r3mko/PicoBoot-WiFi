@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.0, 2026-11-08 |
-| **Design** | [architecture.md](architecture.md), Approved v1.1 |
+| **Status** | Draft v1.1 (after phase 0), waiting for the owner's approval |
+| **Design** | [architecture.md](architecture.md), draft v1.2 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -12,6 +12,7 @@
 |---|---|---|
 | v0.1 draft | 2026-11-08 | First draft. It splits the design's phases (D28) into steps, assigns models and lists what's needed from the owner. The owner's equipment (a current meter, no oscilloscope or logic analyzer) and console (DOL-001 only) don't fit the design's scope-based measurements. Design points DP1–DP5 propose the changes. |
 | v1.0 | 2026-11-08 | The owner approved the draft with DP1–DP5 ("approved, go ahead with phase 0"). DP1–DP5 are now design decisions D31–D35 (design v1.1). Phase 0 starts. |
+| v1.1 | 2026-11-08 | Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
 
 ## How this plan works
 
@@ -125,6 +126,18 @@ docs/                       design, plan, research, API, update-file format
 | 0.7 | **Stress test** (DP3): `/stream` while Swiss loads a game from the SD2SP2, HDMI adapter on | Owner | Glitches, video, brown-outs and Wi-Fi drops recorded |
 | 0.8 | **Results** in `docs/research/phase0-results.md`, design changes (if any) as a new design version | Opus | The owner approves the results and any design change |
 
+**As built (2026-11-08):**
+- **Moved forward from phase 1** (needed for the measurement build): `docker/Dockerfile`, `tools/process_ipl.py`, gekkoboot r9.4 in `assets/ipl/`, and `tests/pio_sim.py`.
+- **Added to the measurement build** while testing:
+  - D8's warm-reboot rule, with *Reboot* buttons to test it;
+  - test switches: built-in IPL, Wi-Fi 60 s late, CS pull-up;
+  - a check of the last flash page for the E10 block;
+  - a second, clock-qualified CS counter;
+  - the pin levels at "PIO ready".
+- **Step 0.3b added:** the glitch series after boot 12 of step 0.3 (parts 1–3).
+- **Step 0.5:** measured the 3V3 voltage instead of the current, because the owner's setup can't put a meter in series.
+- **Bug found on the bench and fixed:** lwIP drops DHCP requests when `LWIP_DHCP` is off, even for a DHCP *server*.
+
 ## Phase 1: core
 
 **Branch:** `phase-1-core`. **Done when (D28):**
@@ -135,17 +148,18 @@ docs/                       design, plan, research, API, update-file format
 
 | # | Step | Who | Done when |
 |---|---|---|---|
-| 1.1 | **Skeleton**: CMake with the loader and firmware targets, `layout.h`, linker overrides (loader ≤16K, firmware ≤256K), `docker/Dockerfile`, CI (ubuntu-26.04: build, tests, layout check), LICENSE (GPL-2.0-only, D29), `.gitignore`, README stub | Opus | CI builds both ELFs; the layout check passes |
-| 1.2 | **Injection port** from PicoBoot-DX: PIO programs, `pio.c`, payload check (base address as a parameter), `tools/process_ipl.py` + gekkoboot r9.4 → `ipl.h`, the PIO simulator and tool tests | Opus | CI tests green, PIO simulator included |
-| 1.3 | **CS counter and boot report** (DP1) as firmware code, with a PIO simulator test | Opus | The simulator test counts the right pulses and transfers |
-| 1.4 | **Records** for boot control and settings (D23): two sectors, sequence number, CRC32, newest valid record wins | Opus | Host C tests pass, including a torn write that falls back to the previous record |
-| 1.5 | **Loader** (D7, D8):<br>• power-on rule (`HAD_POR` + POWMAN scratch marker);<br>• slot choice as one pure function;<br>• boot info in POWMAN scratch;<br>• `rom_chain_image()`;<br>• the other slot if one is empty, BOOTSEL if both are;<br>• no clock setup (`pico_minimize_runtime`) | Opus | Host tests cover the decision table; the size check is ≤16K |
-| 1.6 | **Firmware start-up**: read boot info; power-on → inject payload 1, 2 or built-in (payload read through the untranslated XIP window); warm → no injection | Opus | On the bench, the loader chains into slot A and `/report` shows a warm boot |
-| 1.7 | **Wi-Fi blob hook** (D14, DP2): the blob is loaded from Wi-Fi A/B at its fixed address. The minimal AP and `/report` page from 0.1 run inside the slot, with a *reboot* button for the warm-reboot test | Opus | The AP comes up from a slot build with the blob outside the image |
-| 1.8 | **Install UF2**: `tools/mkuf2.py` packs absolute regions (rp2350-arm-s): loader, blank boot control and settings, Wi-Fi A (Wi-Fi-only blob, built from the SDK header) and slot A. CI artifact `picoboot-wifi-install.uf2` | Opus | Python tests for the packer; the UF2 parser shows the right ranges; a bench install over PicoBoot-DX keeps payload 1 |
-| 1.9 | **Console tests**: 10 cold boots each with gekkoboot and Swiss; warm board; *reboot* from the page while a game runs (the console keeps running and the report says "warm, no injection"). Compare the margin with phase 0 | Owner | Results recorded; the margin difference gives the loader's cost |
-| 1.10 | **Budget and clock**: set the D10 budget and the D27 clock and flash divider from 0.3–0.4 and 1.9. If the loader is too slow, the R1 fallback (loader starts the PIO) | Opus + owner | Values written into the design; budget met |
-| 1.11 | **End of phase**: fresh Opus review, fixes, design and plan updated, merge | Opus, owner | Merged |
+| 1.1 | **Skeleton**: CMake with the loader and firmware targets, `layout.h` (last flash sector kept free, D37), linker overrides (loader ≤16K, firmware ≤256K), CI (ubuntu-26.04: build, tests, layout check) with the phase 0 `docker/Dockerfile` setup, LICENSE (GPL-2.0-only, D29), README stub | Opus | CI builds both ELFs; the layout check passes |
+| 1.2 | **Injection port** from PicoBoot-DX: PIO programs, `pio.c`, payload check (base address as a parameter), `ipl.h` from `tools/process_ipl.py` (both from phase 0), and the remaining PicoBoot-DX tests next to `tests/pio_sim.py` | Opus | CI tests green, PIO simulator included |
+| 1.3 | **Glitch protection** (D36):<br>• CS pull-up before the PIO starts;<br>• a clock-qualified count of the 224 skipped pulses in `on_transfer`.<br>Simulator tests: with a CS glitch without clocks before the IPL read, PicoBoot-DX's programs shift the payload (phase 0's test) and the new ones don't; without a glitch, the output is bit-identical; every address clock of the first payload transfer is seen | Opus | Simulator tests green, including the phase 0 glitch case |
+| 1.4 | **CS counters and boot report** (D31): the raw and clocked counters from phase 0 as firmware code, plus the RP2350 stepping (for RP2350-E9) | Opus | The simulator test counts the right pulses and transfers |
+| 1.5 | **Records** for boot control and settings (D23): two sectors, sequence number, CRC32, newest valid record wins | Opus | Host C tests pass, including a torn write that falls back to the previous record |
+| 1.6 | **Loader** (D7, D8):<br>• power-on rule (`HAD_POR` + POWMAN scratch marker);<br>• slot choice as one pure function;<br>• boot info in POWMAN scratch;<br>• `rom_chain_image()`;<br>• the other slot if one is empty, BOOTSEL if both are;<br>• no clock setup (`pico_minimize_runtime`) | Opus | Host tests cover the decision table; the size check is ≤16K |
+| 1.7 | **Firmware start-up**: read boot info; power-on → inject payload 1, 2 or built-in (payload read through the untranslated XIP window); warm → no injection | Opus | On the bench, the loader chains into slot A and `/report` shows a warm boot |
+| 1.8 | **Wi-Fi blob hook** (D14, DP2): the blob is loaded from Wi-Fi A/B at its fixed address. The minimal AP and `/report` page from 0.1 run inside the slot, with a *reboot* button for the warm-reboot test | Opus | The AP comes up from a slot build with the blob outside the image |
+| 1.9 | **Install UF2**: `tools/mkuf2.py` packs absolute regions (rp2350-arm-s): loader, blank boot control and settings, Wi-Fi A (Wi-Fi-only blob, built from the SDK header) and slot A, without picotool's E10 block (D37). CI artifact `picoboot-wifi-install.uf2` | Opus | Python tests for the packer; the UF2 parser shows the right ranges and nothing at or above `0x3FF000`; a bench install over PicoBoot-DX keeps payload 1 |
+| 1.10 | **Console tests**:<br>• 10 cold boots each with gekkoboot and Swiss;<br>• warm board;<br>• *reboot* from the page while a game runs (the console keeps running and the report says "warm, no injection");<br>• the glitch check: 40 cold boots with a test switch that restores PicoBoot's CS pull-down, where every boot must start and any glitch must show as survived in the report.<br>Compare the margin with phase 0 | Owner | Results recorded; the margin difference gives the loader's cost; no blue screens |
+| 1.11 | **Budget and clock**: set the D10 budget and the D27 clock and flash divider from phase 0 and 1.10. If the loader is too slow, the R1 fallback (loader starts the PIO) | Opus + owner | Values written into the design; budget met |
+| 1.12 | **End of phase**: fresh Opus review, fixes, design and plan updated, merge | Opus, owner | Merged |
 
 ## Phase 2: Wi-Fi
 
@@ -154,11 +168,11 @@ docs/                       design, plan, research, API, update-file format
 | # | Step | Who | Done when |
 |---|---|---|---|
 | 2.1 | **Settings** on the records from 1.4: SSID, password, channel, country, Tx power, auto-off, LED; defaults from D30 | Opus | Host tests; settings survive a reboot |
-| 2.2 | **Network**: AP with WPA2-AES (D30), DHCP, DNS answering every name with `192.168.4.1`, redirects for the phone probe URLs, lwIP httpd with custom files | Opus | iOS and Android open the page by themselves on the bench |
+| 2.2 | **Network**: AP with WPA2-AES (D30), DHCP, DNS answering every name with `192.168.4.1`, redirects for the phone probe URLs, lwIP httpd with custom files.<br>From phase 0: keep `LWIP_DHCP` on (without it lwIP drops DHCP requests), and size the TCP send buffer for throughput (8 × MSS gave 0.4–0.95 MB/s) | Opus | iOS and Android open the page by themselves on the bench |
 | 2.3 | **API contract** `docs/api.md` (status, settings, diagnostics) and the JSON handlers | Opus | Handlers answer as specified |
 | 2.4 | **Web UI**: plain HTML/CSS/JS, status, diagnostics and settings pages, default-password banner (D19), gzip build step | Sonnet (worktree) | Works against the API on the bench; under about 30 KB gzipped; Opus reviewed |
 | 2.5 | **Diagnostics** (D22): the boot report from 1.3, plus the loader decision, the payload choice and why, time to Wi-Fi up | Opus | Shown on the status page |
-| 2.6 | **Auto-off** (D20), **Tx power** (the `qtxpower` iovar), **LED** patterns (D26) | Opus | Auto-off after 10 minutes without a client; Tx power changes the RSSI |
+| 2.6 | **Auto-off** (D20), **Tx power** (the `qtxpower` iovar), **LED** patterns (D26). The default Tx power is set lower than the maximum, since phase 0 found plenty of range (−42 dBm at 5 m) | Opus | Auto-off after 10 minutes without a client; Tx power changes the RSSI |
 | 2.7 | **Console tests**: captive portal on both phones, settings, banner, auto-off, Tx power against range and current; injection results the same as in phase 1 | Owner | Recorded |
 | 2.8 | **End of phase**: fresh Opus review, fixes, docs, merge | Opus, owner | Merged |
 
@@ -201,7 +215,7 @@ docs/                       design, plan, research, API, update-file format
 | # | Step | Who | Done when |
 |---|---|---|---|
 | 5.1 | **Security review** of the whole network side: httpd handlers, upload parsers, flash-writer bounds, settings input, DNS and DHCP | Fable 5.1 | Findings reported; fixes on the branch, reviewed by Opus |
-| 5.2 | **README** (install, upgrade from PicoBoot-DX, wiring with the 5 V recommendation, default password, recovery, DOL-101 note), `docs/api.md` final | Opus | Owner reviewed |
+| 5.2 | **README** (install, upgrade from PicoBoot-DX, wiring with the 5 V recommendation of D38, default password, recovery, DOL-101 note), `docs/api.md` final | Opus | Owner reviewed |
 | 5.3 | **Release workflow**: on a tag, build and attach the install UF2, the update file and checksums | Opus | A test tag on a fork produces the assets |
 | 5.4 | **Acceptance** on the DOL-001: fresh install, upgrade from PicoBoot-DX, OTA from a 0.4.0-dev build to 1.0.0 | Owner | Passed |
 | 5.5 | **Merge and tag 1.0.0** | Owner | Released |

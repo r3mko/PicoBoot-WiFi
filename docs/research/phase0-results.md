@@ -1,8 +1,26 @@
 # Phase 0 results
 
-Hardware checks from implementation plan phase 0, measured by the owner with the measurement build `hwtest/dx-measure`. This file fills in as the steps are done. Step 0.8 then draws the conclusions and proposes design changes.
+Hardware checks from implementation plan phase 0, measured by the owner with the measurement build `hwtest/dx-measure`.
 
-**Setup:** a Pico 2 W (SSID suffix C2C4).
+**Setup:**
+- A Pico 2 W (SSID suffix C2C4), in a DOL-001 with an SD2SP2 and an HDMI adapter, fed through 3V3.
+- Swiss r2119 and gekkoboot r9.4 as payloads.
+- 2026-11-08.
+
+## Summary (step 0.8)
+
+| Question | Answer |
+|---|---|
+| Is the PIO in time? (D10, R1) | Yes. 164–168 ms from "PIO ready" to the console's first IPL read, cold and warm; `main()` → "PIO ready" is 0.3 ms |
+| Does a warm reboot inject? (D8, R6) | No, but only thanks to the POWMAN marker: HAD_POR survives watchdog and ROM reboots |
+| Where do PicoBoot's occasional blue screens come from? | A false CS falling edge 42–44 ms after "PIO ready", as the console first drives CS: 2 of 56 cold boots with PicoBoot's pad defaults, and both blue-screened |
+| What prevents them? | A CS pull-up (0 in 30 boots) and a clock-qualified count (it caught the glitch on hardware): design D36 |
+| Is the console's rail good enough for the radio? | It works (stress test clean), but the 3.3 V at the Pico is 3.15–3.21 V, below the radio's 3.2 V full-RF level: design D38 recommends 5 V wiring |
+| Range from a closed console? (R3) | −42 dBm at 5 m in either board position: no problem |
+| Wi-Fi disturbing the console? (R5) | Not during a 10-minute full-load download with the SD2SP2 and HDMI adapter in use |
+| Anything else? | USB installs of stock RP2350 UF2s write picotool's E10 block into the last flash page: design D37 keeps that sector free |
+
+**Design changes:** D36–D38 in design draft v1.2, and the phase 1–2 changes in plan draft v1.1.
 
 ## 0.2 Bench (2026-11-08, USB power, no console)
 
@@ -127,7 +145,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 
 | | Result |
 |---|---|
-| Boots | 24 ok; **boot 2: GLITCH** |
+| Boots | 24 ok; **boot 2: GLITCH, and a blue screen** (confirmed by the owner) |
 | CS at "PIO ready" | low on every boot, first driven high 40.9–42.x ms later |
 | Boot 2 | First raw CS **42.0 ms** after PIO ready, right as CS was first driven high (`low>42ms`). Raw count **1545**, clocked count **1544**: "GLITCH: 1 unclocked CS". Injection 532 ms instead of 406 ms (it started counting at the false edge) |
 | Other boots | Margin 166.0–168.2 ms, raw = clocked = 1544 |

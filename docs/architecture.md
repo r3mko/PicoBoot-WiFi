@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.1, 2026-11-08 |
+| **Status** | Draft v1.2 (phase 0 results), waiting for the owner's approval |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -15,6 +15,7 @@
 | v0.2 | 2026-11-08 | The owner answered four rounds of questions. Fifteen items became decisions (D6, D7, D9, D11, D12, D14–D17, D19–D22, D27, D28). Home Wi-Fi (D21) moves out of the first release and stays an option for later releases, so it leaves the phase plan. New proposals: the license (D29) and the access point's security details (D30). Proposals D4, D5, D8, D10, D13, D18, D23–D26, D29, D30 and the phase plan in D28 wait for approval with the rest of the design. |
 | v1.0 | 2026-11-08 | The owner approved v0.2 with all its proposals ("ok, go ahead"). Every proposal is now a decision; nothing else changed. Step 1 of the design cycle is closed; the implementation plan (`docs/implementation-plan.md`) follows. |
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
+| v1.2 | 2026-11-08 | Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
 
 ## How to read the decisions
 
@@ -63,6 +64,9 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D33 | Rail check | Decision | Average current plus a stress test instead of a scope |
 | D34 | Test console | Decision | DOL-001 with SD2SP2 and HDMI adapter; DOL-101 untested |
 | D35 | Releases | Decision | No pre-releases; test builds 0.N.0-dev; first release 1.0.0 |
+| D36 | CS glitch protection | Decision | CS pull-up, and a clock-qualified count of the 224 skipped pulses |
+| D37 | Last flash sector | Decision | Kept free; payload 2 is 4K shorter |
+| D38 | Wiring | Decision | README recommends 5 V to VSYS; 3V3 stays supported |
 
 ## 1. Goal and scope
 
@@ -86,6 +90,12 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 - Bluetooth;
 - HTTPS for the web page;
 - re-injecting after the console's reset button (PicoBoot-DX doesn't either).
+
+**D38 (Decision): recommend the 5 V wiring.**
+- **Measured in phase 0:** with the 3V3 wiring, the console's 3.3 V at the Pico is 3.21 V with the radio off and 3.15 V with it on. That's below the 3.2 V where the CYW43439 guarantees full RF performance.
+- **Still worked:** range (−42 dBm at 5 m) and a 10-minute full-load stress test were fine anyway.
+- **README:** it recommends 5 V through a Schottky diode to VSYS. The Pico's own regulator then feeds the radio from 5 V.
+- **3V3 wiring:** stays supported.
 
 ## 2. Constraints
 
@@ -118,7 +128,8 @@ These follow from the research and bind every decision below.
 | **Payload 1** | `0x080000`–`0x200000` | **1.5 MB** | The payload at the PicoBoot address (C3) | USB, OTA |
 | Slot A | `0x200000`–`0x240000` | 256K | Firmware | Install, OTA |
 | Slot B | `0x240000`–`0x280000` | 256K | Firmware | OTA |
-| Payload 2 | `0x280000`–`0x400000` | 1.5 MB | Second payload (D15) | OTA |
+| Payload 2 | `0x280000`–`0x3FF000` | 1.5 MB − 4K | Second payload (D15) | OTA |
+| Reserved | `0x3FF000`–`0x400000` | 4K | Nothing: stock RP2350 UF2s write picotool's E10 block here (D37) | — |
 
 **Why it fits:**
 - **Slots:** the measured stand-in firmware is 165 KB, the built-in gekkoboot included, which leaves about 90 KB for the web UI and features ([sizes.md](research/sizes.md)).
@@ -128,6 +139,14 @@ These follow from the research and bind every decision below.
 **Margins and risks:**
 - **Wi-Fi areas:** 13–20 KB to spare. A much larger future blob would need a layout change, which means a USB install.
 - **No partition table:** the layout lives only in the loader and the firmware, never in flash. That's what keeps USB payload UF2s working (C3).
+
+**D37 (Decision): keep the last flash sector free** (changes D6).
+- **Found in phase 0:** a USB install of a picotool-built RP2350 UF2 also writes picotool's RP2350-E10 workaround block (256 × `0xEF`, absolute family, address `0x10FFFF00`).
+  - Without a partition table the boot ROM accepts it.
+  - The address wraps on the 4 MB flash, so the block lands in its last page.
+  - This holds for PicoBoot-DX, pico-examples and our own SDK builds alike.
+- **Payload 2** ends at `0x3FF000`: 1,568,768 bytes, more than Swiss r2119's 1,349,956. A larger payload can only go into payload 1.
+- **Our own install UF2** (D24) leaves the E10 block out. E10 only matters with a partition table, which we don't use.
 
 ## 4. Boot
 
@@ -158,6 +177,7 @@ These follow from the research and bind every decision below.
 - **Why both:** POWMAN scratch survives watchdog and software reboots and is cleared only at power-on, brown-out or RUN. So the pair still works if HAD_POR turns out to be sticky (to be checked, [boot-rom.md](research/boot-rom.md) §7).
 - **Brown-out:** a brown-out (HAD_BOR) does **not** count as a power-on. If the Pico browns out during a Tx burst while the console keeps running, a second injection would hit a running console (C2).
 - **What it controls:** only the power-on decision. Everything else that has to survive a warm reboot goes in POWMAN scratch: the session marker, the boot reason, trial state and crash counts.
+- **Confirmed in phase 0:** HAD_POR stays set after watchdog and ROM reboots, since `CHIP_RESET` still read `0x00010000`. So `CHIP_RESET` alone can't tell a warm reboot from a power-on. The marker caught every warm reboot, including one during a game, and the game kept running.
 
 **D9 (Decision): Wi-Fi starts only after the injection has finished.**
 - **Why:**
@@ -173,6 +193,7 @@ These follow from the research and bind every decision below.
   - PicoBoot-DX, as the baseline (phase 0);
   - our firmware behind the loader (phase 1).
 - **Warm boards:** repeat on a warm board (upstream #148).
+- **Phase 0 baseline** (PicoBoot-DX on the DOL-001): 164–168 ms from "PIO ready" to the first CS, cold and warm. `main()` to "PIO ready" takes about 0.3 ms.
 - **The rule:** the loader path may add at most an agreed number of milliseconds over PicoBoot-DX. The number is set from the measurement.
 - **If the loader is too slow:** the loader starts the PIO state machines itself before chaining, and the firmware takes them over.
 
@@ -186,6 +207,23 @@ These follow from the research and bind every decision below.
   - A short CS count shows missed pulses.
 - **Reuse:** the same counters become the boot diagnostics (D22).
 - **What it can't see:** the supply ramp before the RP2350 leaves reset. That doesn't matter, because the margin is measured from the Pico's own start.
+
+**D36 (Decision): guard the 224 skipped pulses against CS glitches.**
+- **The failure, found in phase 0:**
+  - PicoBoot's occasional blue screens come from one false CS falling edge 42–44 ms after "PIO ready", when the console first drives CS.
+  - The owner has also seen them with PicoBoot-DX up to v0.10 and with upstream PicoBoot.
+  - `on_transfer` counts the false edge as one of the 224 skipped transfers, so the payload goes out one transfer early.
+  - Rate: 2 of 56 cold boots, and both blue-screened.
+- **Fix 1, a pull-up on CS:**
+  - PicoBoot never sets the pad pulls, so CS keeps the RP2350's reset pull-down. That holds the undriven CS low ("selected") for the console's first ~42 ms.
+  - The firmware turns on the CS pull-up instead, before the PIO starts. Phase 0 had 0 failures in 30 boots that way.
+  - It also avoids RP2350-E9 on A2 chips, where "the pad pull-up still works".
+- **Fix 2, a clock-qualified count:**
+  - `on_transfer` counts a CS low period among the 224 only once CLK rises in it. A pulse without clocks merges with the next real transfer.
+  - The 225th transfer's first address clock must still reach `clocked_output`; phase 1 checks this in the simulator.
+  - A passive counter with this rule caught the glitch on hardware, and agreed with the raw count on every good boot.
+- **Diagnostics:** the D31 raw and clocked counters stay. The boot report flags a difference: a glitch the injection survived.
+- **Compatibility:** the injection programs now differ from PicoBoot-DX v0.10. D4's compatibility covers the wiring, the payload format and the address, not the PIO code.
 
 **Boot flow:**
 
@@ -248,7 +286,7 @@ power on -> boot ROM -> loader (flash offset 0)
 **D16 (Decision): what the device accepts, and where `.dol` files are converted.**
 - **Payload UF2:** any family. The device takes one family's blocks at `0x10080000` onwards, so gekkoboot's RP2040-only UF2s work too, which they don't over USB on a Pico 2.
 - **Raw payload:** the `IPLBOOT` … `PICO` image as it sits in flash.
-- **Checks:** every upload is checked for header, footer, size (≤ 1.5 MB) and 1 KB alignment before it can be chosen.
+- **Checks:** every upload is checked for header, footer, size (≤ 1.5 MB for payload 1; ≤ 1.5 MB − 4K for payload 2, D37) and 1 KB alignment before it can be chosen.
 - **`.dol` files:** converted to a payload in the browser (JavaScript port of `tools/process_ipl.py`) and in the CLI tool (the Python original). The device doesn't convert them: DOL sections need random access, which a streamed upload doesn't give.
 
 **D17 (Decision): a payload installed over USB always boots next.**
@@ -408,10 +446,11 @@ Firmware OTA comes before payload OTA: once it works, every later test runs with
 
 | # | Risk | Check | If it goes wrong |
 |---|---|---|---|
-| R1 | The loader makes the boot too slow | D10, phase 1 | The loader starts the PIO itself, or slot A boots without a loader on the power-on path |
-| R2 | Tx bursts pull the console's 3.3 V rail down | Phase 0 | Lower Tx power by default; recommend 5 V to VSYS wiring |
-| R3 | No usable range from a closed console | Phase 0 | Placement guidance; home Wi-Fi (D21) wouldn't help here |
-| R4 | Warm boards or slow flash break the injection | D27, phase 1 | Lower clocks or a slower flash divider during the injection |
-| R5 | Wi-Fi disturbs the EXI bus or the video | Phase 2 | Wi-Fi auto-off by default (D20); lower Tx power |
-| R6 | HAD_POR or scratch registers behave differently from the datasheet | Phase 1 | D8 already combines two signals; adjust the rule |
+| R1 | The loader makes the boot too slow | Phase 0: 164–168 ms margin on the DOL-001; phase 1 measures the loader | The loader starts the PIO itself, or slot A boots without a loader on the power-on path |
+| R2 | Tx bursts pull the console's 3.3 V rail down | Phase 0: 3.15 V average with the radio on; stress test clean | 5 V wiring recommended (D38); lower Tx power by default |
+| R3 | No usable range from a closed console | **Closed** in phase 0: −42 dBm at 5 m | — |
+| R4 | Warm boards or slow flash break the injection | Phase 0: warm boots fine (the board only reached ~22 °C on its sensor); D27, phase 1 | Lower clocks or a slower flash divider during the injection |
+| R5 | Wi-Fi disturbs the EXI bus or the video | Phase 0 stress test (SD2SP2, HDMI adapter): nothing seen; phase 2 again | Wi-Fi auto-off by default (D20); lower Tx power |
+| R6 | HAD_POR or scratch registers behave differently from the datasheet | **Closed** in phase 0: HAD_POR survives warm reboots; the D8 marker covers it | — |
 | R7 | A future CYW43 blob outgrows 240K | Each SDK update | Layout change through a USB install |
+| R8 | A CS glitch at power-up shifts the injection | D36; phase 1 in the simulator and on hardware | — |

@@ -2,11 +2,15 @@
 # hands over to it with the boot ROM's rom_chain_image(). It must be quick, so it skips the
 # SDK's clock setup and keeps the runtime minimal.
 
-add_executable(loader
+set(LOADER_SOURCES
     loader.c
+    ${CMAKE_SOURCE_DIR}/src/common/records.c
+    ${CMAKE_SOURCE_DIR}/src/common/bootdecide.c
 )
 
-set_source_files_properties(loader.c PROPERTIES
+add_executable(loader ${LOADER_SOURCES})
+
+set_source_files_properties(${LOADER_SOURCES} PROPERTIES
     COMPILE_OPTIONS "-Wall;-Wextra"
 )
 

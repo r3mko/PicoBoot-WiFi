@@ -19,6 +19,7 @@ CC = os.environ.get("CC", "cc")
 # Each test program and the src/common sources it needs
 PROGRAMS = {
     "test_records.c": ["records.c"],
+    "test_bootdecide.c": ["bootdecide.c"],
 }
 
 

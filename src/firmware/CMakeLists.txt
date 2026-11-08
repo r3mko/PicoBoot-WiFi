@@ -85,3 +85,17 @@ add_custom_target(wifi_blob ALL DEPENDS ${WIFI_BLOB_BIN})
 pico_add_linker_script_override_path(firmware ${CMAKE_BINARY_DIR}/linker/firmware FILES memory_extra.incl)
 
 picoboot_wifi_target(firmware "picoboot-wifi" "PicoBoot-WiFi: GameCube IPL injection with Wi-Fi updates")
+
+# The USB install UF2 (design D24): loader, blank boot control and settings, Wi-Fi A and slot A
+set(INSTALL_UF2 ${CMAKE_BINARY_DIR}/picoboot-wifi-install.uf2)
+add_custom_command(
+    OUTPUT ${INSTALL_UF2}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkuf2.py
+        --loader $<TARGET_FILE_DIR:loader>/loader.bin
+        --firmware $<TARGET_FILE_DIR:firmware>/firmware.bin
+        --wifi ${WIFI_BLOB_BIN}
+        --out ${INSTALL_UF2}
+    DEPENDS loader firmware ${WIFI_BLOB_BIN} ${CMAKE_SOURCE_DIR}/tools/mkuf2.py ${CMAKE_SOURCE_DIR}/src/common/layout.h
+    COMMENT "Building picoboot-wifi-install.uf2"
+)
+add_custom_target(install_uf2 ALL DEPENDS ${INSTALL_UF2})

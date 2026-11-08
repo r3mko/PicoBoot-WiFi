@@ -102,32 +102,38 @@ unsigned ringlog_read(const ringlog_t *log, uint32_t magic, uint16_t version, ui
     }
     const uint32_t top_seq = seq_of(entry(log, (unsigned)top));
 
-    // All valid entries, newest first: repeatedly take the one closest below the last one taken
-    // (by age relative to the newest, so wrap-around and gaps from torn entries don't matter)
+    // One pass over the area: the valid entries and their age relative to the newest (so
+    // wrap-around and gaps from torn entries don't matter). Each entry's CRC is checked once.
+    uint8_t index[RINGLOG_MAX_ENTRIES];
+    uint32_t age[RINGLOG_MAX_ENTRIES];
+    unsigned found = 0;
+    for (unsigned j = 0; j < entry_count(log) && j < RINGLOG_MAX_ENTRIES; j++) {
+        if (valid(entry(log, j), magic, version, length)) {
+            index[found] = (uint8_t)j;
+            age[found] = top_seq - seq_of(entry(log, j));
+            found++;
+        }
+    }
+
+    // Newest first: each time, the youngest of the entries not yet taken
     unsigned n = 0;
-    uint32_t last_age = 0;
-    while (n < max) {
-        int pick = -1;
-        uint32_t pick_age = 0;
-        for (unsigned j = 0; j < entry_count(log); j++) {
-            if (!valid(entry(log, j), magic, version, length)) {
-                continue;
-            }
-            const uint32_t age = top_seq - seq_of(entry(log, j));
-            if ((n == 0 || age > last_age) && (pick < 0 || age < pick_age)) {
-                pick = (int)j;
-                pick_age = age;
+    for (; n < max && n < found; n++) {
+        unsigned pick = n;
+        for (unsigned k = n + 1; k < found; k++) {
+            if (age[k] < age[pick]) {
+                pick = k;
             }
         }
-        if (pick < 0) {
-            break;
-        }
-        memcpy((uint8_t *)out + (size_t)n * length, entry(log, (unsigned)pick) + RINGLOG_HEADER_SIZE, length);
+        const uint8_t i = index[pick];
+        const uint32_t a = age[pick];
+        index[pick] = index[n];
+        age[pick] = age[n];
+        index[n] = i;
+        age[n] = a;
+        memcpy((uint8_t *)out + (size_t)n * length, entry(log, i) + RINGLOG_HEADER_SIZE, length);
         if (seq) {
-            seq[n] = seq_of(entry(log, (unsigned)pick));
+            seq[n] = seq_of(entry(log, i));
         }
-        last_age = pick_age;
-        n++;
     }
     return n;
 }

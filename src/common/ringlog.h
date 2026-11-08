@@ -20,6 +20,7 @@
 #define RINGLOG_ENTRY_SIZE    RECORD_PAGE_SIZE
 #define RINGLOG_HEADER_SIZE   12u
 #define RINGLOG_MAX_PAYLOAD   (RINGLOG_ENTRY_SIZE - RINGLOG_HEADER_SIZE - 4u)
+#define RINGLOG_MAX_ENTRIES   64u      // ringlog_read() reads areas of up to 64 entries (16 KB)
 
 typedef struct {
     const uint8_t *area;            // The log's sectors, readable

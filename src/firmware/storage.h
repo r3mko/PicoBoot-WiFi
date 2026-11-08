@@ -18,6 +18,7 @@
 bool storage_bootctl_load(bootctl_t *out);
 bool storage_bootctl_store(const bootctl_t *b);
 
+// Room in the boot log (design D39). It keeps 17 to 32 reports: when it wraps, a sector of 16 is erased.
 #define STORAGE_BOOTLOG_ENTRIES 32
 
 bool storage_bootlog_append(const boot_report_t *r);

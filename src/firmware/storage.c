@@ -13,6 +13,8 @@
 #include "hardware/regs/addressmap.h"
 #include "hardware/sync.h"
 
+_Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, "ringlog_read() reads the whole log");
+
 #define BOOTLOG_MAGIC   0x31474C42u     // "BLG1"
 #define BOOTLOG_VERSION 1               // Bump when boot_report_t changes
 

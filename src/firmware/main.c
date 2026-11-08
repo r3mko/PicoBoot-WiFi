@@ -172,7 +172,11 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
         TRACE("cyw43_arch_init_with_country(%s): %d\n", wifi_settings()->country, err);
         if (err == 0) {
             const uint64_t t_net = time_us_64();
-            const bool up = wifi_start(page_render, page_action, api_handle);
+#if PICOBOOT_WIFI_TEST_BUILD
+            const bool up = wifi_start(page_render, page_action, api_handle);   // With the test page
+#else
+            const bool up = wifi_start(NULL, NULL, api_handle);
+#endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
             if (up) {
@@ -214,7 +218,9 @@ int main(void) {
     if (report.power_on) {
         bootctl_t bootctl;
         storage_bootctl_load(&bootctl);
+#if PICOBOOT_WIFI_TEST_BUILD
         report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
+#endif
         const injection_payload_t payload = choose_payload(&bootctl);
         TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
               report.cs_pulldown_test ? "pull-down (test)" : "pull-up");

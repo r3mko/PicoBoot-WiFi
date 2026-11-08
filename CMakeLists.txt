@@ -43,7 +43,14 @@ if(NOT PICOBOOT_WIFI_GIT_HASH)
     set(PICOBOOT_WIFI_GIT_HASH "unknown")
 endif()
 set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}+${PICOBOOT_WIFI_GIT_HASH}")
-message(STATUS "PicoBoot-WiFi ${PICOBOOT_WIFI_BUILD}")
+# Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release
+# builds have neither (phase 1 review finding 6)
+if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")
+    set(PICOBOOT_WIFI_TEST_BUILD 1)
+else()
+    set(PICOBOOT_WIFI_TEST_BUILD 0)
+endif()
+message(STATUS "PicoBoot-WiFi ${PICOBOOT_WIFI_BUILD} (test build: ${PICOBOOT_WIFI_TEST_BUILD})")
 
 # The flash layout lives in src/common/layout.h only; read its LAYOUT_* values for the linker checks
 set(LAYOUT_H ${CMAKE_CURRENT_LIST_DIR}/src/common/layout.h)
@@ -64,7 +71,8 @@ endforeach()
 # Settings shared by the loader and the firmware
 function(picoboot_wifi_target TARGET NAME DESCRIPTION)
     target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/src/common)
-    target_compile_definitions(${TARGET} PRIVATE PICOBOOT_WIFI_BUILD="${PICOBOOT_WIFI_BUILD}")
+    target_compile_definitions(${TARGET} PRIVATE PICOBOOT_WIFI_BUILD="${PICOBOOT_WIFI_BUILD}"
+                               PICOBOOT_WIFI_TEST_BUILD=${PICOBOOT_WIFI_TEST_BUILD})
     pico_set_program_name(${TARGET} ${NAME})
     pico_set_program_description(${TARGET} ${DESCRIPTION})
     pico_set_program_version(${TARGET} ${PICOBOOT_WIFI_BUILD})

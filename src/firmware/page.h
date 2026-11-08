@@ -29,7 +29,7 @@ void page_init(const page_info_t *info);
 // The RP2350's temperature sensor (reads low on a low 3.3 V rail)
 float page_temperature_c(void);
 
-// The minimal report page of phase 1 (plan step 1.8; phase 2 brings the real web UI)
+// The test page of phases 1 and 2, at /test in test builds (the web UI is at /)
 size_t page_render(char *buf, size_t size);
 
 // The page's buttons: the payload for the next power-ons, and the CS test mode (plan step 1.10)

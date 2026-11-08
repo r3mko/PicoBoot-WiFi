@@ -23,8 +23,9 @@
 #define BOOTCTL_PAYLOAD_BUILTIN 2
 
 #define BOOTCTL_FLAG_ORIGINAL_IPL_ONCE  (1u << 0)   // Phase 4: skip the injection once
-#define BOOTCTL_FLAG_TEST_CS_PULLDOWN   (1u << 7)   // Test: PicoBoot's CS pull-down instead of the
-                                                    // D36 pull-up (plan step 1.10's glitch check)
+#define BOOTCTL_FLAG_TEST_CS_PULLDOWN   (1u << 7)   // Test builds only: PicoBoot's CS pull-down
+                                                    // instead of the D36 pull-up (plan step 1.10's
+                                                    // glitch check); release builds ignore it
 
 typedef struct {
     uint8_t active_slot;        // BOOTCTL_SLOT_A or _B

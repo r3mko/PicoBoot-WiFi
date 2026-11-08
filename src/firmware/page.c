@@ -262,6 +262,6 @@ size_t page_render(char *buf, size_t size) {
             "<form method=post action=/cs-pulldown><button>CS pull-down (test)</button></form><br>"
             "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
             "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
-            "<a href=\"/\">Refresh</a></body></html>\n");
+            "<a href=\"/test\">Refresh</a> <a href=\"/\">Web UI</a></body></html>\n");
     return o.len;
 }

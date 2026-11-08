@@ -8,15 +8,18 @@
 // mode. Every response is a custom file made here, headers included, so this file decides the
 // status codes:
 //
-//   GET  / or /index.html   the page (net_page_fn)
+//   GET  / or /index.html   the web UI: lwIP's built-in files (fsdata_custom.c, made from src/web/)
 //   GET  /api/...           the JSON API (net_api_fn, docs/api.md)
 //   GET  /favicon.ico       204: there is none
 //   GET  anything else      302 to http://192.168.4.1/: phones probing for a captive portal
 //                           (Apple, Android, Windows) get it and open the page by themselves
 //   POST /api/...           the JSON API, with a JSON body
+//
+// With a test page (test builds, net_page_fn given):
+//   GET  /test              the test page
 //   POST /reboot-wd         warm reboot through the watchdog (test of design D8)
 //   POST /reboot-rom        warm reboot through rom_reboot()
-//   POST other paths        the page's actions (net_action_fn), then 303 back to the page
+//   POST other paths        the test page's actions (net_action_fn), then 303 back to it
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +35,7 @@
 #include "boot/picoboot_constants.h"
 #include "hardware/watchdog.h"
 
-#define PAGE_MAX        10240       // Rendered page (with the boot log table)
+#define PAGE_MAX        10240       // Rendered test page (with the boot log table)
 #define API_GET_MAX     20480       // The largest GET answer: diagnostics with 32 boots
 #define API_POST_MAX    512         // POST answers are short
 #define API_BODY_MAX    1024        // docs/api.md
@@ -149,7 +152,7 @@ int fs_open_custom(struct fs_file *file, const char *name) {
     if (strncmp(name, "/api/", 5) == 0 && api_handler) {
         return respond_api_get(file, name);
     }
-    if (strcmp(name, "/index.html") == 0) {
+    if (strcmp(name, "/test") == 0 && render_page) {
         return respond_page(file);
     }
     if (strcmp(name, "/favicon.ico") == 0) {
@@ -163,10 +166,10 @@ int fs_open_custom(struct fs_file *file, const char *name) {
         return respond_json(file, api_answer.status, api_answer.json, api_answer.len);
     }
     if (strcmp(name, "/.done") == 0) {
-        return respond(file, 303, "Location: /\r\n", "", 0);
+        return respond(file, 303, render_page ? "Location: /test\r\n" : "Location: /\r\n", "", 0);
     }
     if (strcmp(name, "/.rebooting") == 0) {
-        static const char body[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/\">"
+        static const char body[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/test\">"
                                    "<pre>Rebooting... this page reloads in 8 s (reconnect to the Wi-Fi if needed)</pre>";
         return respond(file, 200, "", body, sizeof(body) - 1);
     }
@@ -245,8 +248,8 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
             api_error(404, "not_found", "no such endpoint");
             return ERR_VAL;
         }
-    } else if (content_len > 0 || strlen(uri) >= POST_URI_MAX) {
-        return ERR_VAL;             // The page's buttons send no body
+    } else if (!page_action || content_len > 0 || strlen(uri) >= POST_URI_MAX) {
+        return ERR_VAL;             // No test page, or not one of its buttons (they send no body)
     }
     for (int i = 0; i < POSTS_MAX; i++) {
         if (!posts[i].connection) {

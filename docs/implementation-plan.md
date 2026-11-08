@@ -138,6 +138,23 @@ docs/                       design, plan, research, API, update-file format
 - **Step 0.5:** measured the 3V3 voltage instead of the current, because the owner's setup can't put a meter in series.
 - **Bug found on the bench and fixed:** lwIP drops DHCP requests when `LWIP_DHCP` is off, even for a DHCP *server*.
 
+**Code review of phase 0** (a fresh Opus 5.5 reviewer, 2026-11-08):
+- **Overall:** no serious bugs. The injection programs are byte-identical to PicoBoot-DX v0.10, the build is clean under `-Wall -Wextra`, the tests pass, and the warm-reboot and flash-write constraints hold.
+- **The measurement build stays as it was measured.** Its findings are requirements for the phase 1 code that reuses it:
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | The clock-qualified count must check that CS is still low when CLK rises (`jmp pin`); otherwise a glitch plus a CLK pulse while CS is high still counts. Already corrected in the PicoBoot-DX handoff | 1.3, 1.4: in the injection and the counters, with simulator cases for CLK while CS is high (`pio_sim` gets `JMP !X` and `JMP PIN`) |
+| 2 | Recovery from a torn record write erased the newer records in the same sector | 1.5: erase only at a sector start; host test |
+| 3 | The phase 0 power-on rule also injects on BOR and RUN; D8 is HAD_POR only. Keep POWMAN `scratch[0]` for the marker | 1.6 |
+| 4 | A failed `tcp_write` with nothing in flight is never retried | 2.2: retry from the poll callback (or lwIP httpd handles it) |
+| 5 | A client FIN cuts the response short | 2.2: finish the response, then close |
+| 6 | The `tcp_abort` fallback after `tcp_close` would be unsafe inside a callback | 2.2: no such fallback, or return `ERR_ABRT` |
+| 7 | Raw and clocked counts are read at different moments, so a false GLITCH is possible | 1.4: snapshot while CS is high, or re-read until stable |
+| 8 | `dma_channel_abort()` without first clearing the channel's EN bit (RP2350-E5) | 1.7 |
+| 9 | The counters use PIO IRQ flags 0 and 1, which are only safe outside the injection's PIO block | 1.4: use flags the injection doesn't use, or keep them in another block |
+| — | Test gaps: the counter's X set-up and read path, and coupling between the counters and the injection, aren't exercised | 1.4 |
+
 ## Phase 1: core
 
 **Branch:** `phase-1-core`. **Done when (D28):**
@@ -150,7 +167,7 @@ docs/                       design, plan, research, API, update-file format
 |---|---|---|---|
 | 1.1 | **Skeleton**: CMake with the loader and firmware targets, `layout.h` (last flash sector kept free, D37), linker overrides (loader ≤16K, firmware ≤256K), CI (ubuntu-26.04: build, tests, layout check) with the phase 0 `docker/Dockerfile` setup, LICENSE (GPL-2.0-only, D29), README stub | Opus | CI builds both ELFs; the layout check passes |
 | 1.2 | **Injection port** from PicoBoot-DX: PIO programs, `pio.c`, payload check (base address as a parameter), `ipl.h` from `tools/process_ipl.py` (both from phase 0), and the remaining PicoBoot-DX tests next to `tests/pio_sim.py` | Opus | CI tests green, PIO simulator included |
-| 1.3 | **Glitch protection** (D36):<br>• CS pull-up before the PIO starts;<br>• a clock-qualified count of the 224 skipped pulses in `on_transfer`.<br>Simulator tests: with a CS glitch without clocks before the IPL read, PicoBoot-DX's programs shift the payload (phase 0's test) and the new ones don't; without a glitch, the output is bit-identical; every address clock of the first payload transfer is seen | Opus | Simulator tests green, including the phase 0 glitch case |
+| 1.3 | **Glitch protection** (D36):<br>• CS pull-up before the PIO starts;<br>• a clock-qualified count of the 224 skipped pulses in `on_transfer`, CLK rising while CS is still low (`jmp pin`), as in the PicoBoot-DX handoff (`docs/handoff/`).<br>Simulator tests: with a CS glitch without clocks before the IPL read, PicoBoot-DX's programs shift the payload (phase 0's test) and the new ones don't; without a glitch, the output is bit-identical; every address clock of the first payload transfer is seen | Opus | Simulator tests green, including the phase 0 glitch case |
 | 1.4 | **CS counters and boot report** (D31): the raw and clocked counters from phase 0 as firmware code, plus the RP2350 stepping (for RP2350-E9) | Opus | The simulator test counts the right pulses and transfers |
 | 1.5 | **Records** for boot control and settings (D23): two sectors, sequence number, CRC32, newest valid record wins | Opus | Host C tests pass, including a torn write that falls back to the previous record |
 | 1.6 | **Loader** (D7, D8):<br>• power-on rule (`HAD_POR` + POWMAN scratch marker);<br>• slot choice as one pure function;<br>• boot info in POWMAN scratch;<br>• `rom_chain_image()`;<br>• the other slot if one is empty, BOOTSEL if both are;<br>• no clock setup (`pico_minimize_runtime`) | Opus | Host tests cover the decision table; the size check is ≤16K |

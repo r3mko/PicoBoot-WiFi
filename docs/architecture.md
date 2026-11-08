@@ -219,7 +219,8 @@ These follow from the research and bind every decision below.
   - The firmware turns on the CS pull-up instead, before the PIO starts. Phase 0 had 0 failures in 50 boots that way.
   - It also avoids RP2350-E9 on A2 chips, where "the pad pull-up still works".
 - **Fix 2, a clock-qualified count:**
-  - `on_transfer` counts a CS low period among the 224 only once CLK rises in it. A pulse without clocks merges with the next real transfer.
+  - `on_transfer` counts a CS low period among the 224 only once CLK rises in it **while CS is still low** (`jmp pin` on CS). A pulse without clocks merges with the next real transfer.
+  - A CLK pulse while CS is high (EXI channel 0's clock is shared with memory card slot A and SP1) counts nothing; the phase 0 review found this case.
   - The 225th transfer's first address clock must still reach `clocked_output`; phase 1 checks this in the simulator.
   - A passive counter with this rule caught the glitch on hardware, and agreed with the raw count on every good boot.
 - **Diagnostics:** the D31 raw and clocked counters stay. The boot report flags a difference: a glitch the injection survived.

@@ -123,10 +123,24 @@ static void put_log(out_t *o) {
     }
 }
 
-// Set when the last button's boot control write failed (shown on the page until one succeeds)
+// Set when the last button's flash write failed (shown on the page until one succeeds)
 static bool store_failed;
 
 bool page_action(const char *path) {
+    // Test buttons for plan step 2.1 (settings survive a reboot); the web UI of step 2.4 replaces them
+    static const struct { const char *path; uint8_t channel; } channels[] = {
+        {"/channel-1", 1}, {"/channel-6", 6}, {"/channel-11", 11},
+    };
+    for (unsigned i = 0; i < sizeof(channels) / sizeof(channels[0]); i++) {
+        if (strcmp(path, channels[i].path) == 0) {
+            settings_t st;
+            storage_settings_load(&st);
+            st.channel = channels[i].channel;
+            store_failed = !storage_settings_store(&st);
+            return true;
+        }
+    }
+
     bootctl_t b;
     storage_bootctl_load(&b);
     if (strcmp(path, "/payload1") == 0) {
@@ -162,6 +176,17 @@ static void put_counts(out_t *o, const boot_report_t *r) {
     }
 }
 
+static void put_settings(out_t *o, const char *label, const settings_t *s, bool stored) {
+    static const char *const tx[SETTINGS_TX_LEVELS] = {"low", "medium", "high", "max"};
+    char off[16] = "never";
+    if (s->auto_off_minutes != SETTINGS_AUTO_OFF_NEVER) {
+        snprintf(off, sizeof(off), "%u min", s->auto_off_minutes);
+    }
+    put(o, "  %-19s: channel %u, country %s, Tx power %s, Wi-Fi off after %s, LED %s%s\n", label,
+        s->channel, s->country, tx[s->tx_power], off, s->led ? "on" : "off",
+        stored ? "" : " (settings empty: defaults)");
+}
+
 size_t page_render(char *buf, size_t size) {
     out_t o = {buf, size, 0};
     const boot_report_t *r = info.report;
@@ -175,7 +200,7 @@ size_t page_render(char *buf, size_t size) {
     put(&o, "PicoBoot-WiFi %s (test build)\n", PICOBOOT_WIFI_BUILD);
     put(&o, "SSID: %s   Password: %s\n\n", info.ssid, info.settings->password);
     if (store_failed) {
-        put(&o, "LAST CHANGE NOT SAVED: the boot control write to flash failed\n\n");
+        put(&o, "LAST CHANGE NOT SAVED: the write to flash failed\n\n");
     }
 
     put(&o, "THIS BOOT\n");
@@ -226,16 +251,14 @@ size_t page_render(char *buf, size_t size) {
         (unsigned long)(up_s / 60 % 60), (unsigned long)(up_s % 60));
     put(&o, "  Temperature        : %.1f C (RP2350 sensor; reads low on a low 3.3 V rail)\n", (double)temperature_c());
     put(&o, "  Wi-Fi clients      : %d\n", net_client_count());
+    put_settings(&o, "Settings", info.settings, info.settings_stored);
     {
-        static const char *const tx[SETTINGS_TX_LEVELS] = {"low", "medium", "high", "max"};
-        const settings_t *s = info.settings;
-        char off[16] = "never";
-        if (s->auto_off_minutes != SETTINGS_AUTO_OFF_NEVER) {
-            snprintf(off, sizeof(off), "%u min", s->auto_off_minutes);
+        // What a button stored takes effect at the next start
+        settings_t next;
+        const bool stored = storage_settings_load(&next);
+        if (memcmp(&next, info.settings, sizeof(next)) != 0) {
+            put_settings(&o, "Settings next start", &next, stored);
         }
-        put(&o, "  Settings           : channel %u, country %s, Tx power %s, Wi-Fi off after %s, LED %s%s\n",
-            s->channel, s->country, tx[s->tx_power], off, s->led ? "on" : "off",
-            info.settings_stored ? "" : " (settings empty: defaults)");
     }
 
     bootctl_t b;
@@ -254,6 +277,9 @@ size_t page_render(char *buf, size_t size) {
             "<form method=post action=/builtin><button>Next: built-in gekkoboot</button></form><br>"
             "<form method=post action=/cs-pullup><button>CS pull-up (normal)</button></form>"
             "<form method=post action=/cs-pulldown><button>CS pull-down (test)</button></form><br>"
+            "<form method=post action=/channel-1><button>Channel 1</button></form>"
+            "<form method=post action=/channel-6><button>Channel 6</button></form>"
+            "<form method=post action=/channel-11><button>Channel 11</button></form><br>"
             "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
             "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
             "<a href=\"/\">Refresh</a></body></html>\n");

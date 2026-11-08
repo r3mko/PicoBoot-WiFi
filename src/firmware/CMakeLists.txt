@@ -61,6 +61,7 @@ target_link_libraries(firmware PRIVATE
     hardware_dma
     hardware_adc
     pico_cyw43_arch_lwip_poll
+    pico_lwip_http
 )
 
 # The CYW43 blob isn't compiled in: the driver reads it from Wi-Fi area A or B (design D14),

@@ -135,3 +135,15 @@ The "done when" of steps 1.6–1.9: install the USB install UF2 and check that t
 - no blue screens.
 
 **All three are met.**
+
+## 1.11 Budget and clock (2026-11-08)
+
+Set by the owner from the results above, in the design (draft v1.3):
+
+| | Value | Basis |
+|---|---|---|
+| D10 boot-time budget | **at most 10 ms** over PicoBoot-DX before "PIO ready" | The loader path costs 3–5 ms; the margin stays above about 155 ms |
+| D27 clock during the injection | **250 MHz** | 86 console boots in phase 1, cold and warm, no stall or fault |
+| D27 flash divider | **3** (83 MHz at 250 MHz) | The payload DMA reads 18 MB/s at 125 MHz, about 5.5 times what the console needs |
+
+The R1 fallback (the loader starts the PIO) isn't needed.

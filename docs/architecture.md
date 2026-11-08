@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.2; draft v1.3 (D39) for approval at the end of phase 1 |
+| **Status** | Approved v1.2; draft v1.3 (D10, D27, D39) for approval at the end of phase 1 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -16,7 +16,7 @@
 | v1.0 | 2026-11-08 | The owner approved v0.2 with all its proposals ("ok, go ahead"). Every proposal is now a decision; nothing else changed. Step 1 of the design cycle is closed; the implementation plan (`docs/implementation-plan.md`) follows. |
 | v1.1 | 2026-11-08 | The implementation plan's design points DP1–DP5, approved with the plan, become D31–D35. The owner has a current meter but no oscilloscope or logic analyzer, and one DOL-001, so: the Pico measures its own boot timing (D31, changes D10); a minimal Wi-Fi report page comes early (D32, changes D28); the rail is checked with a stress test instead of a scope (D33, changes D28 phase 0); the DOL-001 is the test console (D34); and there are no pre-releases (D35, changes D24). |
 | v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
-| v1.3 draft | 2026-11-08 | During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep the last 32 boot reports. For approval at the end of phase 1. |
+| v1.3 draft | 2026-11-08 | During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 86 console boots, cold and warm, without a fault). For approval at the end of phase 1. |
 
 ## How to read the decisions
 
@@ -39,7 +39,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D7 | Slot switching | Decision | Own loader with `rom_chain_image()`, no partition table |
 | D8 | When to inject | Decision | Only on a real power-on |
 | D9 | Wi-Fi start | Decision | Only after the injection has finished |
-| D10 | Boot-time budget | Decision | Measured on hardware in phase 1 before anything is built on it |
+| D10 | Boot-time budget | Decision | At most 10 ms over PicoBoot-DX before the PIO is ready; the loader path costs 3–5 ms |
 | D11 | Update file | Decision | One file with the firmware, optionally the Wi-Fi blob; SHA-256, no signing |
 | D12 | Trial and fallback | Decision | On trial until a good power-on boot or *Keep*; a crash falls back |
 | D13 | Switching firmware | Decision | Free switching between two good slots |
@@ -56,7 +56,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D24 | Releases and tools | Decision | USB install UF2, update file, Python tools |
 | D25 | Build and test | Decision | SDK 2.3.1, CI, PIO simulator, host tests for the loader logic |
 | D26 | LED | Decision | Dark during the injection (D9), status after |
-| D27 | Clock and flash speed | Decision | 250 MHz as a build setting; the default is fixed after phase 1 |
+| D27 | Clock and flash speed | Decision | 250 MHz during the injection, flash divider 3 (83 MHz); both build settings |
 | D28 | Phases | Decision | Hardware checks first, then phases 1–5 as listed |
 | D29 | License | Decision | GPL-2.0-only, as PicoBoot-DX |
 | D30 | AP security details | Decision | WPA2-AES only, default password `picoboot`, SSID from the chip ID |
@@ -204,8 +204,11 @@ These follow from the research and bind every decision below.
   - our firmware behind the loader (phase 1).
 - **Warm boards:** repeat on a warm board (upstream #148).
 - **Phase 0 baseline** (PicoBoot-DX on the DOL-001): 164–168 ms from "PIO ready" to the first CS, cold and warm. `main()` to "PIO ready" takes about 0.3 ms.
-- **The rule:** the loader path may add at most an agreed number of milliseconds over PicoBoot-DX. The number is set from the measurement.
-- **If the loader is too slow:** the loader starts the PIO state machines itself before chaining, and the firmware takes them over.
+- **Phase 1 result** (our firmware behind the loader, same console): 159.3–163.6 ms, cold and warm. The loader path costs **3–5 ms**; `main()` to "PIO ready" is still about 0.3 ms.
+- **The rule (set in phase 1, step 1.11):** everything before "PIO ready" (loader, firmware start-up, boot control, payload choice) may add **at most 10 ms** over PicoBoot-DX, so the margin stays above about 155 ms on this console.
+  - Today's cost is 3–5 ms, so later phases have about 5 ms left before the injection. Work that needs more, such as hashing a payload, happens after the injection or at upload time.
+  - Every test build's report page shows the margin, so each phase's console tests check the rule.
+- **If the loader is too slow:** the loader starts the PIO state machines itself before chaining, and the firmware takes them over. Not needed after phase 1.
 
 **D31 (Decision): the Pico measures its own boot timing.**
 - **The counter:** a third, passive PIO state machine watches CS. It doesn't touch the two injection programs.
@@ -422,6 +425,12 @@ Home Wi-Fi (D21) is left out of the first release.
   - the DMA's margin against the console's EXI data rate;
   - warm-board behaviour.
 - **Then:** the default clock and the flash clock divider during the payload DMA are set from those numbers.
+- **Set in phase 1 (step 1.11):** **250 MHz** during the injection and **flash divider 3**, both build settings.
+  - The firmware sets up quad I/O flash reads itself (embedded `boot2_w25q080`); after the loader's chain, the boot ROM leaves the slowest serial mode (0.06 MB/s).
+  - Divider 3 gives an 83 MHz flash clock at 250 MHz, below the W25Q32RV's 133 MHz.
+  - The payload DMA through the uncached window reads 18 MB/s at 125 MHz, about 5.5 times the console's ~3.3 MB/s, and roughly double that at 250 MHz.
+  - 86 console boots in phase 1, cold and warm, had no stall or fault.
+  - If a board takes 250 MHz or warm flash badly (upstream #146, #148), a lower clock or a slower divider is the first thing to try.
 
 ## 11. Phases
 

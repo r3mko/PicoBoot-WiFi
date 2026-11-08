@@ -93,7 +93,15 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - a pull-up on CS, which prevents the glitch;
    - a CLK-qualified count of the 224 skipped pulses, which ignores one that gets through.
    - Parts 2 and 3 compare glitch rates with the pull-down and the pull-up.
-4. **The temperature reading dropped to 12.2 °C** after the board was moved and rewired. Since the reading tracks the rail voltage (see 0.4–0.5), the 3V3 at the Pico may now be a little lower. Worth a quick check with the meter.
+4. **Background: why PicoBoot pulls CS down.**
+   - **No deliberate choice:** neither upstream PicoBoot (`src/pio.c`) nor PicoBoot-DX sets a pull. `pio_gpio_init()` → `gpio_set_function()` leaves the pad pulls alone ("This doesn't affect e.g. pullup/pulldown", SDK `gpio.c`).
+   - **So the reset default stays:** pull-down on, pull-up off, on both RP2040 and RP2350 (`PADS_BANK0_GPIO0_PDE_RESET = 1`, `PUE_RESET = 0`).
+   - **Strength:** the pulls are weak (RP2350 at 3.3 V: pull-up 32–86 kΩ, pull-down 36–113 kΩ, datasheet p.1337) and only set the level of a line nobody drives.
+   - **What it means for CS:** for an active-low chip select, the pull-down makes an undriven CS read as "selected". It also selects the real IPL chip (U10) while the console powers up.
+   - **RP2350-E9 (A2 chips only; fixed in A3, datasheet Appendix D.5.1):** with the input enabled, a floating pad can hold at about 2.2 V through a ~120 µA leakage that the pull-down can't overcome. An undriven CS can then read either way. "The pad pull-up still works."
+   - **The owner's chip:** its stepping is unknown so far.
+   - **Documentation:** none found on what the GameCube does with CS during power-up. The measurements here are the evidence.
+5. **The temperature reading dropped to 12.2 °C** after the board was moved and rewired. Since the reading tracks the rail voltage (see 0.4–0.5), the 3V3 at the Pico may now be a little lower. Worth a quick check with the meter.
 
 ## 0.4 Warm board (2026-11-08)
 

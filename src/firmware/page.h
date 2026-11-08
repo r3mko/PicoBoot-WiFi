@@ -16,6 +16,12 @@ typedef struct {
     const char *password;
     int wifi_area;              // BOOTCTL_SLOT_A / _B (Wi-Fi A / B), or -1
     uint32_t wifi_up_ms;        // From the end of the injection (or start-up) to the AP being up
+    uint32_t cyw43_init_ms;     // ...of which cyw43_arch_init() (loads the blob from flash)
+    uint32_t ap_start_ms;       // ...and net_start()
+    // Flash read path of the injection (the untranslated, uncached XIP window), measured at start-up
+    uint32_t qmi_rcmd, qmi_rfmt, qmi_timing;
+    uint32_t sys_khz;
+    uint32_t dma_64k_us;        // DMA read of 64 KB of payload 1 through that window
 } page_info_t;
 
 // Keeps the info and sets up the temperature sensor

@@ -201,6 +201,19 @@ size_t page_render(char *buf, size_t size) {
         put(&o, "  Wi-Fi              : blob from Wi-Fi %c, AP up %lu ms after the injection\n",
             info.wifi_area == BOOTCTL_SLOT_B ? 'B' : 'A', (unsigned long)info.wifi_up_ms);
     }
+    put(&o, "  Wi-Fi start        : CYW43 init %lu ms, AP start %lu ms\n",
+        (unsigned long)info.cyw43_init_ms, (unsigned long)info.ap_start_ms);
+    {
+        // QMI M0 read: command byte, widths (0 = x1, 1 = x2, 2 = x4), dummy bits, clock divider
+        const uint32_t rfmt = info.qmi_rfmt, div = info.qmi_timing & 0xFFu;
+        const uint32_t mbps100 = info.dma_64k_us ? (uint32_t)(65536ull * 100 / info.dma_64k_us) : 0;
+        put(&o, "  Flash read         : cmd 0x%02lx, addr x%u data x%u, %lu dummy bits, clkdiv %lu "
+                "(SCK %lu MHz at %lu MHz)\n", (unsigned long)(info.qmi_rcmd & 0xFFu),
+            1u << ((rfmt >> 2) & 3u), 1u << ((rfmt >> 8) & 3u), (unsigned long)(((rfmt >> 16) & 7u) * 4u),
+            (unsigned long)div, (unsigned long)(div ? info.sys_khz / 1000 / div : 0), (unsigned long)(info.sys_khz / 1000));
+        put(&o, "  Payload DMA speed  : %lu.%02lu MB/s through the uncached window (the console needs ~3.3)\n",
+            (unsigned long)(mbps100 / 100), (unsigned long)(mbps100 % 100));
+    }
     put(&o, "  Uptime             : %02lu:%02lu:%02lu\n", (unsigned long)(up_s / 3600),
         (unsigned long)(up_s / 60 % 60), (unsigned long)(up_s % 60));
     put(&o, "  Temperature        : %.1f C (RP2350 sensor; reads low on a low 3.3 V rail)\n", (double)temperature_c());

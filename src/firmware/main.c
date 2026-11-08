@@ -30,6 +30,9 @@
 #include "net.h"
 #include "page.h"
 #include "storage.h"
+#include "hardware/clocks.h"
+#include "hardware/dma.h"
+#include "hardware/structs/qmi.h"
 
 // The rest of flash is read through the untranslated XIP window: the loader maps only this
 // firmware's slot at XIP_BASE (boot ROM research §4)
@@ -132,6 +135,23 @@ static void inject(const injection_payload_t *payload, bool cs_pullup) {
     injection_finish();
 }
 
+// How fast the DMA reads payload 1 through the untranslated, uncached XIP window: the path the
+// injection's DMA uses. Returns the microseconds for 64 KB (unpaced, into one word).
+static uint32_t flash_dma_64k_us(void) {
+    static uint32_t sink;
+    const int ch = dma_claim_unused_channel(true);
+    dma_channel_config c = dma_channel_get_default_config(ch);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, true);
+    channel_config_set_write_increment(&c, false);
+    const uint64_t t0 = time_us_64();
+    dma_channel_configure(ch, &c, &sink, PAYLOAD1, 65536 / 4, true);
+    dma_channel_wait_for_finish_blocking(ch);
+    const uint32_t us = (uint32_t)(time_us_64() - t0);
+    dma_channel_unclaim(ch);
+    return us;
+}
+
 // The access point with the report page, after the injection (design D9). Doesn't return.
 static void run_wifi(uint64_t t_start) {
     // SSID from the last four hex digits of the chip's unique ID (design D30)
@@ -142,13 +162,22 @@ static void run_wifi(uint64_t t_start) {
              id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
 
     page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
+    page.qmi_rcmd = qmi_hw->m[0].rcmd;
+    page.qmi_rfmt = qmi_hw->m[0].rfmt;
+    page.qmi_timing = qmi_hw->m[0].timing;
+    page.sys_khz = clock_get_hz(clk_sys) / 1000;
+    page.dma_64k_us = flash_dma_64k_us();
     page.wifi_area = wifiblob_select(report.slot);
     TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
     if (page.wifi_area >= 0) {
+        const uint64_t t_init = time_us_64();
         const int err = cyw43_arch_init();
+        page.cyw43_init_ms = (uint32_t)((time_us_64() - t_init) / 1000);
         TRACE("cyw43_arch_init: %d\n", err);
         if (err == 0) {
+            const uint64_t t_net = time_us_64();
             const bool up = net_start(ssid, AP_PASSWORD, page_render, page_action);
+            page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("net_start: %s, SSID %s\n", up ? "ok" : "FAILED", ssid);
             if (up) {
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);

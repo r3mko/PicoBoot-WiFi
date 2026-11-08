@@ -108,7 +108,10 @@ button:disabled { opacity:.5; }
   </form>
 
   <h2>Reboot</h2>
-  <button class="btn danger" id="reboot" style="margin-top:0">Reboot PicoBoot</button>
+  <div class="hint">A warm reboot doesn't touch a running game. The Wi-Fi drops for a few seconds.</div>
+  <button class="btn danger" id="reboot">Reboot PicoBoot</button>
+  <span id="reboot-ask" hidden><button class="btn danger" id="reboot-yes">Yes, reboot</button><button
+    class="btn sec" id="reboot-no">Cancel</button></span>
 </section>
 </main>
 
@@ -198,6 +201,7 @@ document.addEventListener("visibilitychange", () => {
 // ---- Diagnostics ----
 const RESETS = { POR: "power-on reset", BOR: "brown-out reset", RUN: "RUN pin reset", WDOG: "watchdog reset", other: "other reset" };
 const RESULTS = { not_run: "not run: warm boot", no_cs: "no console seen", complete: "complete", stalled: "stalled" };
+const PAYLOADS = { payload1: "payload 1", payload2: "payload 2", builtin: "built-in gekkoboot", none: "none" };
 const us = v => v < 1000 ? v + " µs" : (v / 1000).toFixed(1) + " ms";
 const margin = b => b.margin_clocked_us >= 0 ? us(b.margin_clocked_us) : b.margin_raw_us >= 0 ? us(b.margin_raw_us) : "none";
 
@@ -210,7 +214,7 @@ async function loadDiag() {
     row("Boot", "#" + esc(b.boot) + (b.power_on ? ", power-on (injects)" : ", warm boot"), esc(RESETS[b.reset] || b.reset)) +
     row("Loader", "slot " + esc(b.slot) + (b.from_loader ? "" : " (not started by the loader)"),
       [b.fallback ? "fallback: the first choice held no image" : "", b.bootctl_default ? "boot control empty: defaults" : ""].filter(Boolean).join("; ")) +
-    row("Payload", esc(b.payload), b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : "") +
+    row("Payload", esc(PAYLOADS[b.payload] || b.payload), b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : "") +
     row("Result", esc(RESULTS[b.result] || b.result)) +
     row("main() to PIO ready", us(b.main_to_ready_us)) +
     row("Margin", margin(b), "PIO ready to the console's first transfer") +
@@ -221,7 +225,7 @@ async function loadDiag() {
     row("Wi-Fi up after", us(w.up_ms * 1000)) + `</dl></div>` +
     `<h2>Boot log</h2><div class="scroll"><table><thead><tr><th>Boot</th><th>Slot</th><th>Start</th><th>Payload</th>` +
     `<th>Transfers</th><th>Margin</th><th>Raw/clocked</th><th>Result</th></tr></thead><tbody>` +
-    log.map(e => `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${esc(e.payload)}</td>` +
+    log.map(e => `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${esc(PAYLOADS[e.payload] || e.payload)}</td>` +
       `<td>${Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}</td>` +
       `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`).join("") + `</tbody></table></div>`;
 }
@@ -307,9 +311,8 @@ $("form").onsubmit = async e => {
     return;
   }
   if (d.wifi_restart) {
-    const name = "ssid" in body ? (body.ssid || settings.ssid_in_use) : settings.ssid_in_use;
-    // The name to join: the new SSID, or (empty = default) the one in use, or the unchanged one
-    waitForRestart(esc(name), "password" in body, 3000);
+    // The name to join after the restart (the default name if the SSID was emptied)
+    waitForRestart(esc(d.ssid_in_use || settings.ssid_in_use), "password" in body, 3000);
   } else {
     $("saved").textContent = "Saved.";
     $("saved").hidden = false;
@@ -340,9 +343,13 @@ async function waitForRestart(ssidHtml, newPassword, delayMs) {
   n.innerHTML = `Wi-Fi is back. <b>${ssidHtml}</b> is in use with the new settings.`;
 }
 
-$("reboot").onclick = async () => {
+// Asked inline, not with confirm(): captive-portal sheets may not show dialogs
+const askReboot = on => { $("reboot").hidden = on; $("reboot-ask").hidden = !on; };
+$("reboot").onclick = () => { if (!restarting) askReboot(true); };
+$("reboot-no").onclick = () => askReboot(false);
+$("reboot-yes").onclick = async () => {
+  askReboot(false);
   if (restarting) return;
-  if (!confirm("Reboot PicoBoot?\n\nA warm reboot doesn't touch a running game. The Wi-Fi drops for a few seconds.")) return;
   const r = await api("/api/reboot", {});
   if (!r || !r.ok) { setErr("form", (r && r.data && r.data.message) || "Can't reach PicoBoot. Not rebooted."); return; }
   const n = $("restart-notice");

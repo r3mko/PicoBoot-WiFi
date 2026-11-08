@@ -238,6 +238,7 @@ static int post_settings(const char *body, size_t body_len, char *out, size_t si
     json_object_begin(&j, NULL);
     json_bool(&j, "saved", true);
     json_bool(&j, "wifi_restart", restart);
+    json_string(&j, "ssid_in_use", wifi_ssid());    // The name to join after the restart
     json_object_end(&j);
     return finish(&j, out, size, len);
 }

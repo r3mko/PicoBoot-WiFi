@@ -120,10 +120,11 @@ The body holds only the settings to change:
 **The answer:**
 
 ```json
-{"saved": true, "wifi_restart": true}
+{"saved": true, "wifi_restart": true, "ssid_in_use": "PicoBoot-C2C4"}
 ```
 
 - **All or nothing:** one wrong field and nothing is saved.
+- **`ssid_in_use`:** the SSID to join after the restart (the default name when `ssid` was set to `""`).
 - **`wifi_restart: true`:** the SSID, password, channel or country changed.
   - About a second after this answer, the access point restarts with them, and every client drops off (D41).
   - The change is on trial until a client reaches the web server through the restarted access point; phones' captive-portal probes do that by themselves. If the firmware starts again first, the previous Wi-Fi settings return.

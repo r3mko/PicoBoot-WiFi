@@ -97,6 +97,7 @@ bool wifi_change(const settings_t *next, bool *restart) {
     }
     record = r;
     stored = true;
+    update_ssid();                              // Also for the answer: the name to join next
     if (*restart) {
         restart_at_us = time_us_64() + RESTART_DELAY_US;
         awaiting_client = false;                // Until the AP runs the new settings
@@ -108,7 +109,6 @@ bool wifi_change(const settings_t *next, bool *restart) {
 void wifi_poll(void) {
     if (restart_at_us && time_us_64() >= restart_at_us) {
         restart_at_us = 0;
-        update_ssid();
         const net_ap_t ap = ap_settings();
         net_restart(&ap);
         requests_at_restart = net_requests();

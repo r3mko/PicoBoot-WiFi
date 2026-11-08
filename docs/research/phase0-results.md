@@ -147,4 +147,4 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - Two explanations fit, and a CS pull-up separates them:
      - **(a) The console drives CS low until about 42 ms.** Then the glitch comes from the console, and a pull-up changes nothing.
      - **(b) Nobody drives CS until then, and the Pico's reset pull-down holds it low.** Then the glitch is the console letting go of the line for a moment, and a pull-up would keep CS high.
-   - Build `5…`+ has a "CS pull-up" test switch for step 0.3b.
+   - Build `d8ba49a` and later have a "CS pull-up" test switch for step 0.3b.

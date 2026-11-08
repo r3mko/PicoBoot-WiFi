@@ -169,6 +169,6 @@ The owner chose to keep the proven PIO programs (finding 5, a known limit in D36
 
 | Check | Result |
 |---|---|
-| Bench: a test UF2 blanks slot A; the board must come up in BOOTSEL (the RP2350 drive) | *to do* |
-| Bench: reinstall; the page shows 150 MHz after the injection, Wi-Fi up | *to do* |
+| Bench: a test UF2 blanks slot A; the board must come up in BOOTSEL (the RP2350 drive) | **Passed:** the drive came back by itself |
+| Bench: reinstall; the page shows 150 MHz after the injection, Wi-Fi up | **Passed** |
 | Console: 10 Swiss cold boots | *to do* |

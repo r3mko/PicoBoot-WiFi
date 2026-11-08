@@ -95,9 +95,25 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
    - The CYW43439 guarantees full RF performance only above 3.2 V (see [hardware.md](hardware.md) §1).
    - To measure with a meter in step 0.5.
 
-## 0.5 Current
+## 0.5 Voltage and current (2026-11-08)
 
-*To do.*
+**Setup:** voltage between the Pico's pin 36 (3V3) and pin 38 (GND), measured with a multimeter, with the board wired as normal (3V3 from the console).
+
+| State | 3V3 at the Pico |
+|---|---|
+| Radio off (Wi-Fi 60 s late) | 3.21 V |
+| AP idle, no client | 3.16 V |
+| Client connected, idle | 3.15 V |
+| Download running | 3.15 V |
+
+**Current:** not measured. The owner's setup doesn't allow a meter in series with the Pico's 3.3 V wire. The design uses the datasheet figures instead ([hardware.md](hardware.md) §1): about 40 mA for the radio listening, Tx bursts up to about 320 mA at full power, and 20–30 mA for the RP2350.
+
+**Findings:**
+
+1. **The console's 3.3 V rail is low at the Pico:** 3.21 V even with the radio off. That confirms the inference from the temperature readings in 0.4 (about 3.18 V).
+2. **With the radio on, it averages 3.15–3.16 V.** That's below the 3.2 V where the CYW43439 guarantees full RF performance, though above its 3.0 V minimum.
+3. **Short dips during Tx bursts** can't be seen with a meter. The 0.7 stress test checks for their effects (brown-outs, Wi-Fi drops, console glitches).
+4. **Design consequence to consider in 0.8:** recommend, or require, the 5 V-to-VSYS wiring. The Pico's own regulator then makes 3.3 V from 5 V, and the radio no longer loads the console's 3.3 V rail.
 
 ## 0.6 Range
 

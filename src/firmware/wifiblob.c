@@ -34,7 +34,8 @@ static bool valid(const wifiblob_header_t *h) {
     return memcmp(h->magic, "W43B", 4) == 0 && h->version == 1 &&
            h->fw_len > 0 && h->fw_len < LAYOUT_WIFI_SIZE &&
            h->data_len <= LAYOUT_WIFI_SIZE - sizeof(*h) &&
-           clm_offset + h->clm_len <= h->data_len;
+           // Written so it can't wrap: clm_offset + clm_len would let a huge clm_len pass
+           clm_offset <= h->data_len && h->clm_len <= h->data_len - clm_offset;
 }
 
 int wifiblob_select(uint8_t slot) {

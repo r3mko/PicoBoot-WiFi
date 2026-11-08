@@ -1,5 +1,6 @@
 """
-Builds and runs the host C tests in tests/host/ (plain C from src/common, without the Pico SDK).
+Builds and runs the host C tests in tests/host/ (plain C from src/, without the Pico SDK; the few
+SDK headers needed come from tests/host/stub).
 Uses the compiler in $CC, else cc; skipped if there is none.
 
     python3 -m unittest discover -s tests -p 'test_host.py' -v
@@ -12,15 +13,19 @@ import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COMMON = os.path.join(REPO, "src", "common")
+SRC = os.path.join(REPO, "src")
 HOST = os.path.join(REPO, "tests", "host")
+INCLUDES = [os.path.join(SRC, "common"), os.path.join(SRC, "firmware"), os.path.join(HOST, "stub")]
 CC = os.environ.get("CC", "cc")
 
-# Each test program and the src/common sources it needs
+# Each test program and the sources in src/ it needs (test_wifiblob.c includes wifiblob.c itself,
+# to reach its static header check)
 PROGRAMS = {
-    "test_records.c": ["records.c"],
-    "test_bootdecide.c": ["bootdecide.c"],
-    "test_ringlog.c": ["ringlog.c", "records.c"],
+    "test_records.c": ["common/records.c"],
+    "test_bootdecide.c": ["common/bootdecide.c"],
+    "test_ringlog.c": ["common/ringlog.c", "common/records.c"],
+    "test_payload.c": ["firmware/payload.c"],
+    "test_wifiblob.c": [],
 }
 
 
@@ -29,8 +34,10 @@ class HostCTest(unittest.TestCase):
     def build_and_run(self, test, sources):
         with tempfile.TemporaryDirectory() as tmp:
             exe = os.path.join(tmp, "test")
-            cmd = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", COMMON, "-o", exe,
-                   os.path.join(HOST, test)] + [os.path.join(COMMON, s) for s in sources]
+            cmd = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-o", exe]
+            for include in INCLUDES:
+                cmd += ["-I", include]
+            cmd += [os.path.join(HOST, test)] + [os.path.join(SRC, s) for s in sources]
             build = subprocess.run(cmd, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([exe], capture_output=True, text=True, timeout=60)

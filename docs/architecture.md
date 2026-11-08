@@ -356,6 +356,7 @@ power on -> boot ROM -> loader (flash offset 0)
   - it limits radio noise during play;
   - it limits exposure.
 - **To reach it again:** power-cycle the console.
+- **Timing:** the countdown starts when the Wi-Fi chip drops the last client. A device that leaves without saying goodbye stays on the chip's list until it times out, so Wi-Fi can go off about 1.5 minutes later than set (phase 2 bench check: 3.5 minutes for the 2-minute setting). The owner accepted this.
 
 **D21 (Decision): no home Wi-Fi in the first release.**
 - **What it would be:** station mode with mDNS (`picoboot.local`), falling back to the AP when the network can't be joined.

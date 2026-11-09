@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for phase 3 (plan step 3.1), for the owner's review |
+| **Status** | Reviewed by the owner (plan step 3.1), 2026-11-09; approved with phase 3 |
 | **Design** | [architecture.md](architecture.md) D6 (layout), D11 (update file), D12 (trial), D14 (Wi-Fi blob), D24 (release) |
 
 An over-the-air firmware update is one file, `picoboot-wifi-X.Y.Z-update.bin`. CI makes it with `tools/mkupdate.py` (plan step 3.2) from the same build as the USB install UF2. The web UI and the CLI upload it to the Pico, which writes it into the slot that isn't running (D11).

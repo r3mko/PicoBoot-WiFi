@@ -14,6 +14,10 @@
 
 #define LAYOUT_FLASH_SIZE           0x00400000  // 4 MB W25Q32RV on the Pico 2 W
 
+// Counts up when an area moves. An over-the-air update must be built for this layout: it can't move
+// the areas itself (docs/update-format.md)
+#define LAYOUT_VERSION              0x00000001
+
 #define LAYOUT_LOADER_OFFSET        0x00000000  // The loader (D7); only a USB install writes it
 #define LAYOUT_LOADER_SIZE          0x00002000
 

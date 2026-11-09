@@ -18,6 +18,13 @@
 
 #define BOOTINFO_SESSION_MARKER     0x50424F4Eu // "PBON": set by the loader at every boot
 
+// Loader versions (docs/update-format.md). The loader's version counts up when its side of boot
+// info or boot control changes in a way older loaders don't handle; loaders that don't report one
+// are version 1. An update file names the lowest loader version its firmware works with, and the
+// Pico refuses it if the installed loader is older: the loader only changes with a USB install.
+#define BOOTINFO_LOADER_VERSION     1           // This loader
+#define BOOTINFO_LOADER_NEEDED      1           // The lowest loader this firmware works with
+
 // The info word: a check byte on top, so a stale or random value isn't taken for real
 #define BOOTINFO_MAGIC              0xB1000000u
 #define BOOTINFO_MAGIC_MASK         0xFF000000u

@@ -32,6 +32,8 @@
 #include "wifi.h"
 #include "api.h"
 #include "updater.h"
+#include "slots.h"
+#include "hardware/watchdog.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/structs/qmi.h"
@@ -45,6 +47,11 @@
 
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
+#define WATCHDOG_MS          8000                   // A hang becomes a reboot the loader counts (D12)
+
+#ifndef PICOBOOT_WIFI_TEST_CRASH
+#define PICOBOOT_WIFI_TEST_CRASH 0                  // Test builds that crash on purpose (plan step 3.7)
+#endif
 
 // Bench debugging (CMake option PICOBOOT_WIFI_USB_TRACE): start-up steps over USB serial
 #if PICOBOOT_WIFI_USB_TRACE
@@ -52,6 +59,12 @@
 #else
 #define TRACE(...) ((void)0)
 #endif
+
+// A fault reboots at once, as a crash: without BOOTINFO_CLEAN_REBOOT, so the loader counts it (D12)
+void isr_hardfault(void) {
+    watchdog_reboot(0, 0, 0);
+    while (true) {}
+}
 
 static boot_report_t report;
 static uint64_t t_main;
@@ -66,6 +79,11 @@ static void read_boot_info(void) {
         report.slot = (info & BOOTINFO_SLOT_B) ? BOOTCTL_SLOT_B : BOOTCTL_SLOT_A;
         report.fallback = info & BOOTINFO_FALLBACK;
         report.bootctl_default = info & BOOTINFO_BOOTCTL_DEFAULT;
+        report.loader_flags = (uint8_t)(info & (BOOTINFO_TRIAL | BOOTINFO_TRIAL_FAILED | BOOTINFO_CRASH_FALLBACK));
+        report.loader_version = (uint8_t)((info & BOOTINFO_LOADER_MASK) >> BOOTINFO_LOADER_SHIFT);
+        if (report.loader_version == 0) {
+            report.loader_version = 1;      // Loaders before version 2 don't report one
+        }
         report.chip_reset = powman_hw->scratch[BOOTINFO_SCRATCH_CHIP_RESET];
         // Consumed: a later boot without a loader mustn't take this for its own
         powman_hw->scratch[BOOTINFO_SCRATCH_INFO] = 0;
@@ -111,7 +129,7 @@ static void inject(const injection_payload_t *payload, bool cs_pullup) {
     report.margin_raw_us = report.margin_clocked_us = -1;
 
     while (!counters_first_raw_seen() && time_us_64() - t_ready < FIRST_CS_TIMEOUT_US) {
-        tight_loop_contents();
+        watchdog_update();
     }
 
     if (counters_first_raw_seen()) {
@@ -119,6 +137,7 @@ static void inject(const injection_payload_t *payload, bool cs_pullup) {
         report.margin_raw_us = (int32_t)(t_first - t_ready);
         report.result = INJECTION_STALLED;
         while (time_us_64() - t_first < INJECTION_TIMEOUT_US) {
+            watchdog_update();
             if (report.margin_clocked_us < 0 && counters_first_clocked_seen()) {
                 report.margin_clocked_us = (int32_t)(time_us_64() - t_ready);
             }
@@ -155,6 +174,19 @@ static uint32_t flash_dma_64k_us(void) {
 }
 
 // The access point with the report page, after the injection (design D9). Doesn't return.
+// D12: a firmware on trial that has done a complete power-on injection and brought Wi-Fi up keeps
+// itself (the other way is the firmware page's Keep)
+static void keep_if_proved(void) {
+    if (report.power_on && report.result == INJECTION_COMPLETE) {
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        if (slots_keep(&b, report.slot)) {
+            storage_bootctl_store(&b);
+            TRACE("kept slot %c (D12)\n", report.slot == BOOTCTL_SLOT_B ? 'B' : 'A');
+        }
+    }
+}
+
 static void run_wifi(uint64_t t_start, uint32_t boot_number) {
     wifi_load();        // The settings, with an unconfirmed Wi-Fi change undone (design D41)
 
@@ -178,8 +210,8 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
             // The LED after the injection (design D26)
             const wifi_led_t led = report.result == INJECTION_COMPLETE ? WIFI_LED_DONE :
                                    report.result == INJECTION_STALLED ? WIFI_LED_STALLED : WIFI_LED_STEADY;
-            // Updates go into the other slot (D11). Loaders so far don't report a version: 1.
-            updater_init(report.slot, 1, report.from_loader);
+            // Updates go into the other slot (D11), if the installed loader can start them
+            updater_init(report.slot, report.loader_version, report.from_loader);
 #if PICOBOOT_WIFI_TEST_BUILD
             const bool up = wifi_start(page_render, page_action, api_handle, &UPDATER_UPLOAD, led);  // With the test page
 #else
@@ -192,8 +224,15 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
                 page_init(&page);
                 api_init(&page);
                 TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
+                keep_if_proved();
                 do {
                     net_poll();
+                    watchdog_update();
+#if PICOBOOT_WIFI_TEST_CRASH == 2
+                    if (time_us_64() - t_start > 5 * 1000 * 1000) {
+                        while (true) {}     // Hang: the watchdog resets, as a crash
+                    }
+#endif
                 } while (wifi_poll());
                 TRACE("Wi-Fi off: no client for %u minutes (design D20)\n", wifi_settings()->auto_off_minutes);
             }
@@ -201,7 +240,9 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
     }
 
     // Wi-Fi is off (D20), or there's no Wi-Fi blob, or Wi-Fi failed to start: idle until the next
-    // power-on, sleeping between interrupts to draw less from the console's rail
+    // power-on, sleeping between interrupts to draw less from the console's rail. Without the
+    // watchdog: idling isn't a hang (phase 2 review).
+    watchdog_disable();
     while (true) {
 #if PICOBOOT_WIFI_USB_TRACE
         TRACE("idle: Wi-Fi is off\n");
@@ -219,6 +260,10 @@ int main(void) {
     TRACE("PicoBoot-WiFi %s, USB trace build\n", PICOBOOT_WIFI_BUILD);
 #endif
     read_boot_info();
+    watchdog_enable(WATCHDOG_MS, true);     // Fed in the injection's waits and the main loop
+#if PICOBOOT_WIFI_TEST_CRASH == 1
+    __builtin_trap();                       // A fault at start-up (plan step 3.7)
+#endif
     TRACE("boot info: from loader %d, power-on %d, slot %c, fallback %d, defaults %d, CHIP_RESET 0x%08lx\n",
           report.from_loader, report.power_on, report.slot == BOOTCTL_SLOT_B ? 'B' : 'A', report.fallback,
           report.bootctl_default, (unsigned long)report.chip_reset);
@@ -238,6 +283,16 @@ int main(void) {
               (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
     } else {
         report.result = INJECTION_NOT_RUN;      // A warm reboot: the console may be running (C2)
+    }
+
+    // The loader's news for boot control (D12): a failed trial of the other slot, or a takeover
+    // after a crash loop. Flash may be written now, the injection is over.
+    if (report.from_loader && report.loader_flags) {
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        if (slots_at_start(&b, report.slot, report.loader_flags)) {
+            storage_bootctl_store(&b);
+        }
     }
 
     report.chip_version = rp2350_chip_version();

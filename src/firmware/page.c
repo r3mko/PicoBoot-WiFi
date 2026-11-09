@@ -10,6 +10,7 @@
 #include "page.h"
 #include "net.h"
 #include "bootctl.h"
+#include "bootinfo.h"
 #include "storage.h"
 #include "settings.h"
 #include "wifi.h"
@@ -218,8 +219,12 @@ size_t page_render(char *buf, size_t size) {
 
     put(&o, "THIS BOOT\n");
     if (r->from_loader) {
-        put(&o, "  Started by         : the loader, slot %c%s; boot control %s\n", r->slot == BOOTCTL_SLOT_B ? 'B' : 'A',
+        put(&o, "  Started by         : the loader (version %u), slot %c%s%s%s%s; boot control %s\n", r->loader_version,
+            r->slot == BOOTCTL_SLOT_B ? 'B' : 'A',
             r->fallback ? " (fallback: the first choice held no image)" : "",
+            (r->loader_flags & BOOTINFO_TRIAL) ? ", ON TRIAL (D12)" : "",
+            (r->loader_flags & BOOTINFO_TRIAL_FAILED) ? ", the other slot's TRIAL FAILED" : "",
+            (r->loader_flags & BOOTINFO_CRASH_FALLBACK) ? ", TOOK OVER: the other slot crashed 3 times" : "",
             r->bootctl_default ? "empty (defaults)" : "record");
     } else {
         put(&o, "  Started by         : no loader (firmware installed on its own)\n");

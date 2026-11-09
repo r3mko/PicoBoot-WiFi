@@ -48,7 +48,7 @@ def refused(test, data, code):
 
 class ConstantsTest(unittest.TestCase):
     def test_values_come_from_the_headers(self):
-        self.assertEqual(C, {"layout": 1, "slot_size": 0x40000, "wifi_size": 0x3C000, "loader": 1})
+        self.assertEqual(C, {"layout": 1, "slot_size": 0x40000, "wifi_size": 0x3C000, "loader": 2})
 
 
 class HeaderTest(unittest.TestCase):
@@ -124,7 +124,7 @@ class ParseTest(unittest.TestCase):
         info = mk.parse_update(build())
         self.assertEqual(info["version"], VERSION)
         self.assertEqual(info["board"], "pico2_w")
-        self.assertEqual((info["format"], info["flags"], info["layout"], info["loader"]), (1, 1, 1, 1))
+        self.assertEqual((info["format"], info["flags"], info["layout"], info["loader"]), (1, 1, 1, 2))
         self.assertEqual((info["image_size"], info["blob_size"]), (len(IMAGE), len(BLOB)))
         self.assertEqual(info["image_sha256"], sha(IMAGE).hex())
         self.assertEqual(info["blob_sha256"], sha(BLOB).hex())

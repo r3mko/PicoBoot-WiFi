@@ -120,6 +120,11 @@ void json_bool(json_out_t *j, const char *key, bool value) {
     put_raw(j, value ? "true" : "false", value ? 4 : 5);
 }
 
+void json_null(json_out_t *j, const char *key) {
+    member(j, key);
+    put_raw(j, "null", 4);
+}
+
 void json_tenths(json_out_t *j, const char *key, long tenths) {
     char n[24];
     const unsigned long a = tenths < 0 ? 0ul - (unsigned long)tenths : (unsigned long)tenths;

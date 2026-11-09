@@ -17,6 +17,7 @@ set(FIRMWARE_SOURCES
     api.c
     update.c
     updater.c
+    slots.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )
@@ -118,6 +119,8 @@ pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_BOARD="${PICO_BOARD}")   # Update files name it (D11)
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_TEST_CRASH=${PICOBOOT_WIFI_TEST_CRASH_CODE})
+
 
 if(PICOBOOT_WIFI_USB_TRACE)
     pico_enable_stdio_usb(firmware 1)

@@ -123,6 +123,19 @@ static int begin(const char *path, uint32_t length, char *out, size_t size, size
     if (!can_update) {
         return answer_error(UPDATE_NEEDS_USB_INSTALL, out, size, len);
     }
+    // While this firmware is on trial, the other slot holds the one to fall back to (D12)
+    bootctl_t b;
+    storage_bootctl_load(&b);
+    if (b.pending_slot == running) {
+        json_out_t j;
+        json_init(&j, out, size);
+        json_object_begin(&j, NULL);
+        json_string(&j, "error", "on_trial");
+        json_string(&j, "message", "this firmware is on trial: keep it first, or switch back to the other slot");
+        json_object_end(&j);
+        *len = json_finish(&j);
+        return 409;
+    }
     update_begin(&writer, &io, &env, running == BOOTCTL_SLOT_B ? BOOTCTL_SLOT_A : BOOTCTL_SLOT_B, length);
     return writer.result == UPDATE_OK ? 200 : answer_error(writer.result, out, size, len);
 }
@@ -153,8 +166,10 @@ static int end(bool complete, char *out, size_t size, size_t *len) {
     json_string(&j, "slot", writer.slot == BOOTCTL_SLOT_B ? "B" : "A");
     json_string(&j, "version", writer.header.version);
     json_bool(&j, "blob_written", writer.write_blob);
+    json_bool(&j, "rebooting", true);
     json_object_end(&j);
     *len = json_finish(&j);
+    net_reboot_soon(false);                     // Into the trial (D11); warm: a game keeps running (D8)
     return 200;
 }
 

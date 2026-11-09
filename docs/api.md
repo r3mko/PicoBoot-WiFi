@@ -50,7 +50,8 @@ What the status page shows (D22).
 ```json
 {
   "api": 1,
-  "firmware": {"version": "0.2.0-dev+a75e9b7", "slot": "A"},
+  "firmware": {"version": "0.3.0-dev+1a2b3c4", "slot": "A", "loader": 2, "pending": null,
+               "states": {"A": "kept", "B": "failed"}},
   "chip": {"stepping": 2, "rom": 2},
   "uptime_s": 34,
   "temperature_c": 38.4,
@@ -67,6 +68,9 @@ What the status page shows (D22).
 |---|---|
 | `firmware.version` | Semver plus the git hash for test builds (D24) |
 | `firmware.slot` | `"A"` or `"B"`: the slot this firmware runs from |
+| `firmware.loader` | The installed loader's version (1 for loaders that don't report one); an update needing a newer one is refused (D11) |
+| `firmware.pending` | The slot with a new firmware on trial (D12), or `null` |
+| `firmware.states` | Per slot: `installed` (from a USB install), `empty` (being written, or an upload failed), `trial`, `kept`, `failed` |
 | `chip.stepping` | RP2350 stepping: 2 is A2, 3 is A3, 4 is A4 |
 | `chip.rom` | Boot ROM version |
 | `temperature_c` | RP2350 sensor; it reads low on a low 3.3 V rail |
@@ -168,6 +172,10 @@ The last boot and the boot log (D22, D39).
 | `cs_high_at_ready` | CS level at "PIO ready" |
 | `cs_pulldown_test` | The boot ran in the CS pull-down test mode |
 | `chip_stepping`, `rom` | As in the status |
+| `loader` | The loader's version |
+| `trial` | The loader started this slot on trial (D12) |
+| `trial_failed` | The other slot's trial failed in this session: it crashed, or held no image |
+| `crash_fallback` | The other slot crashed 3 times in a row in this session, so this one took over for good |
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
 
@@ -179,12 +187,15 @@ An over-the-air update (D11). The body is an update file ([update-format.md](upd
 - **The answer:**
 
 ```json
-{"installed": true, "slot": "B", "version": "0.3.0-dev+1a2b3c4", "blob_written": false}
+{"installed": true, "slot": "B", "version": "0.3.0-dev+1a2b3c4", "blob_written": false, "rebooting": true}
 ```
 
   - `slot` now holds the new firmware, on trial (D12); `blob_written` says whether its Wi-Fi area needed the file's blob (D14).
+  - Half a second later the Pico reboots into the trial (D11). The reboot is warm: a running game keeps running (D8). The UI waits for the Pico to come back.
 - **Refusals** answer 400 with the codes of [update-format.md](update-format.md): `not_an_update`, `unsupported_format`, `bad_header`, `wrong_board`, `needs_usb_install`, `bad_size`, `needs_blob`, `bad_image`, `bad_blob`, `incomplete`. A refusal that comes from the header arrives before any flash is touched; the rest leave the other slot empty, never half a firmware.
-- **Also:** 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.
+- **Also:**
+  - 409 `on_trial` while the running firmware is itself on trial: the other slot holds the one to fall back to, so it isn't overwritten. Keep the new firmware first, or switch back to the other slot (a reboot alone continues the trial);
+  - 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.
 
 ## POST /api/reboot
 

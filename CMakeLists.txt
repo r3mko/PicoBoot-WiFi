@@ -43,6 +43,21 @@ if(NOT PICOBOOT_WIFI_GIT_HASH)
     set(PICOBOOT_WIFI_GIT_HASH "unknown")
 endif()
 set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}+${PICOBOOT_WIFI_GIT_HASH}")
+# Test builds that crash on purpose, for the trial and crash-loop tests (plan step 3.7): "startup"
+# faults at once, "after5s" hangs 5 s after Wi-Fi is up so the watchdog resets
+set(PICOBOOT_WIFI_TEST_CRASH "" CACHE STRING "Crash on purpose: empty, startup or after5s (plan step 3.7)")
+if(PICOBOOT_WIFI_TEST_CRASH STREQUAL "startup")
+    set(PICOBOOT_WIFI_TEST_CRASH_CODE 1)
+    string(APPEND PICOBOOT_WIFI_BUILD "-crash-start")
+elseif(PICOBOOT_WIFI_TEST_CRASH STREQUAL "after5s")
+    set(PICOBOOT_WIFI_TEST_CRASH_CODE 2)
+    string(APPEND PICOBOOT_WIFI_BUILD "-crash-5s")
+elseif(PICOBOOT_WIFI_TEST_CRASH STREQUAL "")
+    set(PICOBOOT_WIFI_TEST_CRASH_CODE 0)
+else()
+    message(FATAL_ERROR "PICOBOOT_WIFI_TEST_CRASH must be empty, startup or after5s")
+endif()
+
 # Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release
 # builds have neither (phase 1 review finding 6)
 if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")

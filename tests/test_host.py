@@ -30,6 +30,7 @@ PROGRAMS = {
     "test_settings.c": ["firmware/settings.c", "common/records.c"],
     "test_json.c": ["firmware/json.c"],
     "test_update.c": ["firmware/update.c"],
+    "test_slots.c": ["firmware/slots.c", "common/bootdecide.c"],
     "test_wifiblob.c": [],
 }
 

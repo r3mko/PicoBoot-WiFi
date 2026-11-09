@@ -13,6 +13,7 @@
 #include "storage.h"
 #include "wifi.h"
 #include "bootctl.h"
+#include "bootinfo.h"
 #include "hardware/structs/powman.h"
 #include "pico/time.h"
 
@@ -26,6 +27,17 @@ void api_init(const page_info_t *i) {
 
 static const char *slot_name(uint8_t slot) {
     return slot == BOOTCTL_SLOT_B ? "B" : "A";
+}
+
+static const char *state_name(uint8_t state) {
+    switch (state) {
+        case BOOTCTL_STATE_INSTALLED: return "installed";
+        case BOOTCTL_STATE_EMPTY: return "empty";
+        case BOOTCTL_STATE_TRIAL: return "trial";
+        case BOOTCTL_STATE_KEPT: return "kept";
+        case BOOTCTL_STATE_FAILED: return "failed";
+        default: return "unknown";
+    }
 }
 
 static const char *reset_name(uint32_t chip_reset) {
@@ -100,6 +112,21 @@ static int get_status(char *out, size_t size, size_t *len) {
     json_object_begin(&j, "firmware");
     json_string(&j, "version", PICOBOOT_WIFI_BUILD);
     json_string(&j, "slot", slot_name(r->slot));
+    json_int(&j, "loader", r->loader_version);
+    {
+        // Both slots and the trial (D12, D13)
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        if (b.pending_slot == BOOTCTL_SLOT_A || b.pending_slot == BOOTCTL_SLOT_B) {
+            json_string(&j, "pending", slot_name(b.pending_slot));
+        } else {
+            json_null(&j, "pending");
+        }
+        json_object_begin(&j, "states");
+        json_string(&j, "A", state_name(b.slot_state[BOOTCTL_SLOT_A]));
+        json_string(&j, "B", state_name(b.slot_state[BOOTCTL_SLOT_B]));
+        json_object_end(&j);
+    }
     json_object_end(&j);
     json_object_begin(&j, "chip");
     json_int(&j, "stepping", r->chip_version);
@@ -183,6 +210,10 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "cs_pulldown_test", r->cs_pulldown_test);
     json_int(j, "chip_stepping", r->chip_version);
     json_int(j, "rom", r->rom_version);
+    json_int(j, "loader", r->loader_version);
+    json_bool(j, "trial", r->loader_flags & BOOTINFO_TRIAL);
+    json_bool(j, "trial_failed", r->loader_flags & BOOTINFO_TRIAL_FAILED);
+    json_bool(j, "crash_fallback", r->loader_flags & BOOTINFO_CRASH_FALLBACK);
     json_object_end(j);
 }
 

@@ -35,6 +35,8 @@
 #include "pico/bootrom.h"
 #include "boot/picoboot_constants.h"
 #include "hardware/watchdog.h"
+#include "hardware/structs/powman.h"
+#include "bootinfo.h"
 
 #define PAGE_MAX        10240       // Rendered test page (with the boot log table)
 #define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
@@ -73,6 +75,7 @@ static const char *status_text(int status) {
         case 403: return "403 Forbidden";
         case 404: return "404 Not Found";
         case 405: return "405 Method Not Allowed";
+        case 409: return "409 Conflict";
         case 413: return "413 Payload Too Large";
         case 415: return "415 Unsupported Media Type";
         case 503: return "503 Service Unavailable";
@@ -482,6 +485,8 @@ void net_poll(void) {
     }
 
     if (pending_reboot != REBOOT_NONE && time_us_64() >= reboot_at_us) {
+        // Meant, not a crash: the loader doesn't count it (D12)
+        powman_hw->scratch[BOOTINFO_SCRATCH_REBOOT] = BOOTINFO_CLEAN_REBOOT;
         if (pending_reboot == REBOOT_WATCHDOG) {
             watchdog_reboot(0, 0, 0);
         } else {

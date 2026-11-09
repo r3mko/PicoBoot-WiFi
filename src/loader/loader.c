@@ -5,8 +5,9 @@
  */
 
 // The loader (design D7). The boot ROM starts it as a normal flash image at offset 0. It decides
-// whether this boot is a power-on (D8), picks a firmware slot from boot control, tells the firmware
-// both in POWMAN scratch, and hands over with rom_chain_image(), which maps the slot to 0x10000000.
+// whether this boot is a power-on (D8), picks a firmware slot from boot control and from what
+// happened earlier in this session (the trial, fallback and crash loop of D12), tells the firmware
+// in POWMAN scratch, and hands over with rom_chain_image(), which maps the slot to 0x10000000.
 //
 // It stays small and quick: no clock setup, no flash writes, no Wi-Fi. Every decision is in
 // boot_decide() (src/common/bootdecide.c), which the host tests cover.
@@ -37,27 +38,32 @@ int main(void) {
         .had_por = (chip_reset & POWMAN_CHIP_RESET_HAD_POR_BITS) != 0,
         .marker_set = marker_set,
         .bootctl = rec ? record_payload(rec) : NULL,
+        .session = powman_hw->scratch[BOOTINFO_SCRATCH_SESSION],
+        .clean_reboot = powman_hw->scratch[BOOTINFO_SCRATCH_REBOOT] == BOOTINFO_CLEAN_REBOOT,
     };
     const boot_decision_t d = boot_decide(&inputs);
 
-    // From now on every reboot until the next power-on is a warm one
+    // From now on every reboot until the next power-on is a warm one, and a crash unless the
+    // firmware says otherwise
     powman_hw->scratch[BOOTINFO_SCRATCH_MARKER] = BOOTINFO_SESSION_MARKER;
     powman_hw->scratch[BOOTINFO_SCRATCH_CHIP_RESET] = chip_reset;
+    powman_hw->scratch[BOOTINFO_SCRATCH_REBOOT] = 0;
 
-    for (int i = 0; i < 2; i++) {
-        uint32_t info = BOOTINFO_MAGIC;
+    for (int i = 0; i < 2 && d.slots[i] != BOOTCTL_NONE; i++) {
+        uint32_t info = BOOTINFO_MAGIC | d.flags[i] | (uint32_t)BOOTINFO_LOADER_VERSION << BOOTINFO_LOADER_SHIFT;
         info |= d.power_on ? BOOTINFO_POWER_ON : 0;
         info |= d.slots[i] == BOOTCTL_SLOT_B ? BOOTINFO_SLOT_B : 0;
         info |= i > 0 ? BOOTINFO_FALLBACK : 0;
         info |= d.bootctl_default ? BOOTINFO_BOOTCTL_DEFAULT : 0;
         powman_hw->scratch[BOOTINFO_SCRATCH_INFO] = info;
+        powman_hw->scratch[BOOTINFO_SCRATCH_SESSION] = d.session[i];
 
         // Doesn't return if the slot holds a valid image
         rom_chain_image(chain_workarea, sizeof(chain_workarea),
                         XIP_BASE + slot_offset[d.slots[i]], LAYOUT_SLOT_SIZE);
     }
 
-    // Neither slot holds a valid image: wait in BOOTSEL for a USB install. The boot ROM reboots
+    // No slot holds a valid image that may be started: wait in BOOTSEL for a USB install. The boot ROM reboots
     // through the watchdog after a delay counted in watchdog ticks, and only the SDK's clock setup,
     // which the loader skips, starts that tick. Start it here; its exact rate doesn't matter.
     powman_hw->scratch[BOOTINFO_SCRATCH_INFO] = 0;

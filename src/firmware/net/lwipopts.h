@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-// lwIP options for the firmware (from the phase 0 measurement build): an access point with a raw-API
-// TCP server, polled from the main loop (pico_cyw43_arch_lwip_poll). Based on
-// pico-examples' lwipopts_examples_common.h, without the DNS client.
+// lwIP options for the firmware (from the phase 0 measurement build): an access point with lwIP
+// httpd, polled from the main loop (pico_cyw43_arch_lwip_poll). Based on pico-examples'
+// lwipopts_examples_common.h, without the DNS client.
 // See https://www.nongnu.org/lwip/2_1_x/group__lwip__opts.html
 
 #ifndef _LWIPOPTS_H
@@ -50,5 +50,15 @@
 #define SYS_STATS                   0
 #define MEMP_STATS                  0
 #define LINK_STATS                  0
+
+// lwIP httpd (design D18): every response is a custom file made in net.c, headers included
+#define LWIP_HTTPD_CUSTOM_FILES     1
+#define LWIP_HTTPD_SUPPORT_POST     1
+#define LWIP_HTTPD_DYNAMIC_HEADERS  0
+#define HTTPD_USE_CUSTOM_FSDATA     1       // net/fsdata_custom.c
+#define HTTPD_LIMIT_SENDING_TO_2MSS 0       // Fill the send buffer, for throughput
+// Copy response data into the TCP segments: net.c frees a response when httpd closes it, which
+// can be before the client has acknowledged (and before a retransmission of) the last segment
+#define HTTP_IS_DATA_VOLATILE(hs)   TCP_WRITE_FLAG_COPY
 
 #endif

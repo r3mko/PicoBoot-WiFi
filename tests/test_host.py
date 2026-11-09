@@ -25,6 +25,8 @@ PROGRAMS = {
     "test_bootdecide.c": ["common/bootdecide.c"],
     "test_ringlog.c": ["common/ringlog.c", "common/records.c"],
     "test_payload.c": ["firmware/payload.c"],
+    "test_settings.c": ["firmware/settings.c", "common/records.c"],
+    "test_json.c": ["firmware/json.c"],
     "test_wifiblob.c": [],
 }
 

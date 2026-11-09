@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PicoBoot</title>
+<style>
+/* Light and dark follow the phone */
+:root { --bg:#f4f5f7; --card:#fff; --text:#1b1f24; --dim:#5d6671; --line:#d9dde3; --accent:#0a62d0;
+  --on-accent:#fff; --warn-bg:#fff3cd; --warn-text:#5c4300; --bad-bg:#fde2e2; --bad-text:#7a1212;
+  --ok-bg:#dff5e3; --ok-text:#14532d; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#101215; --card:#1b1e23; --text:#e8eaed; --dim:#9aa3ad; --line:#2d3239; --accent:#5aa2ff;
+    --on-accent:#08111f; --warn-bg:#3d3210; --warn-text:#ffe29a; --bad-bg:#4a1c1c; --bad-text:#ffc9c9;
+    --ok-bg:#16361f; --ok-text:#b8ecc4; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+main { max-width:640px; margin:0 auto; padding:12px 16px 32px; }
+h1 { font-size:20px; margin:8px 0 12px; }
+h2 { font-size:16px; margin:20px 0 8px; }
+nav { display:flex; gap:4px; margin-bottom:12px; border-bottom:1px solid var(--line); }
+nav button { flex:1; background:none; border:0; border-bottom:3px solid transparent; color:var(--dim);
+  font:inherit; font-weight:600; padding:10px 4px; }
+nav button[aria-selected=true] { color:var(--accent); border-bottom-color:var(--accent); }
+.banner { border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--warn-bg); color:var(--warn-text); }
+.banner.bad { background:var(--bad-bg); color:var(--bad-text); }
+.banner.ok { background:var(--ok-bg); color:var(--ok-text); }
+.banner a, .linkbtn { color:inherit; font:inherit; font-weight:600; text-decoration:underline; background:none; border:0; padding:0; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:4px 14px; }
+dl { margin:0; }
+.row { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); }
+.row:last-child { border-bottom:0; }
+dt { color:var(--dim); } dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+.note { display:block; color:var(--dim); font-size:13px; }
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap; }
+th, td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; }
+th { color:var(--dim); font-weight:600; }
+label { display:block; font-weight:600; margin:14px 0 4px; }
+input[type=text], input[type=password], select { width:100%; font:inherit; padding:10px; color:var(--text);
+  background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+.check { display:flex; align-items:center; gap:8px; font-weight:400; }
+.check input { width:20px; height:20px; }
+.err { color:var(--bad-text); background:var(--bad-bg); border-radius:6px; padding:4px 8px; margin-top:4px; font-size:14px; }
+.err:empty { display:none; }
+.hint { color:var(--dim); font-size:13px; margin-top:2px; }
+button.btn { font:inherit; font-weight:600; padding:11px 18px; border-radius:8px; border:1px solid var(--accent);
+  background:var(--accent); color:var(--on-accent); margin:16px 8px 0 0; }
+button.btn.sec { background:none; color:var(--accent); }
+button.btn.danger { background:none; color:var(--bad-text); border-color:var(--bad-text); }
+button:disabled { opacity:.5; }
+[hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+<h1>PicoBoot</h1>
+<nav role="tablist">
+  <button role="tab" data-tab="status" aria-selected="true">Status</button>
+  <button role="tab" data-tab="diag" aria-selected="false">Diagnostics</button>
+  <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+</nav>
+
+<!-- Banners, shown on every tab -->
+<div id="offline" class="banner bad" hidden>Can't reach PicoBoot. Retrying…</div>
+<div id="b-default" class="banner" hidden>The Wi-Fi password is still the default. Please
+  <button class="linkbtn" data-goto="settings">change it in Settings</button>.</div>
+<div id="b-reverted" class="banner" hidden>Your last Wi-Fi change was undone at this start: no device joined with it.</div>
+
+<section id="tab-status"><div class="card"><dl id="status-list"></dl></div></section>
+
+<section id="tab-diag" hidden>
+  <div id="diag-body"></div>
+  <button class="btn sec" id="diag-refresh">Refresh</button>
+</section>
+
+<section id="tab-settings" hidden>
+  <div id="restart-notice" class="banner ok" hidden></div>
+  <form id="form" novalidate autocomplete="off">
+    <label for="ssid">Wi-Fi name (SSID)</label>
+    <input type="text" id="ssid" maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="hint">Leave empty for the default name.</div><div class="err" id="err-ssid"></div>
+
+    <label for="password">Wi-Fi password</label>
+    <input type="password" id="password" maxlength="63" autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="hint">8 to 63 characters. Leave empty to keep the current one.</div><div class="err" id="err-password"></div>
+    <label for="password2">Repeat password</label>
+    <input type="password" id="password2" maxlength="63" autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="err" id="err-password2"></div>
+    <label class="check"><input type="checkbox" id="show"> Show password</label>
+
+    <label for="country">Country</label>
+    <select id="country"></select><div class="err" id="err-country"></div>
+    <label for="channel">Channel</label>
+    <select id="channel"></select><div class="err" id="err-channel"></div>
+    <label for="tx_power">Transmit power</label>
+    <select id="tx_power"></select><div class="err" id="err-tx_power"></div>
+    <label for="auto_off_minutes">Wi-Fi off after</label>
+    <select id="auto_off_minutes"></select><div class="err" id="err-auto_off_minutes"></div>
+    <label class="check"><input type="checkbox" id="led"> LED on</label>
+    <div class="err" id="err-led"></div>
+
+    <div class="err" id="err-form"></div>
+    <div id="saved" class="banner ok" hidden style="margin-top:14px">Saved.</div>
+    <button class="btn" type="submit" id="save">Save</button>
+  </form>
+
+  <h2>Reboot</h2>
+  <div class="hint">A warm reboot doesn't touch a running game. The Wi-Fi drops for a few seconds.</div>
+  <button class="btn danger" id="reboot">Reboot PicoBoot</button>
+  <span id="reboot-ask" hidden><button class="btn danger" id="reboot-yes">Yes, reboot</button><button
+    class="btn sec" id="reboot-no">Cancel</button></span>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+// Escape a server string before it goes into HTML (the SSID can hold < & " ')
+const esc = s => String(s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let tab = "status";
+let lastStatus = null;   // newest /api/status answer, for the banners
+let settings = null;     // newest /api/settings answer: what the form is compared against
+let restarting = false;  // a restart or reboot is being waited for
+
+// GET or POST JSON. Resolves {ok, status, data}; null if the Pico can't be reached (never throws).
+async function api(path, body, timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs || 8000);
+  try {
+    const opts = { signal: ctl.signal, cache: "no-store" };
+    if (body !== undefined) {
+      opts.method = "POST";
+      opts.headers = { "Content-Type": "application/json" };  // the server answers 415 otherwise
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(path, opts);
+    let data = null;
+    try { data = await r.json(); } catch (e) { /* not JSON */ }
+    $("offline").hidden = true;
+    return { ok: r.ok, status: r.status, data };
+  } catch (e) {
+    $("offline").hidden = false;
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---- Tabs and banners ----
+function show(name) {
+  tab = name;
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", b.dataset.tab === name);
+  for (const t of ["status", "diag", "settings"]) $("tab-" + t).hidden = t !== name;
+  if (name === "status") loadStatus();
+  else if (name === "diag") loadDiag();
+  else { loadStatus(); loadSettings(); }
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-tab],[data-goto]");
+  if (t) show(t.dataset.tab || t.dataset.goto);
+});
+
+function banners() {
+  $("b-default").hidden = !(lastStatus && lastStatus.wifi.password_is_default);
+  $("b-reverted").hidden = !(lastStatus && lastStatus.wifi.reverted);
+}
+
+// ---- Status ----
+const hms = s => Math.floor(s / 3600) + ":" + String(Math.floor(s / 60) % 60).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+const row = (k, v, note) => `<div class="row"><dt>${k}</dt><dd>${v}${note ? `<span class="note">${note}</span>` : ""}</dd></div>`;
+
+async function loadStatus() {
+  const r = await api("/api/status");
+  if (!r || !r.ok) return false;
+  const s = lastStatus = r.data;
+  banners();
+  if (tab === "status") {
+    $("status-list").innerHTML =
+      row("Firmware", esc(s.firmware.version) + ", slot " + esc(s.firmware.slot)) +
+      row("Chip", "RP2350 A" + esc(s.chip.stepping) + ", boot ROM v" + esc(s.chip.rom)) +
+      row("Uptime", hms(s.uptime_s)) +
+      row("Temperature", s.temperature_c.toFixed(1) + " °C", "Reads low when the 3.3 V rail is low") +
+      row("Wi-Fi name", esc(s.wifi.ssid)) +
+      row("Wi-Fi clients", esc(s.wifi.clients));
+  }
+  return true;
+}
+// Refresh every 5 s while the Status tab and the page are visible
+setInterval(() => {
+  if (tab === "status" && document.visibilityState === "visible" && !restarting) loadStatus();
+}, 5000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && tab === "status" && !restarting) loadStatus();
+});
+
+// ---- Diagnostics ----
+const RESETS = { POR: "power-on reset", BOR: "brown-out reset", RUN: "RUN pin reset", WDOG: "watchdog reset", other: "other reset" };
+const RESULTS = { not_run: "not run: warm boot", no_cs: "no console seen", complete: "complete", stalled: "stalled" };
+const PAYLOADS = { payload1: "payload 1", payload2: "payload 2", builtin: "built-in gekkoboot", none: "none" };
+const us = v => v < 1000 ? v + " µs" : (v / 1000).toFixed(1) + " ms";
+const margin = b => b.margin_clocked_us >= 0 ? us(b.margin_clocked_us) : b.margin_raw_us >= 0 ? us(b.margin_raw_us) : "none";
+
+async function loadDiag() {
+  const r = await api("/api/diagnostics", undefined, 15000);
+  if (!r || !r.ok) return;
+  const { boot: b, wifi: w, log } = r.data;
+  const glitch = b.cs_raw > b.cs_clocked;
+  $("diag-body").innerHTML = `<h2>This boot</h2><div class="card"><dl>` +
+    row("Boot", "#" + esc(b.boot) + (b.power_on ? ", power-on (injects)" : ", warm boot"), esc(RESETS[b.reset] || b.reset)) +
+    row("Loader", "slot " + esc(b.slot) + (b.from_loader ? "" : " (not started by the loader)"),
+      [b.fallback ? "fallback: the first choice held no image" : "", b.bootctl_default ? "boot control empty: defaults" : ""].filter(Boolean).join("; ")) +
+    row("Payload", esc(PAYLOADS[b.payload] || b.payload), [
+      b.payload_chosen && b.payload_chosen !== "none" && b.payload_chosen !== b.payload ?
+        esc(PAYLOADS[b.payload_chosen] || b.payload_chosen) + " isn't valid: the built-in one went instead" : "",
+      b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : ""].filter(Boolean).join("; ")) +
+    row("Result", esc(RESULTS[b.result] || b.result)) +
+    row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
+    row("Margin", margin(b), "How long before the console's first read PicoBoot was ready") +
+    row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
+    row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), glitch ? "Glitch ignored by the injection" : "") +
+    (b.cs_pulldown_test ? row("CS pull-down test", "on") : "") +
+    row("Wi-Fi blob", esc(w.blob)) +
+    row("Wi-Fi up after", us(w.up_ms * 1000)) + `</dl></div>` +
+    `<h2>Boot log</h2><div class="scroll"><table><thead><tr><th>Boot</th><th>Slot</th><th>Start</th><th>Payload</th>` +
+    `<th>Transfers</th><th>Margin</th><th>Raw/clocked</th><th>Result</th></tr></thead><tbody>` +
+    log.map(e => `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${esc(PAYLOADS[e.payload] || e.payload)}</td>` +
+      `<td>${Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}</td>` +
+      `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`).join("") + `</tbody></table></div>`;
+}
+$("diag-refresh").onclick = loadDiag;
+
+// ---- Settings ----
+const TX = { low: "Low", medium: "Medium", high: "High", max: "Max" };
+const FIELDS = ["ssid", "country", "channel", "tx_power", "auto_off_minutes", "led"];
+let countryName = c => c;
+try {
+  const dn = new Intl.DisplayNames(["en"], { type: "region" });
+  countryName = c => c === "XX" ? "Worldwide" : (dn.of(c) || c) + " (" + c + ")";
+} catch (e) { /* old browser: show the codes */ }
+
+function fillSelect(id, values, label, current) {
+  $(id).innerHTML = values.map(v => `<option value="${esc(v)}">${esc(label(v))}</option>`).join("");
+  $(id).value = String(current);
+}
+
+async function loadSettings() {
+  const r = await api("/api/settings");
+  if (!r || !r.ok) return false;
+  const s = settings = r.data;
+  const c = s.choices;
+  $("ssid").value = s.ssid;
+  $("ssid").placeholder = s.ssid_in_use;
+  $("password").value = $("password2").value = "";
+  fillSelect("country", c.countries, countryName, s.country);
+  fillSelect("channel", c.channels, v => v, s.channel);
+  fillSelect("tx_power", c.tx_power, v => TX[v] || v, s.tx_power);
+  fillSelect("auto_off_minutes", c.auto_off_minutes, v => v === 0 ? "Never" : v + " minutes", s.auto_off_minutes);
+  $("led").checked = s.led;
+  return true;
+}
+
+$("show").onchange = () => { $("password").type = $("password2").type = $("show").checked ? "text" : "password"; };
+
+function setErr(field, msg) { $("err-" + field).textContent = msg || ""; }
+function clearErrs() {
+  for (const f of [...FIELDS, "password", "password2", "form"]) setErr(f);
+  $("saved").hidden = true;
+}
+const printable = s => /^[\x20-\x7e]*$/.test(s);
+
+// The form values, and the changed ones only. Returns {body} or {errors}.
+function collect() {
+  const v = {
+    ssid: $("ssid").value, country: $("country").value, channel: +$("channel").value,
+    tx_power: $("tx_power").value, auto_off_minutes: +$("auto_off_minutes").value, led: $("led").checked,
+  };
+  const body = {}, errors = {};
+  for (const f of FIELDS) if (v[f] !== settings[f]) body[f] = v[f];
+  // Client-side checks mirror docs/api.md; the server checks again
+  if (v.ssid.length > 32) errors.ssid = "The name can be at most 32 characters.";
+  else if (!printable(v.ssid)) errors.ssid = "Use printable ASCII characters only (no accents or emoji).";
+  const pw = $("password").value;
+  if (pw !== "" || $("password2").value !== "") {
+    if (!printable(pw)) errors.password = "Use printable ASCII characters only (no accents or emoji).";
+    else if (pw.length < 8 || pw.length > 63) errors.password = "The password needs 8 to 63 characters.";
+    else if (pw !== $("password2").value) errors.password2 = "The two passwords don't match.";
+    else body.password = pw;
+  }
+  return { body, errors };
+}
+
+$("form").onsubmit = async e => {
+  e.preventDefault();
+  if (!settings || restarting) return;
+  clearErrs();
+  const { body, errors } = collect();
+  const bad = Object.keys(errors);
+  if (bad.length) { for (const f of bad) setErr(f, errors[f]); return; }
+  if (!Object.keys(body).length) { $("saved").textContent = "Nothing changed."; $("saved").hidden = false; return; }
+  $("save").disabled = true;
+  const r = await api("/api/settings", body);
+  $("save").disabled = false;
+  if (!r) {
+    // The answer may have been lost while the change went through (a Wi-Fi change restarts the AP):
+    // wait for PicoBoot and show what it has now
+    setErr("form", "No answer from PicoBoot, so the change may or may not be saved. Waiting for it…");
+    await pollUntilBack(2000);
+    setErr("form", "PicoBoot is back. The form shows the settings it has now.");
+    return;
+  }
+  const d = r.data || {};
+  if (!r.ok) {
+    const msg = d.message || ("Error " + r.status);
+    // Show the message next to the field the server names, else under the form
+    if (d.field && $("err-" + d.field)) setErr(d.field, msg); else setErr("form", msg);
+    return;
+  }
+  if (d.wifi_restart) {
+    // The name to join after the restart (the default name if the SSID was emptied)
+    waitForRestart(esc(d.ssid_in_use || settings.ssid_in_use), "password" in body, 3000);
+  } else {
+    $("saved").textContent = "Saved.";
+    $("saved").hidden = false;
+    await loadSettings();
+    loadStatus();
+  }
+};
+
+// Poll /api/status every 2 s until the Pico answers, then reload everything
+async function pollUntilBack(delayMs) {
+  restarting = true;
+  await sleep(delayMs);
+  while (!(await api("/api/status", undefined, 1500))) await sleep(2000);
+  restarting = false;
+  await loadSettings();
+  await loadStatus();
+}
+
+async function waitForRestart(ssidHtml, newPassword, delayMs) {
+  const n = $("restart-notice");
+  n.hidden = false;
+  n.className = "banner";
+  n.innerHTML = `<b>Saved. The Wi-Fi restarts in about a second.</b> Join <b>${ssidHtml}</b> again` +
+    (newPassword ? " with the new password" : "") + `. If no device joins with the new settings, ` +
+    `the previous ones return at the next power-on.`;
+  await pollUntilBack(delayMs);
+  n.className = "banner ok";
+  n.innerHTML = `Wi-Fi is back. <b>${ssidHtml}</b> is in use with the new settings.`;
+}
+
+// Asked inline, not with confirm(): captive-portal sheets may not show dialogs
+const askReboot = on => { $("reboot").hidden = on; $("reboot-ask").hidden = !on; };
+$("reboot").onclick = () => { if (!restarting) askReboot(true); };
+$("reboot-no").onclick = () => askReboot(false);
+$("reboot-yes").onclick = async () => {
+  askReboot(false);
+  if (restarting) return;
+  const r = await api("/api/reboot", {});
+  if (!r || !r.ok) { setErr("form", (r && r.data && r.data.message) || "Can't reach PicoBoot. Not rebooted."); return; }
+  const n = $("restart-notice");
+  n.hidden = false;
+  n.className = "banner";
+  n.textContent = "Rebooting. Waiting for PicoBoot to come back…";
+  await pollUntilBack(2000);
+  n.className = "banner ok";
+  n.textContent = "PicoBoot is back.";
+};
+
+show("status");
+</script>
+</body>
+</html>

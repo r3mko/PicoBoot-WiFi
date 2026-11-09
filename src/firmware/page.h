@@ -12,8 +12,7 @@
 
 typedef struct {
     const boot_report_t *report;
-    const char *ssid;
-    const char *password;
+    uint32_t boot_number;       // This boot's number in the boot log (D39), 0 if it wasn't logged
     int wifi_area;              // BOOTCTL_SLOT_A / _B (Wi-Fi A / B), or -1
     uint32_t wifi_up_ms;        // From the end of the injection (or start-up) to the AP being up
     uint32_t cyw43_init_ms;     // ...of which cyw43_arch_init() (loads the blob from flash)
@@ -27,7 +26,10 @@ typedef struct {
 // Keeps the info and sets up the temperature sensor
 void page_init(const page_info_t *info);
 
-// The minimal report page of phase 1 (plan step 1.8; phase 2 brings the real web UI)
+// The RP2350's temperature sensor (reads low on a low 3.3 V rail)
+float page_temperature_c(void);
+
+// The test page of phases 1 and 2, at /test in test builds (the web UI is at /)
 size_t page_render(char *buf, size_t size);
 
 // The page's buttons: the payload for the next power-ons, and the CS test mode (plan step 1.10)

@@ -13,7 +13,6 @@
 #include "pico/stdlib.h"
 #include "pico/platform.h"
 #include "pico/cyw43_arch.h"
-#include "pico/unique_id.h"
 #include "hardware/gpio.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
@@ -30,9 +29,12 @@
 #include "net.h"
 #include "page.h"
 #include "storage.h"
+#include "wifi.h"
+#include "api.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/structs/qmi.h"
+#include "hardware/sync.h"
 
 // The rest of flash is read through the untranslated XIP window: the loader maps only this
 // firmware's slot at XIP_BASE (boot ROM research §4)
@@ -42,8 +44,6 @@
 
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
-
-static const char *AP_PASSWORD = "picoboot";        // Design D30: documented default
 
 // Bench debugging (CMake option PICOBOOT_WIFI_USB_TRACE): start-up steps over USB serial
 #if PICOBOOT_WIFI_USB_TRACE
@@ -80,6 +80,7 @@ static void read_boot_info(void) {
 // The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid
 static injection_payload_t choose_payload(const bootctl_t *b) {
     injection_payload_t payload = {0};
+    report.payload_chosen = b->active_payload;
     if (b->active_payload == BOOTCTL_PAYLOAD_1) {
         payload = (injection_payload_t){PAYLOAD1, payload_check(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE), true};
         report.payload = PAYLOAD_SOURCE_PAYLOAD1;
@@ -153,15 +154,12 @@ static uint32_t flash_dma_64k_us(void) {
 }
 
 // The access point with the report page, after the injection (design D9). Doesn't return.
-static void run_wifi(uint64_t t_start) {
-    // SSID from the last four hex digits of the chip's unique ID (design D30)
-    static char ssid[16];
-    pico_unique_board_id_t id;
-    pico_get_unique_board_id(&id);
-    snprintf(ssid, sizeof(ssid), "PicoBoot-%02X%02X",
-             id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 2], id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1]);
+static void run_wifi(uint64_t t_start, uint32_t boot_number) {
+    wifi_load();        // The settings, with an unconfirmed Wi-Fi change undone (design D41)
 
-    page_info_t page = {.report = &report, .ssid = ssid, .password = AP_PASSWORD};
+    static page_info_t page;
+    page.report = &report;
+    page.boot_number = boot_number;
     page.qmi_rcmd = qmi_hw->m[0].rcmd;
     page.qmi_rfmt = qmi_hw->m[0].rfmt;
     page.qmi_timing = qmi_hw->m[0].timing;
@@ -171,33 +169,42 @@ static void run_wifi(uint64_t t_start) {
     TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
     if (page.wifi_area >= 0) {
         const uint64_t t_init = time_us_64();
-        const int err = cyw43_arch_init();
+        const int err = cyw43_arch_init_with_country(wifi_country());
         page.cyw43_init_ms = (uint32_t)((time_us_64() - t_init) / 1000);
-        TRACE("cyw43_arch_init: %d\n", err);
+        TRACE("cyw43_arch_init_with_country(%s): %d\n", wifi_settings()->country, err);
         if (err == 0) {
             const uint64_t t_net = time_us_64();
-            const bool up = net_start(ssid, AP_PASSWORD, page_render, page_action);
+            // The LED after the injection (design D26)
+            const wifi_led_t led = report.result == INJECTION_COMPLETE ? WIFI_LED_DONE :
+                                   report.result == INJECTION_STALLED ? WIFI_LED_STALLED : WIFI_LED_STEADY;
+#if PICOBOOT_WIFI_TEST_BUILD
+            const bool up = wifi_start(page_render, page_action, api_handle, led);    // With the test page
+#else
+            const bool up = wifi_start(NULL, NULL, api_handle, led);
+#endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
-            TRACE("net_start: %s, SSID %s\n", up ? "ok" : "FAILED", ssid);
+            TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
             if (up) {
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
                 page_init(&page);
-                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+                api_init(&page);
                 TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
-                while (true) {
+                do {
                     net_poll();
-                }
+                } while (wifi_poll());
+                TRACE("Wi-Fi off: no client for %u minutes (design D20)\n", wifi_settings()->auto_off_minutes);
             }
         }
     }
 
-    // No Wi-Fi blob, or Wi-Fi failed to start: idle, as PicoBoot-DX does
+    // Wi-Fi is off (D20), or there's no Wi-Fi blob, or Wi-Fi failed to start: idle until the next
+    // power-on, sleeping between interrupts to draw less from the console's rail
     while (true) {
 #if PICOBOOT_WIFI_USB_TRACE
-        TRACE("idle: Wi-Fi didn't start\n");
+        TRACE("idle: Wi-Fi is off\n");
         sleep_ms(5000);
 #else
-        tight_loop_contents();
+        __wfi();
 #endif
     }
 }
@@ -213,10 +220,13 @@ int main(void) {
           report.from_loader, report.power_on, report.slot == BOOTCTL_SLOT_B ? 'B' : 'A', report.fallback,
           report.bootctl_default, (unsigned long)report.chip_reset);
 
+    report.payload_chosen = BOOTCTL_NONE;
     if (report.power_on) {
         bootctl_t bootctl;
         storage_bootctl_load(&bootctl);
+#if PICOBOOT_WIFI_TEST_BUILD
         report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
+#endif
         const injection_payload_t payload = choose_payload(&bootctl);
         TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
               report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
@@ -234,7 +244,11 @@ int main(void) {
     const uint64_t t_end = time_us_64();
     const bool logged = storage_bootlog_append(&report);
     TRACE("boot log append: %s\n", logged ? "ok" : "FAILED");
-    (void)logged;
+    uint32_t boot_number = 0;
+    if (logged) {
+        boot_report_t newest;
+        storage_bootlog_read(&newest, &boot_number, 1);
+    }
 
-    run_wifi(t_end);
+    run_wifi(t_end, boot_number);
 }

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.2, 2026-11-08 |
-| **Design** | [architecture.md](architecture.md), Approved v1.3 |
+| **Status** | Approved v1.3, 2026-11-09 |
+| **Design** | [architecture.md](architecture.md), Approved v1.4 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -14,6 +14,7 @@
 | v1.0 | 2026-11-08 | The owner approved the draft with DP1–DP5 ("approved, go ahead with phase 0"). DP1–DP5 are now design decisions D31–D35 (design v1.1). Phase 0 starts. |
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
 | v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
+| v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 
 ## How this plan works
 
@@ -206,7 +207,7 @@ docs/                       design, plan, research, API, update-file format
 
 ## Phase 2: Wi-Fi
 
-**Branch:** `phase-2-wifi`. **Done when (D28):** a phone reaches the status page from a closed console.
+**Branch:** `phase-2-wifi`, **merged** into `main` on 2026-11-09. **Done when (D28):** a phone reaches the status page from a closed console.
 
 | # | Step | Who | Done when |
 |---|---|---|---|
@@ -218,6 +219,43 @@ docs/                       design, plan, research, API, update-file format
 | 2.6 | **Auto-off** (D20), **Tx power** (the `qtxpower` iovar), **LED** patterns (D26). The default Tx power is set lower than the maximum, since phase 0 found plenty of range (−42 dBm at 5 m) | Opus | Auto-off after 10 minutes without a client; Tx power changes the RSSI |
 | 2.7 | **Console tests**: captive portal on both phones, settings, banner, auto-off, Tx power against range and current; injection results the same as in phase 1 | Owner | Recorded |
 | 2.8 | **End of phase**: fresh Opus review, fixes, docs, merge | Opus, owner | Merged |
+
+**As built (2026-11-09):** results in [phase2-results.md](research/phase2-results.md); test builds are `0.2.0-dev`.
+
+| Step | What was built | The owner's choices |
+|---|---|---|
+| 2.1 | Settings as a record (D40), with value checks; a stored value that isn't allowed falls back on its own default | Default channel 6; Tx power in named levels |
+| 2.2 | lwIP httpd in place of the raw TCP server. Every answer is a custom file with its own headers: 302 to the start page for unknown paths (the captive portal), 204 for `/favicon.ico`. httpd copies answers into its segments, so one freed at close can't be read again by a retransmission. The firmware got 25 KB smaller (the old server's `sscanf`) | |
+| 2.3 | `docs/api.md`; a small JSON writer and flat-object reader; the handlers; POST bodies only as `application/json` (a CSRF guard). An access-point restart restarts the DHCP server too, because the network interface comes back with another number | D41: Wi-Fi changes restart only the access point, at once, and stay on trial until a client comes back through it; the password is write-only |
+| 2.4 | The web UI as one page with tabs (6.4 KB gzipped) and `tools/mkfsdata.py`, built by a Sonnet subagent in a worktree and reviewed. The phase 1 test page moved to `/test`, in test builds only; release builds also ignore the CS test flag (phase 1 finding 6) | One page with tabs; light or dark as the phone; the test page kept at `/test` |
+| 2.5 | The boot report records boot control's payload choice, so the diagnostics say when the built-in payload went instead. The boot log format changed (version 2) | |
+| 2.6 | Auto-off powers the CYW43 down (`cyw43_arch_deinit()`), then the firmware sleeps between interrupts. Tx power through the `qtxpower` iovar, from the main loop. The LED patterns of D26 | Tx power 5, 10 and 15 dBm and the chip's limit; after a stall the LED blinks for as long as Wi-Fi is on. Auto-off runs up to 1.5 minutes late (the chip's client timeout): accepted |
+| 2.7 | Console tests all passed | 5 Swiss boots instead of 10 accepted |
+
+**For later phases:**
+- **Phase 3:**
+  - uploads need a streaming POST path: net.c now collects bodies of up to 1 KB;
+  - `LWIP_HTTPD_POST_MANUAL_WND` holds the upload back while a sector is erased (D18);
+  - httpd also calls `httpd_post_finished()` when a connection closes mid-body, so the writer must tell a complete upload from a cut one;
+  - D41's trial (in `settings.c`) is a small model of D12's trial and keep.
+- **Phase 3 and 4:** uploads use `application/octet-stream` (D18), which, like JSON, needs a CORS preflight from another site, so the CSRF guard carries over. New UI parts go into `src/web/index.html` as tabs.
+- **Phase 4:** the payload choice moves from the test page into the UI.
+
+**Code review of phase 2** (a fresh Opus 5.5 reviewer, 2026-11-09):
+- **Overall:** no high defects. The httpd answer lifetimes, the POST paths (split bodies, refusals, connections closing mid-body), the access-point restart and the D41 sequences held when traced against the lwIP and CYW43 sources. The JSON reader took about 5 million fuzzed inputs under ASan and UBSan without a memory error or an accepted body that the settings checks would refuse. A release-version build has no test page.
+- **Re-test before the merge** (the owner's choice): a short bench test. Both phones open the UI; a POST with a wrong Host gets 403; a country change restarts the access point and phones rejoin; the test page's buttons still work.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Medium:** DNS rebinding got past the CSRF guard. The Pico's DNS answers every name with its own address, so a page opened elsewhere could point its own name at the Pico and send same-origin POSTs without a preflight. It could change settings, reboot, or set a known password | Fixed: POSTs must say `Host: 192.168.4.1` (403 otherwise), for the API and the test page; `docs/api.md` says so. Phase 4's backups, which include the settings, are to be POST-only for the same reason |
+| 2 | If the chip didn't take the access point down, the restart kept the old settings (the driver skips the set-up while the BSS is up), and an old client could confirm a change that never ran | Fixed: the restart checks the BSS and retries; if it stays up, the change can't be confirmed and is undone at the next start |
+| 3 | Undoing an unconfirmed change brought back every setting saved with it, not only the Wi-Fi ones | Fixed (the owner's choice): only the SSID, password, channel and country go back, as D41 says; host test |
+| 4 | Test builds: the test page printed the SSID unescaped, and its POSTs had no guard | Fixed: escaped, and the Host check covers them |
+| 5 | A `.DS_Store` or editor backup in `src/web/` stopped the build | Fixed: skipped; test |
+| 6 | The UI said "nothing was saved" when a save's answer was lost, though a Wi-Fi change may have gone through | Fixed: it says the outcome is unknown, waits for the Pico and shows its settings |
+| 7 | Out of memory, httpd had no error answer of its own: the client got a 302 to the start page, which the UI could take for success | Fixed: a fixed 503 answer |
+| 8 | The diagnostics answer (about 18 KB at most today) had little room in its 20 KB buffer for later fields | Fixed: 32 KB |
+| — | **For phase 3:**<br>• once a watchdog runs (3.4), the idle loop after auto-off must stop it or feed it, or auto-off becomes a reboot loop;<br>• records filter by format version, so an older firmware in the other slot could erase a newer record; the record writer must never erase the newest record of any version before slots can switch;<br>• `wifi.c`'s restart, confirm and auto-off logic has no host tests; D12's trial should be pure C, as D41's is | Phase 3 steps 3.3 and 3.4 |
 
 ## Phase 3: firmware OTA
 

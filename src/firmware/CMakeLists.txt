@@ -11,6 +11,10 @@ set(FIRMWARE_SOURCES
     net.c
     page.c
     storage.c
+    settings.c
+    json.c
+    wifi.c
+    api.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )
@@ -43,6 +47,20 @@ add_custom_command(
 add_custom_target(firmware_ipl DEPENDS ${IPL_H})
 add_dependencies(firmware firmware_ipl)
 
+# The web UI (src/web/), gzipped into lwIP httpd's built-in file table (fsdata_custom.c, which
+# lwIP's fs.c includes)
+set(WEB_DIR ${CMAKE_SOURCE_DIR}/src/web)
+set(FSDATA_C ${CMAKE_CURRENT_BINARY_DIR}/fsdata_custom.c)
+file(GLOB WEB_FILES CONFIGURE_DEPENDS ${WEB_DIR}/*)
+add_custom_command(
+    OUTPUT ${FSDATA_C}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkfsdata.py ${WEB_DIR} ${FSDATA_C}
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkfsdata.py ${WEB_FILES}
+    COMMENT "Generating fsdata_custom.c from src/web"
+)
+add_custom_target(firmware_fsdata DEPENDS ${FSDATA_C})
+add_dependencies(firmware firmware_fsdata)
+
 target_include_directories(firmware PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/net
@@ -60,6 +78,7 @@ target_link_libraries(firmware PRIVATE
     hardware_dma
     hardware_adc
     pico_cyw43_arch_lwip_poll
+    pico_lwip_http
 )
 
 # The CYW43 blob isn't compiled in: the driver reads it from Wi-Fi area A or B (design D14),

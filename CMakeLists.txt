@@ -33,7 +33,7 @@ set(PICOBOOT_WIFI_INJECTION_KHZ 250000 CACHE STRING "CPU clock during the inject
 set(PICOBOOT_WIFI_FLASH_CLKDIV 3 CACHE STRING "Flash clock divider, from clk_sys (design D27)")
 
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
-set(PICOBOOT_WIFI_VERSION "0.1.0-dev")
+set(PICOBOOT_WIFI_VERSION "0.2.0-dev")
 execute_process(
     COMMAND git -c safe.directory=* rev-parse --short HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -43,7 +43,14 @@ if(NOT PICOBOOT_WIFI_GIT_HASH)
     set(PICOBOOT_WIFI_GIT_HASH "unknown")
 endif()
 set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}+${PICOBOOT_WIFI_GIT_HASH}")
-message(STATUS "PicoBoot-WiFi ${PICOBOOT_WIFI_BUILD}")
+# Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release
+# builds have neither (phase 1 review finding 6)
+if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")
+    set(PICOBOOT_WIFI_TEST_BUILD 1)
+else()
+    set(PICOBOOT_WIFI_TEST_BUILD 0)
+endif()
+message(STATUS "PicoBoot-WiFi ${PICOBOOT_WIFI_BUILD} (test build: ${PICOBOOT_WIFI_TEST_BUILD})")
 
 # The flash layout lives in src/common/layout.h only; read its LAYOUT_* values for the linker checks
 set(LAYOUT_H ${CMAKE_CURRENT_LIST_DIR}/src/common/layout.h)
@@ -64,7 +71,8 @@ endforeach()
 # Settings shared by the loader and the firmware
 function(picoboot_wifi_target TARGET NAME DESCRIPTION)
     target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/src/common)
-    target_compile_definitions(${TARGET} PRIVATE PICOBOOT_WIFI_BUILD="${PICOBOOT_WIFI_BUILD}")
+    target_compile_definitions(${TARGET} PRIVATE PICOBOOT_WIFI_BUILD="${PICOBOOT_WIFI_BUILD}"
+                               PICOBOOT_WIFI_TEST_BUILD=${PICOBOOT_WIFI_TEST_BUILD})
     pico_set_program_name(${TARGET} ${NAME})
     pico_set_program_description(${TARGET} ${DESCRIPTION})
     pico_set_program_version(${TARGET} ${PICOBOOT_WIFI_BUILD})

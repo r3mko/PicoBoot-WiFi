@@ -35,6 +35,8 @@ typedef struct {
     bool bootctl_default;       // No valid boot control record: defaults used
 
     payload_source_t payload;
+    uint8_t payload_chosen;     // Boot control's choice (BOOTCTL_PAYLOAD_*), BOOTCTL_NONE if no injection;
+                                // a different `payload` means the chosen one wasn't valid (D22)
     uint32_t payload_words;     // Words to send (256 per 1K transfer)
     uint32_t words_delivered;
     injection_result_t result;

@@ -16,7 +16,7 @@
 _Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, "ringlog_read() reads the whole log");
 
 #define BOOTLOG_MAGIC   0x31474C42u     // "BLG1"
-#define BOOTLOG_VERSION 1               // Bump when boot_report_t changes
+#define BOOTLOG_VERSION 2               // Bump when boot_report_t changes (2: payload_chosen)
 
 // Read through the untranslated, uncached XIP window: the loader maps only this firmware's slot at
 // XIP_BASE, and the cache mustn't hide what was just programmed
@@ -39,6 +39,7 @@ static void program(void *ctx, uint32_t offset, const uint8_t *data, size_t leng
 
 static const record_flash_t bootctl_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTCTL_OFFSET};
 static const record_flash_t bootlog_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTLOG_OFFSET};
+static const record_flash_t settings_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_SETTINGS_OFFSET};
 static const ringlog_t bootlog = {FLASH_AREA(LAYOUT_BOOTLOG_OFFSET), LAYOUT_BOOTLOG_SIZE, &bootlog_flash};
 
 bool storage_bootctl_load(bootctl_t *out) {
@@ -51,6 +52,24 @@ bool storage_bootctl_load(bootctl_t *out) {
 bool storage_bootctl_store(const bootctl_t *b) {
     return record_write(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), &bootctl_flash, BOOTCTL_MAGIC, BOOTCTL_VERSION,
                         b, sizeof(*b));
+}
+
+bool storage_settings_load(settings_record_t *out) {
+    const record_header_t *rec = record_find(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), SETTINGS_MAGIC,
+                                             SETTINGS_VERSION, sizeof(settings_record_t), NULL);
+    *out = rec ? *(const settings_record_t *)record_payload(rec) : SETTINGS_RECORD_DEFAULT;
+    // A stored value that isn't allowed falls back on its own default; the others stay
+    settings_record_sanitize(out);
+    return rec != NULL;
+}
+
+bool storage_settings_store(const settings_record_t *r) {
+    settings_record_t check = *r;
+    if (!settings_record_sanitize(&check)) {
+        return false;
+    }
+    return record_write(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), &settings_flash, SETTINGS_MAGIC, SETTINGS_VERSION,
+                        r, sizeof(*r));
 }
 
 bool storage_bootlog_append(const boot_report_t *r) {

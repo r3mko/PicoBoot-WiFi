@@ -4,15 +4,22 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-// The access point and a minimal HTTP server on lwIP's raw TCP API (single core, poll mode), from
-// the phase 0 measurement build with the phase 0 review's fixes (a stalled send is retried from the
-// poll callback, a client's FIN doesn't cut a response short, no tcp_abort fallback inside
-// callbacks). Phase 2 replaces it with lwIP httpd and the real web UI.
+// The access point, the DHCP and DNS servers, and lwIP httpd (design D18), single core in poll
+// mode. Every response is a custom file made here, headers included, so this file decides the
+// status codes:
 //
-//   POST /reboot-wd    warm reboot through the watchdog (test of design D8)
-//   POST /reboot-rom   warm reboot through rom_reboot()
-//   POST other paths   the page's actions (net_action_fn), then back to the page
-//   GET  anything else the page (also answers phones' captive-portal probes)
+//   GET  / or /index.html   the web UI: lwIP's built-in files (fsdata_custom.c, made from src/web/)
+//   GET  /api/...           the JSON API (net_api_fn, docs/api.md)
+//   GET  /favicon.ico       204: there is none
+//   GET  anything else      302 to http://192.168.4.1/: phones probing for a captive portal
+//                           (Apple, Android, Windows) get it and open the page by themselves
+//   POST /api/...           the JSON API, with a JSON body
+//
+// With a test page (test builds, net_page_fn given):
+//   GET  /test              the test page
+//   POST /reboot-wd         warm reboot through the watchdog (test of design D8)
+//   POST /reboot-rom        warm reboot through rom_reboot()
+//   POST other paths        the test page's actions (net_action_fn), then 303 back to it
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,248 +27,411 @@
 #include "net.h"
 #include "dhcpserver.h"
 #include "dnsserver.h"
-#include "lwip/tcp.h"
+#include "lwip/apps/fs.h"
+#include "lwip/apps/httpd.h"
+#include "lwip/priv/tcp_priv.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
 #include "boot/picoboot_constants.h"
 #include "hardware/watchdog.h"
 
-#define HTTP_PORT       80
-#define REQ_MAX         1024        // Request line and headers
-#define PAGE_MAX        10240       // Rendered page (with the boot log table)
-#define POLL_INTERVAL   2           // tcp_poll() in coarse timer ticks (0.5 s each)
-#define IDLE_POLLS      10          // Close a connection after ~10 s without progress
-
-typedef struct {
-    bool sending;
-    char req[REQ_MAX + 1];
-    size_t req_len;
-    char *out;                      // Response (headers and body)
-    size_t out_len, out_sent;
-    unsigned idle;
-} conn_t;
+#define PAGE_MAX        10240       // Rendered test page (with the boot log table)
+#define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
+                                    // about 18 KB today (phase 2 review), with room for more fields
+#define API_POST_MAX    512         // POST answers are short
+#define API_BODY_MAX    1024        // docs/api.md
+#define POSTS_MAX       4           // POSTs being received at once
+#define POST_URI_MAX    32
 
 static dhcp_server_t dhcp_server;
 static dns_server_t dns_server;
 static net_page_fn render_page;
 static net_action_fn page_action;
-static int open_conns;              // While > 0, net_poll() doesn't sleep
+static net_api_fn api_handler;
+static uint32_t requests;
 static int client_count;
 static uint64_t next_client_check_us;
 static enum { REBOOT_NONE, REBOOT_WATCHDOG, REBOOT_ROM } pending_reboot;
 static uint64_t reboot_at_us;
 
-static void conn_free(struct tcp_pcb *pcb, conn_t *c) {
-    if (pcb) {
-        tcp_arg(pcb, NULL);
-        tcp_recv(pcb, NULL);
-        tcp_sent(pcb, NULL);
-        tcp_err(pcb, NULL);
-        tcp_poll(pcb, NULL, 0);
-    }
-    if (c) {
-        free(c->out);
-        free(c);
-        open_conns--;
+// --- Responses: httpd custom files ------------------------------------------------------------
+//
+// Each one is a heap buffer with the status line, headers and body, freed when httpd closes the
+// file. httpd copies the data into its TCP segments (HTTP_IS_DATA_VOLATILE in lwipopts.h), so the
+// buffer may go before the client has acknowledged it.
+
+static const char *status_text(int status) {
+    switch (status) {
+        case 200: return "200 OK";
+        case 204: return "204 No Content";
+        case 302: return "302 Found";
+        case 303: return "303 See Other";
+        case 400: return "400 Bad Request";
+        case 403: return "403 Forbidden";
+        case 404: return "404 Not Found";
+        case 405: return "405 Method Not Allowed";
+        case 413: return "413 Payload Too Large";
+        case 415: return "415 Unsupported Media Type";
+        case 503: return "503 Service Unavailable";
+        default: return "500 Internal Server Error";
     }
 }
 
-static err_t close_retry(void *arg, struct tcp_pcb *pcb) {
-    (void)arg;
-    tcp_close(pcb);                 // Try again; lwIP keeps polling until it succeeds
-    return ERR_OK;
+// When there's no memory for an answer: a fixed one, never freed (phase 2 review finding 7)
+static const char OUT_OF_MEMORY[] =
+    "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 53\r\n"
+    "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    "{\"error\":\"busy\",\"message\":\"out of memory, try again\"}";
+
+static int respond_out_of_memory(struct fs_file *file) {
+    memset(file, 0, sizeof(*file));
+    file->data = OUT_OF_MEMORY;
+    file->len = file->index = (int)sizeof(OUT_OF_MEMORY) - 1;
+    file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+    return 1;
 }
 
-// Closes gracefully: lwIP still sends what's queued, then FIN. If lwIP is short of memory right
-// now, it retries from the poll callback instead of aborting inside a callback.
-static void conn_close(struct tcp_pcb *pcb, conn_t *c) {
-    conn_free(pcb, c);
-    if (tcp_close(pcb) != ERR_OK) {
-        tcp_poll(pcb, close_retry, POLL_INTERVAL);
+static int respond_as(struct fs_file *file, int status, const char *type, const char *extra_headers,
+                      const char *body, size_t body_len) {
+    static const char fmt[] = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %u\r\n"
+                              "%sCache-Control: no-store\r\nConnection: close\r\n\r\n";
+    const size_t cap = sizeof(fmt) + 96 + strlen(extra_headers) + body_len;
+    char *out = malloc(cap);
+    if (!out) {
+        return respond_out_of_memory(file);
     }
-}
-
-// Queues as much of the response as the send buffer takes; closes once all of it is queued.
-// May free c: don't use it afterwards.
-static void send_more(struct tcp_pcb *pcb, conn_t *c) {
-    while (c->out_sent < c->out_len) {
-        u16_t room = tcp_sndbuf(pcb);
-        size_t n = c->out_len - c->out_sent;
-        if (n > room) {
-            n = room;
-        }
-        if (n == 0 || tcp_write(pcb, c->out + c->out_sent, (u16_t)n, TCP_WRITE_FLAG_COPY) != ERR_OK) {
-            break;                  // Retried from on_sent() or on_poll()
-        }
-        c->out_sent += n;
-    }
-    tcp_output(pcb);
-    if (c->out_sent == c->out_len) {
-        conn_close(pcb, c);
-    }
-}
-
-// May free c: don't use it afterwards
-static void respond(struct tcp_pcb *pcb, conn_t *c, const char *status, const char *extra_headers,
-                    const char *body, size_t body_len) {
-    size_t cap = 256 + body_len;
-    c->out = malloc(cap);
-    if (!c->out) {
-        conn_close(pcb, c);
-        return;
-    }
-    int n = snprintf(c->out, cap,
-                     "HTTP/1.1 %s\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n"
-                     "%sCache-Control: no-store\r\nConnection: close\r\n\r\n", status, (unsigned)body_len,
-                     extra_headers);
+    const int n = snprintf(out, cap, fmt, status_text(status), type, (unsigned)body_len, extra_headers);
     if (n < 0 || (size_t)n + body_len > cap) {
-        conn_close(pcb, c);
-        return;
+        free(out);
+        return 0;
     }
-    memcpy(c->out + n, body, body_len);
-    c->out_len = (size_t)n + body_len;
-    c->sending = true;
-    send_more(pcb, c);
+    memcpy(out + n, body, body_len);
+    memset(file, 0, sizeof(*file));
+    file->data = out;
+    file->len = n + (int)body_len;
+    file->index = file->len;        // All of it is in memory
+    file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+    return 1;
 }
 
-// May free c: don't use it afterwards
-static void handle_request(struct tcp_pcb *pcb, conn_t *c) {
-    char method[8] = {0}, path[64] = {0};
-    sscanf(c->req, "%7s %63s", method, path);
+static int respond(struct fs_file *file, int status, const char *extra_headers, const char *body, size_t body_len) {
+    return respond_as(file, status, "text/html; charset=utf-8", extra_headers, body, body_len);
+}
 
-    if (strcmp(method, "POST") == 0 && (strcmp(path, "/reboot-wd") == 0 || strcmp(path, "/reboot-rom") == 0)) {
-        // Reboot shortly after the response is out, from net_poll() (not inside lwIP)
-        pending_reboot = strcmp(path, "/reboot-wd") == 0 ? REBOOT_WATCHDOG : REBOOT_ROM;
-        reboot_at_us = time_us_64() + 500 * 1000;
-        static const char body[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/\">"
-                                   "<pre>Rebooting... this page reloads in 8 s (reconnect to the Wi-Fi if needed)</pre>";
-        respond(pcb, c, "200 OK", "", body, sizeof(body) - 1);
-        return;
-    }
+static int respond_json(struct fs_file *file, int status, const char *json, size_t len) {
+    return respond_as(file, status, "application/json", "", json, len);
+}
 
-    if (strcmp(method, "POST") == 0 && page_action && page_action(path)) {
-        respond(pcb, c, "303 See Other", "Location: /\r\n", "", 0);
-        return;
-    }
-
+static int respond_page(struct fs_file *file) {
     char *page = malloc(PAGE_MAX);
     if (!page) {
-        conn_close(pcb, c);
-        return;
+        return respond_out_of_memory(file);
     }
-    size_t len = render_page(page, PAGE_MAX);
-    respond(pcb, c, "200 OK", "", page, len);
+    const size_t len = render_page(page, PAGE_MAX);
+    const int ok = respond(file, 200, "", page, len);
     free(page);
+    return ok;
 }
 
-static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) {
-    conn_t *c = arg;
-    if (!p) {
-        // The client closed its side. A response being sent is finished first (review finding 5).
-        if (!c || !c->sending) {
-            conn_close(pcb, c);
+static const char BUSY_JSON[] = "{\"error\":\"busy\",\"message\":\"too many requests at once\"}";
+
+static int respond_api_get(struct fs_file *file, const char *path) {
+    char *out = malloc(API_GET_MAX);
+    if (!out) {
+        return respond_json(file, 503, BUSY_JSON, sizeof(BUSY_JSON) - 1);
+    }
+    size_t len = 0;
+    const int status = api_handler(false, path, NULL, 0, out, API_GET_MAX, &len);
+    const int ok = respond_json(file, status, out, len);
+    free(out);
+    return ok;
+}
+
+// The answer to the POST that just ended. httpd opens its response file ("/.api") within the same
+// call as httpd_post_finished() or a refusing httpd_post_begin(), so one answer at a time is enough.
+static struct {
+    int status;
+    char json[API_POST_MAX];
+    size_t len;
+} api_answer;
+
+static void api_error(int status, const char *code, const char *message) {
+    api_answer.status = status;
+    const int n = snprintf(api_answer.json, sizeof(api_answer.json), "{\"error\":\"%s\",\"message\":\"%s\"}",
+                           code, message);
+    api_answer.len = n > 0 && (size_t)n < sizeof(api_answer.json) ? (size_t)n : 0;
+}
+
+// The names below that start with "/." are only reached as POST results
+int fs_open_custom(struct fs_file *file, const char *name) {
+    requests++;
+    if (strncmp(name, "/api/", 5) == 0 && api_handler) {
+        return respond_api_get(file, name);
+    }
+    if (strcmp(name, "/test") == 0 && render_page) {
+        return respond_page(file);
+    }
+    if (strcmp(name, "/favicon.ico") == 0) {
+        return respond(file, 204, "", "", 0);
+    }
+    if (strcmp(name, "/404.html") == 0) {
+        // Every unknown path, which includes the phones' captive-portal probes
+        return respond(file, 302, "Location: http://192.168.4.1/\r\n", "", 0);
+    }
+    if (strcmp(name, "/.api") == 0) {
+        return respond_json(file, api_answer.status, api_answer.json, api_answer.len);
+    }
+    if (strcmp(name, "/.forbidden") == 0) {
+        static const char body[] = "<!doctype html><pre>Open PicoBoot at http://192.168.4.1/</pre>";
+        return respond(file, 403, "", body, sizeof(body) - 1);
+    }
+    if (strcmp(name, "/.done") == 0) {
+        return respond(file, 303, render_page ? "Location: /test\r\n" : "Location: /\r\n", "", 0);
+    }
+    if (strcmp(name, "/.rebooting") == 0) {
+        static const char body[] = "<!doctype html><meta http-equiv=refresh content=\"8;url=/test\">"
+                                   "<pre>Rebooting... this page reloads in 8 s (reconnect to the Wi-Fi if needed)</pre>";
+        return respond(file, 200, "", body, sizeof(body) - 1);
+    }
+    return 0;
+}
+
+void fs_close_custom(struct fs_file *file) {
+    if (file->data != OUT_OF_MEMORY) {
+        free((void *)file->data);
+    }
+}
+
+// --- POSTs: httpd's callbacks -------------------------------------------------------------------
+
+static struct {
+    void *connection;
+    char uri[POST_URI_MAX];
+    bool api;
+    int expected;                   // Content-Length
+    size_t len;
+    char body[API_BODY_MAX];
+} posts[POSTS_MAX];
+
+static char lower(char c) {
+    return c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+}
+
+// Whether `text` starts with `prefix`, ignoring case
+static bool starts_with(const char *text, const char *end, const char *prefix) {
+    for (; *prefix; prefix++, text++) {
+        if (text >= end || lower(*text) != *prefix) {
+            return false;
         }
-        return ERR_OK;
     }
-    if (err != ERR_OK || !c) {
-        pbuf_free(p);
-        return ERR_OK;
-    }
-    tcp_recved(pcb, p->tot_len);
-    if (c->sending) {
-        pbuf_free(p);               // Ignore anything the client sends meanwhile
-        return ERR_OK;
-    }
-    c->idle = 0;
-    size_t room = REQ_MAX - c->req_len;
-    size_t n = p->tot_len < room ? p->tot_len : room;
-    pbuf_copy_partial(p, c->req + c->req_len, (u16_t)n, 0);
-    c->req_len += n;
-    c->req[c->req_len] = '\0';
-    pbuf_free(p);
-    if (strstr(c->req, "\r\n\r\n") || c->req_len == REQ_MAX) {
-        handle_request(pcb, c);     // Anything after the headers is ignored
-    }
-    return ERR_OK;
+    return true;
 }
 
-static err_t on_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
-    (void)len;
-    conn_t *c = arg;
-    if (c && c->sending) {
-        c->idle = 0;
-        send_more(pcb, c);
+// The value of the header `name` (lower case, with the colon), or NULL. httpd ends the headers
+// with a NUL; `end` bounds the search as well.
+static const char *header_value(const char *headers, u16_t len, const char *name, const char **end_out) {
+    const char *end = headers + len;
+    for (const char *line = headers; line < end && *line; ) {
+        if (starts_with(line, end, name)) {
+            const char *v = line + strlen(name);
+            while (v < end && *v == ' ') {
+                v++;
+            }
+            *end_out = end;
+            return v;
+        }
+        const char *nl = memchr(line, '\n', (size_t)(end - line));
+        if (!nl) {
+            break;
+        }
+        line = nl + 1;
     }
-    return ERR_OK;
+    return NULL;
 }
 
-static err_t on_poll(void *arg, struct tcp_pcb *pcb) {
-    conn_t *c = arg;
-    if (!c) {
-        return ERR_OK;
+// Whether a header value at v is exactly `word`, or `word` followed by one of `stops`
+static bool value_is(const char *v, const char *end, const char *word, const char *stops) {
+    if (!starts_with(v, end, word)) {
+        return false;
     }
-    if (++c->idle > IDLE_POLLS) {
-        conn_free(pcb, c);
-        tcp_abort(pcb);
-        return ERR_ABRT;
-    }
-    if (c->sending) {
-        send_more(pcb, c);          // Retry a write that failed with nothing in flight (finding 4)
-    }
-    return ERR_OK;
+    const char *after = v + strlen(word);
+    return after >= end || *after == '\0' || *after == '\r' || strchr(stops, *after);
 }
 
-static void on_err(void *arg, err_t err) {
-    (void)err;
-    conn_free(NULL, arg);           // lwIP has already freed the pcb
+// Content-Type: application/json (docs/api.md: a page on another site can't send it without a
+// CORS preflight)
+static bool json_content_type(const char *headers, u16_t len) {
+    const char *end, *v = header_value(headers, len, "content-type:", &end);
+    return v && value_is(v, end, "application/json", "; ");
 }
 
-static err_t on_accept(void *arg, struct tcp_pcb *pcb, err_t err) {
-    (void)arg;
-    if (err != ERR_OK || !pcb) {
+// Host: 192.168.4.1 (docs/api.md). A page elsewhere that points its own name at the Pico (DNS
+// rebinding; the Pico's DNS answers every name with this address) would be same-origin otherwise,
+// and get past the Content-Type guard (phase 2 review finding 1).
+static bool host_is_pico(const char *headers, u16_t len) {
+    const char *end, *v = header_value(headers, len, "host:", &end);
+    return v && (value_is(v, end, "192.168.4.1", " ") || value_is(v, end, "192.168.4.1:80", " "));
+}
+
+err_t httpd_post_begin(void *connection, const char *uri, const char *http_request, u16_t http_request_len,
+                       int content_len, char *response_uri, u16_t response_uri_len, u8_t *post_auto_wnd) {
+    (void)post_auto_wnd;
+    requests++;
+    const bool api = strncmp(uri, "/api/", 5) == 0 && api_handler;
+    snprintf(response_uri, response_uri_len, api ? "/.api" : "/.done");    // If refused
+    if (!host_is_pico(http_request, http_request_len)) {
+        if (api) {
+            api_error(403, "forbidden", "send requests to http://192.168.4.1/");
+        } else {
+            snprintf(response_uri, response_uri_len, "/.forbidden");
+        }
         return ERR_VAL;
     }
-    conn_t *c = calloc(1, sizeof(conn_t));
-    if (!c) {
-        tcp_abort(pcb);
-        return ERR_ABRT;
+    if (api) {
+        if (!json_content_type(http_request, http_request_len)) {
+            api_error(415, "unsupported_type", "send the body as Content-Type: application/json");
+            return ERR_VAL;
+        }
+        if (content_len > API_BODY_MAX) {
+            api_error(413, "too_large", "the body is over 1024 bytes");
+            return ERR_VAL;
+        }
+        if (strlen(uri) >= POST_URI_MAX) {
+            api_error(404, "not_found", "no such endpoint");
+            return ERR_VAL;
+        }
+    } else if (!page_action || content_len > 0 || strlen(uri) >= POST_URI_MAX) {
+        return ERR_VAL;             // No test page, or not one of its buttons (they send no body)
     }
-    open_conns++;
-    tcp_arg(pcb, c);
-    tcp_recv(pcb, on_recv);
-    tcp_sent(pcb, on_sent);
-    tcp_err(pcb, on_err);
-    tcp_poll(pcb, on_poll, POLL_INTERVAL);
+    for (int i = 0; i < POSTS_MAX; i++) {
+        if (!posts[i].connection) {
+            posts[i].connection = connection;
+            strcpy(posts[i].uri, uri);
+            posts[i].api = api;
+            posts[i].expected = content_len;
+            posts[i].len = 0;
+            return ERR_OK;
+        }
+    }
+    api_error(503, "busy", "too many requests at once");
+    return ERR_VAL;
+}
+
+err_t httpd_post_receive_data(void *connection, struct pbuf *p) {
+    for (int i = 0; i < POSTS_MAX; i++) {
+        if (posts[i].connection == connection) {
+            const size_t room = sizeof(posts[i].body) - posts[i].len;
+            const size_t n = p->tot_len < room ? p->tot_len : room;
+            pbuf_copy_partial(p, posts[i].body + posts[i].len, (u16_t)n, 0);
+            posts[i].len += n;
+            break;
+        }
+    }
+    pbuf_free(p);
     return ERR_OK;
 }
 
-bool net_start(const char *ssid, const char *password, net_page_fn page, net_action_fn action) {
-    render_page = page;
-    page_action = action;
-    cyw43_arch_enable_ap_mode(ssid, password, CYW43_AUTH_WPA2_AES_PSK);
+// Also called when a connection closes before its body has all come: then nothing is done
+void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len) {
+    const char *result = "/.done";
+    for (int i = 0; i < POSTS_MAX; i++) {
+        if (posts[i].connection != connection) {
+            continue;
+        }
+        const char *uri = posts[i].uri;
+        const bool complete = posts[i].len == (size_t)posts[i].expected;
+        if (posts[i].api) {
+            result = "/.api";
+            if (!complete) {
+                api_error(400, "bad_json", "the body didn't all arrive");
+            } else {
+                api_answer.status = api_handler(true, uri, posts[i].body, posts[i].len, api_answer.json,
+                                                sizeof(api_answer.json), &api_answer.len);
+            }
+        } else if (!complete) {
+            // Nothing: the client went
+        } else if (strcmp(uri, "/reboot-wd") == 0 || strcmp(uri, "/reboot-rom") == 0) {
+            net_reboot_soon(strcmp(uri, "/reboot-rom") == 0);
+            result = "/.rebooting";
+        } else if (page_action) {
+            page_action(uri);       // Unknown paths do nothing: back to the page either way
+        }
+        posts[i].connection = NULL;
+        break;
+    }
+    snprintf(response_uri, response_uri_len, "%s", result);
+}
+
+// --- Start, restart and main loop ---------------------------------------------------------------
+
+static void ap_up(const net_ap_t *ap) {
+    // As cyw43_arch_enable_ap_mode(), with the country of the settings instead of the one given to
+    // cyw43_arch_init_with_country(): the driver sends it to the chip each time the AP comes up
+    cyw43_wifi_ap_set_channel(&cyw43_state, ap->channel);
+    cyw43_wifi_ap_set_ssid(&cyw43_state, strlen(ap->ssid), (const uint8_t *)ap->ssid);
+    cyw43_wifi_ap_set_password(&cyw43_state, strlen(ap->password), (const uint8_t *)ap->password);
+    cyw43_wifi_ap_set_auth(&cyw43_state, CYW43_AUTH_WPA2_AES_PSK);
+    cyw43_wifi_set_up(&cyw43_state, CYW43_ITF_AP, true, ap->country);
 
     ip4_addr_t gw, mask;
     gw.addr = PP_HTONL(CYW43_DEFAULT_IP_AP_ADDRESS);
     mask.addr = PP_HTONL(CYW43_DEFAULT_IP_MASK);
     dhcp_server_init(&dhcp_server, &cyw43_state.netif[CYW43_ITF_AP], &gw, &mask);
     dns_server_init(&dns_server, &cyw43_state.netif[CYW43_ITF_AP], &gw);
+}
 
-    struct tcp_pcb *pcb = tcp_new_ip_type(IPADDR_TYPE_ANY);
-    if (!pcb || tcp_bind(pcb, IP_ANY_TYPE, HTTP_PORT) != ERR_OK) {
-        return false;
-    }
-    struct tcp_pcb *listener = tcp_listen_with_backlog(pcb, 4);
-    if (!listener) {
-        tcp_close(pcb);
-        return false;
-    }
-    tcp_accept(listener, on_accept);
+bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api) {
+    render_page = page;
+    page_action = action;
+    api_handler = api;
+    ap_up(ap);
+    httpd_init();
     return true;
+}
+
+// Whether the chip still has the AP's BSS up ("bss" iovar for the AP's bsscfg; an error means down,
+// as the driver notes in cyw43_ll_wifi_ap_init())
+static bool ap_bss_up(void) {
+    uint8_t buf[4 + 4] = "bss";             // The name with its NUL, then the AP's bsscfg index (1)
+    const uint32_t ap_bsscfg = 1;
+    memcpy(buf + 4, &ap_bsscfg, sizeof(ap_bsscfg));
+    if (cyw43_ioctl(&cyw43_state, CYW43_IOCTL_GET_VAR, sizeof(buf), buf, CYW43_ITF_STA) != 0) {
+        return false;
+    }
+    uint32_t up;
+    memcpy(&up, buf, sizeof(up));
+    return up != 0;
+}
+
+bool net_restart(const net_ap_t *ap) {
+    // The DHCP server is bound to the AP's network interface, which comes back with another number
+    dhcp_server_deinit(&dhcp_server);
+    dns_server_deinit(&dns_server);
+    // While the BSS is up, the driver keeps the old SSID, channel and password when the AP comes
+    // up again (cyw43_ll_wifi_ap_init() returns early), so make sure it went down
+    bool down = false;
+    for (int i = 0; i < 3 && !down; i++) {
+        cyw43_arch_disable_ap_mode();
+        down = !ap_bss_up();
+    }
+    ap_up(ap);
+    client_count = 0;
+    return down;
+}
+
+uint32_t net_requests(void) {
+    return requests;
+}
+
+void net_reboot_soon(bool through_rom) {
+    // From net_poll(), once the answer is out (not inside lwIP)
+    pending_reboot = through_rom ? REBOOT_ROM : REBOOT_WATCHDOG;
+    reboot_at_us = time_us_64() + 500 * 1000;
 }
 
 void net_poll(void) {
     cyw43_arch_poll();
-    if (open_conns == 0) {
+    if (tcp_active_pcbs == NULL) {      // Don't sleep while a connection is open: throughput
         cyw43_arch_wait_for_work_until(make_timeout_time_ms(10));
     }
 

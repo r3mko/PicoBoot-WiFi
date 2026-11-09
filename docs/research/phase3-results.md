@@ -61,3 +61,34 @@ Build `6b8b794` over USB (loader version 2, slot A), then its update files: the 
 - The update itself worked: it wrote the new blob into Wi-Fi A and checked it.
 - The likely cause is the blob: the SDK's Bluetooth variant needs the Bluetooth side set up, which this Wi-Fi-only build doesn't do.
 - The stand-in is now the same Wi-Fi blob with a marker in its spare header bytes (`PICOBOOT_WIFI_BLOB=marked`): a blob that works but differs.
+
+## 3.8 Console tests, re-test of parts 5 and 6 (2026-11-10)
+
+Build `05b5366` over USB (slot A), then its update files.
+
+| Boots | What happened | Result |
+|---|---|---|
+| 27–28 | USB install; a console power-on on A | Swiss started |
+| 29 | The start-up crash build in B: faults before it logs, back on A | B failed |
+| 30 | In the same session, the hang build into B: started on trial | **The fix works** |
+| 31 | Power-on: B on trial, a complete injection, kept | |
+| 32–33 | B hangs 5 s after Wi-Fi is up; the watchdog resets it: crashes 1 and 2, B again | |
+| 34 | Crash 3: **A takes over for good** (the crash loop, D12); B failed | **Passed** |
+| 35–36 | The marked-blob build into B: `"blob_written":true`, on trial with the new blob in Wi-Fi B, kept at the power-on (keeping comes after Wi-Fi up) | **Passed** |
+| 37 | Boot slot A: Wi-Fi from Wi-Fi A, untouched | **Passed** |
+
+Margins on the power-ons: 161.4–161.6 ms, CS 1544/1544, as before.
+
+### Step 3.8 summary
+
+| Plan item | Result |
+|---|---|
+| Update A→B, kept after a power-on | Passed |
+| Crash build → fallback | Passed (start-up fault and 5 s hang) |
+| The crash loop: 3 crashes, then the kept slot for good | Passed |
+| Switching slots | Passed |
+| Power cut during an upload → the old firmware boots | Passed |
+| Update with a different blob | Passed with the marked blob; the Bluetooth blob failed its trial and was undone |
+| The firmware page and the CLI on hardware | Passed |
+
+**Done when (plan 3.8): results recorded.** Met. The phase's goal (D28), an update, a failed trial and a switch all working in the console without USB, is met.

@@ -95,7 +95,8 @@ bool settings_default_password(const settings_t *s);
 // The SSID, password, channel or country differ: the access point has to restart
 bool settings_wifi_differs(const settings_t *a, const settings_t *b);
 
-// At start-up: a Wi-Fi change no client confirmed is undone
+// At start-up: a Wi-Fi change no client confirmed is undone (the SSID, password, channel and
+// country go back; the other settings stay)
 bool settings_record_start(settings_record_t *r);
 
 // A change to `next` (already checked). Wi-Fi changes go on trial, keeping the last confirmed

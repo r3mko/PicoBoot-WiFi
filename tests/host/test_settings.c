@@ -205,9 +205,16 @@ static void test_trial_undone_at_the_next_start(void) {
     bool restart;
     next.channel = 11;
     strcpy(next.password, "typo in it");
+    strcpy(next.ssid, "Typo");
+    strcpy(next.country, "NL");
+    next.led = 0;                                   // Saved in the same go: these stay
+    next.auto_off_minutes = 30;
+    next.tx_power = SETTINGS_TX_LOW;
     CHECK(settings_record_change(&r, &next, &restart) && restart);
     CHECK(settings_record_start(&r));
     CHECK(r.trial == 0 && r.current.channel == 6 && strcmp(r.current.password, SETTINGS_DEFAULT_PASSWORD) == 0);
+    CHECK(r.current.ssid[0] == '\0' && strcmp(r.current.country, "XX") == 0);
+    CHECK(r.current.led == 0 && r.current.auto_off_minutes == 30 && r.current.tx_power == SETTINGS_TX_LOW);
     CHECK(settings_record_sanitize(&r));
 }
 

@@ -141,7 +141,13 @@ bool settings_record_start(settings_record_t *r) {
     if (!r->trial) {
         return false;
     }
-    r->current = r->previous;
+    // Only the Wi-Fi settings go back; LED, Tx power and auto-off saved with them stay (D41)
+    settings_t *c = &r->current;
+    const settings_t *p = &r->previous;
+    memcpy(c->ssid, p->ssid, sizeof(c->ssid));
+    memcpy(c->password, p->password, sizeof(c->password));
+    memcpy(c->country, p->country, sizeof(c->country));
+    c->channel = p->channel;
     end_trial(r);
     return true;
 }

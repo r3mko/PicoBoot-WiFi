@@ -51,8 +51,10 @@ def http_response(name, body):
 
 
 def web_files(directory):
-    """(name, content) of every file in the directory, sorted by name."""
-    names = sorted(n for n in os.listdir(directory) if os.path.isfile(os.path.join(directory, n)))
+    """(name, content) of every file in the directory, sorted by name. Hidden files (.DS_Store)
+    and editor backups (name~) aren't part of the UI."""
+    names = sorted(n for n in os.listdir(directory)
+                   if os.path.isfile(os.path.join(directory, n)) and not n.startswith(".") and not n.endswith("~"))
     result = []
     for name in names:
         with open(os.path.join(directory, name), "rb") as f:

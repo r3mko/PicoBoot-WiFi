@@ -305,7 +305,14 @@ $("form").onsubmit = async e => {
   $("save").disabled = true;
   const r = await api("/api/settings", body);
   $("save").disabled = false;
-  if (!r) { setErr("form", "Can't reach PicoBoot. Nothing was saved; try again."); return; }
+  if (!r) {
+    // The answer may have been lost while the change went through (a Wi-Fi change restarts the AP):
+    // wait for PicoBoot and show what it has now
+    setErr("form", "No answer from PicoBoot, so the change may or may not be saved. Waiting for it…");
+    await pollUntilBack(2000);
+    setErr("form", "PicoBoot is back. The form shows the settings it has now.");
+    return;
+  }
   const d = r.data || {};
   if (!r.ok) {
     const msg = d.message || ("Error " + r.status);

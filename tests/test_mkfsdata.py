@@ -56,6 +56,14 @@ class MkfsdataTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             mk.generate([("x.bin", b"1")])
 
+    def test_hidden_files_and_backups_are_skipped(self):
+        # Finder's .DS_Store or an editor's backup in src/web/ mustn't stop the build (phase 2 review)
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("index.html", ".DS_Store", "index.html~"):
+                with open(os.path.join(d, name), "wb") as f:
+                    f.write(b"x")
+            self.assertEqual([name for name, _ in mk.web_files(d)], ["index.html"])
+
     def test_reproducible(self):
         with tempfile.TemporaryDirectory() as d:
             outs = []

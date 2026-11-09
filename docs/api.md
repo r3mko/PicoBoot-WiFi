@@ -13,6 +13,8 @@ The web UI and the CLI tool use this API. Phase 2 defines status, settings, diag
 - **Responses** are JSON (`Content-Type: application/json`), never cached (`Cache-Control: no-store`), one per connection (`Connection: close`).
 - **POST bodies** are JSON, sent with `Content-Type: application/json`; anything else gets 415.
   - **Why:** a page on another site can't send that content type to the Pico without a CORS preflight, which the Pico doesn't answer. So a web page a phone opened elsewhere can't change settings through it.
+- **POSTs must be addressed to `Host: 192.168.4.1`** (or `192.168.4.1:80`); anything else gets 403.
+  - **Why:** the Pico's DNS answers every name with its own address. A page opened elsewhere could otherwise point its own name at the Pico and send same-origin requests, which need no preflight (DNS rebinding).
 - **Body size:** at most 1024 bytes for the endpoints here; more gets 413.
 - **Compatibility:**
   - Later phases add fields; clients ignore fields they don't know.
@@ -32,13 +34,14 @@ The web UI and the CLI tool use this API. Phase 2 defines status, settings, diag
 | 400 | `bad_json` | The body isn't a JSON object of the expected shape |
 | 400 | `unknown_field` | A field this endpoint doesn't have (`field` names it) |
 | 400 | `bad_value` | A value of the wrong type or outside the allowed values (`field` names it) |
+| 403 | `forbidden` | A POST not addressed to `Host: 192.168.4.1` |
 | 404 | `not_found` | No such endpoint |
 | 405 | `method_not_allowed` | GET on a POST endpoint or the other way round |
 | 413 | `too_large` | The body is over the limit |
 | 415 | `unsupported_type` | A POST without `Content-Type: application/json` |
 | 500 | `flash_write` | Writing flash failed; nothing changed |
 | 500 | `internal` | The answer didn't fit its buffer (a firmware bug) |
-| 503 | `busy` | Too many requests at once; try again |
+| 503 | `busy` | Too many requests at once, or out of memory; try again |
 
 ## GET /api/status
 

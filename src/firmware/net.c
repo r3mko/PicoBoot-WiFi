@@ -36,7 +36,8 @@
 #include "hardware/watchdog.h"
 
 #define PAGE_MAX        10240       // Rendered test page (with the boot log table)
-#define API_GET_MAX     20480       // The largest GET answer: diagnostics with 32 boots
+#define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
+                                    // about 18 KB today (phase 2 review), with room for more fields
 #define API_POST_MAX    512         // POST answers are short
 #define API_BODY_MAX    1024        // docs/api.md
 #define POSTS_MAX       4           // POSTs being received at once
@@ -66,6 +67,7 @@ static const char *status_text(int status) {
         case 302: return "302 Found";
         case 303: return "303 See Other";
         case 400: return "400 Bad Request";
+        case 403: return "403 Forbidden";
         case 404: return "404 Not Found";
         case 405: return "405 Method Not Allowed";
         case 413: return "413 Payload Too Large";
@@ -75,6 +77,20 @@ static const char *status_text(int status) {
     }
 }
 
+// When there's no memory for an answer: a fixed one, never freed (phase 2 review finding 7)
+static const char OUT_OF_MEMORY[] =
+    "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 53\r\n"
+    "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    "{\"error\":\"busy\",\"message\":\"out of memory, try again\"}";
+
+static int respond_out_of_memory(struct fs_file *file) {
+    memset(file, 0, sizeof(*file));
+    file->data = OUT_OF_MEMORY;
+    file->len = file->index = (int)sizeof(OUT_OF_MEMORY) - 1;
+    file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+    return 1;
+}
+
 static int respond_as(struct fs_file *file, int status, const char *type, const char *extra_headers,
                       const char *body, size_t body_len) {
     static const char fmt[] = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %u\r\n"
@@ -82,7 +98,7 @@ static int respond_as(struct fs_file *file, int status, const char *type, const 
     const size_t cap = sizeof(fmt) + 96 + strlen(extra_headers) + body_len;
     char *out = malloc(cap);
     if (!out) {
-        return 0;                   // httpd then sends its own error
+        return respond_out_of_memory(file);
     }
     const int n = snprintf(out, cap, fmt, status_text(status), type, (unsigned)body_len, extra_headers);
     if (n < 0 || (size_t)n + body_len > cap) {
@@ -109,7 +125,7 @@ static int respond_json(struct fs_file *file, int status, const char *json, size
 static int respond_page(struct fs_file *file) {
     char *page = malloc(PAGE_MAX);
     if (!page) {
-        return 0;
+        return respond_out_of_memory(file);
     }
     const size_t len = render_page(page, PAGE_MAX);
     const int ok = respond(file, 200, "", page, len);
@@ -165,6 +181,10 @@ int fs_open_custom(struct fs_file *file, const char *name) {
     if (strcmp(name, "/.api") == 0) {
         return respond_json(file, api_answer.status, api_answer.json, api_answer.len);
     }
+    if (strcmp(name, "/.forbidden") == 0) {
+        static const char body[] = "<!doctype html><pre>Open PicoBoot at http://192.168.4.1/</pre>";
+        return respond(file, 403, "", body, sizeof(body) - 1);
+    }
     if (strcmp(name, "/.done") == 0) {
         return respond(file, 303, render_page ? "Location: /test\r\n" : "Location: /\r\n", "", 0);
     }
@@ -177,7 +197,9 @@ int fs_open_custom(struct fs_file *file, const char *name) {
 }
 
 void fs_close_custom(struct fs_file *file) {
-    free((void *)file->data);
+    if (file->data != OUT_OF_MEMORY) {
+        free((void *)file->data);
+    }
 }
 
 // --- POSTs: httpd's callbacks -------------------------------------------------------------------
@@ -205,20 +227,18 @@ static bool starts_with(const char *text, const char *end, const char *prefix) {
     return true;
 }
 
-// The request headers say Content-Type: application/json (docs/api.md: the CSRF guard)
-static bool json_content_type(const char *headers, u16_t len) {
+// The value of the header `name` (lower case, with the colon), or NULL. httpd ends the headers
+// with a NUL; `end` bounds the search as well.
+static const char *header_value(const char *headers, u16_t len, const char *name, const char **end_out) {
     const char *end = headers + len;
     for (const char *line = headers; line < end && *line; ) {
-        if (starts_with(line, end, "content-type:")) {
-            const char *v = line + 13;
+        if (starts_with(line, end, name)) {
+            const char *v = line + strlen(name);
             while (v < end && *v == ' ') {
                 v++;
             }
-            if (starts_with(v, end, "application/json")) {
-                const char *after = v + 16;
-                return after >= end || *after == '\0' || *after == '\r' || *after == ';' || *after == ' ';
-            }
-            return false;
+            *end_out = end;
+            return v;
         }
         const char *nl = memchr(line, '\n', (size_t)(end - line));
         if (!nl) {
@@ -226,7 +246,31 @@ static bool json_content_type(const char *headers, u16_t len) {
         }
         line = nl + 1;
     }
-    return false;
+    return NULL;
+}
+
+// Whether a header value at v is exactly `word`, or `word` followed by one of `stops`
+static bool value_is(const char *v, const char *end, const char *word, const char *stops) {
+    if (!starts_with(v, end, word)) {
+        return false;
+    }
+    const char *after = v + strlen(word);
+    return after >= end || *after == '\0' || *after == '\r' || strchr(stops, *after);
+}
+
+// Content-Type: application/json (docs/api.md: a page on another site can't send it without a
+// CORS preflight)
+static bool json_content_type(const char *headers, u16_t len) {
+    const char *end, *v = header_value(headers, len, "content-type:", &end);
+    return v && value_is(v, end, "application/json", "; ");
+}
+
+// Host: 192.168.4.1 (docs/api.md). A page elsewhere that points its own name at the Pico (DNS
+// rebinding; the Pico's DNS answers every name with this address) would be same-origin otherwise,
+// and get past the Content-Type guard (phase 2 review finding 1).
+static bool host_is_pico(const char *headers, u16_t len) {
+    const char *end, *v = header_value(headers, len, "host:", &end);
+    return v && (value_is(v, end, "192.168.4.1", " ") || value_is(v, end, "192.168.4.1:80", " "));
 }
 
 err_t httpd_post_begin(void *connection, const char *uri, const char *http_request, u16_t http_request_len,
@@ -235,6 +279,14 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
     requests++;
     const bool api = strncmp(uri, "/api/", 5) == 0 && api_handler;
     snprintf(response_uri, response_uri_len, api ? "/.api" : "/.done");    // If refused
+    if (!host_is_pico(http_request, http_request_len)) {
+        if (api) {
+            api_error(403, "forbidden", "send requests to http://192.168.4.1/");
+        } else {
+            snprintf(response_uri, response_uri_len, "/.forbidden");
+        }
+        return ERR_VAL;
+    }
     if (api) {
         if (!json_content_type(http_request, http_request_len)) {
             api_error(415, "unsupported_type", "send the body as Content-Type: application/json");
@@ -337,13 +389,34 @@ bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_a
     return true;
 }
 
-void net_restart(const net_ap_t *ap) {
+// Whether the chip still has the AP's BSS up ("bss" iovar for the AP's bsscfg; an error means down,
+// as the driver notes in cyw43_ll_wifi_ap_init())
+static bool ap_bss_up(void) {
+    uint8_t buf[4 + 4] = "bss";             // The name with its NUL, then the AP's bsscfg index (1)
+    const uint32_t ap_bsscfg = 1;
+    memcpy(buf + 4, &ap_bsscfg, sizeof(ap_bsscfg));
+    if (cyw43_ioctl(&cyw43_state, CYW43_IOCTL_GET_VAR, sizeof(buf), buf, CYW43_ITF_STA) != 0) {
+        return false;
+    }
+    uint32_t up;
+    memcpy(&up, buf, sizeof(up));
+    return up != 0;
+}
+
+bool net_restart(const net_ap_t *ap) {
     // The DHCP server is bound to the AP's network interface, which comes back with another number
     dhcp_server_deinit(&dhcp_server);
     dns_server_deinit(&dns_server);
-    cyw43_arch_disable_ap_mode();
+    // While the BSS is up, the driver keeps the old SSID, channel and password when the AP comes
+    // up again (cyw43_ll_wifi_ap_init() returns early), so make sure it went down
+    bool down = false;
+    for (int i = 0; i < 3 && !down; i++) {
+        cyw43_arch_disable_ap_mode();
+        down = !ap_bss_up();
+    }
     ap_up(ap);
     client_count = 0;
+    return down;
 }
 
 uint32_t net_requests(void) {

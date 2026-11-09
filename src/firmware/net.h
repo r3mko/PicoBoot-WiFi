@@ -34,8 +34,9 @@ typedef struct {
 bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api);
 
 // Restarts the access point with other settings (design D41); every client drops off. The HTTP
-// server keeps running. Call from the main loop, not from an lwIP callback.
-void net_restart(const net_ap_t *ap);
+// server keeps running. Call from the main loop, not from an lwIP callback. Returns false if the
+// chip didn't take the access point down: then it still runs the old settings.
+bool net_restart(const net_ap_t *ap);
 
 // One iteration of the main loop: lets the CYW43 driver and lwIP do their work
 void net_poll(void);

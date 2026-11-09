@@ -170,9 +170,11 @@ bool wifi_poll(void) {
     if (restart_at_us && now >= restart_at_us) {
         restart_at_us = 0;
         const net_ap_t ap = ap_settings();
-        net_restart(&ap);
+        const bool restarted = net_restart(&ap);
         requests_at_restart = net_requests();
-        awaiting_client = record.trial;
+        // If the AP didn't go down, it still runs the old settings and its clients mustn't confirm
+        // the change: it stays on trial and is undone at the next start (phase 2 review finding 2)
+        awaiting_client = record.trial && restarted;
         tx_power_due = true;                    // The chip was set up again
         led_state = -1;
     }

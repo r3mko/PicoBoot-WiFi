@@ -178,6 +178,21 @@ static void put_settings(out_t *o, const char *label, const settings_t *s, bool 
     }
 }
 
+static void html_escape(char *out, size_t size, const char *s) {
+    size_t n = 0;
+    for (; *s && n + 7 < size; s++) {
+        const char *e = *s == '<' ? "&lt;" : *s == '>' ? "&gt;" : *s == '&' ? "&amp;" : *s == '"' ? "&quot;" :
+                        *s == '\'' ? "&#39;" : NULL;
+        if (e) {
+            memcpy(out + n, e, strlen(e));
+            n += strlen(e);
+        } else {
+            out[n++] = *s;
+        }
+    }
+    out[n] = '\0';
+}
+
 size_t page_render(char *buf, size_t size) {
     out_t o = {buf, size, 0};
     const boot_report_t *r = info.report;
@@ -189,7 +204,10 @@ size_t page_render(char *buf, size_t size) {
             "<style>body{font-family:monospace;margin:12px}pre{white-space:pre-wrap}"
             "form,a{display:inline-block;margin:6px 12px 6px 0}</style></head><body><pre>");
     put(&o, "PicoBoot-WiFi %s (test build)\n", PICOBOOT_WIFI_BUILD);
-    put(&o, "SSID: %s   Password: %s\n\n", wifi_ssid(),
+    // The SSID may hold < & and quotes: escaped, so it can't put markup or script on the page
+    char ssid_html[SETTINGS_SSID_MAX * 6 + 1];
+    html_escape(ssid_html, sizeof(ssid_html), wifi_ssid());
+    put(&o, "SSID: %s   Password: %s\n\n", ssid_html,
         settings_default_password(wifi_settings()) ? SETTINGS_DEFAULT_PASSWORD " (default)" : "(changed)");
     if (wifi_reverted()) {
         put(&o, "WI-FI CHANGE UNDONE at this start: no client joined with it (design D41)\n\n");

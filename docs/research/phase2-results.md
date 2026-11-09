@@ -78,3 +78,19 @@ Build `bff4a6c`: why a payload was used (D22), auto-off (D20), Tx power levels (
 **Auto-off timing:** 3.5 minutes from the moment the last device switched its Wi-Fi off, for the 2-minute setting.
 - **Cause:** the countdown starts when the CYW43 drops the last client from its list. A device that switches Wi-Fi off doesn't always say goodbye, so the chip keeps it until its own inactivity timeout, about 1.5 minutes here.
 - **The owner accepted this:** auto-off saves power and quiets the radio; it doesn't need to be exact. Noted in D20.
+
+## 2.7 Console tests
+
+**Setup:** the DOL-001 with SD2SP2 and HDMI adapter, the Pico fed through 3V3 as in phase 1; build `bff4a6c`, Swiss r2119 in payload 1.
+
+### Part A: injection (2026-11-09)
+
+| | Phase 1 | Phase 2 |
+|---|---|---|
+| Swiss r2119, cold boots | 10/10 (step 1.12), margin 159.8–161.7 ms | **5/5** (boots 5–9), margin 159.6–160.6 ms; CS 1544/1544 |
+| gekkoboot (built-in), cold boots | 10/10 (step 1.10), margin 159.7–163.0 ms | **5/5** (boots 10–14), margin 159.8–160.6 ms; CS 285/285 |
+| CS at "PIO ready" | high | high on every boot |
+| Injection time (gekkoboot) | 19 ms | 19 ms |
+| `main()` to "PIO ready" | 301–347 µs | 329 µs (boot 14) |
+
+**Finding:** the injection is unchanged by phase 2. The owner did 5 Swiss boots rather than 10 and accepted that, since the gekkoboot series ran the same path.

@@ -31,6 +31,7 @@
 #include "storage.h"
 #include "wifi.h"
 #include "api.h"
+#include "updater.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/structs/qmi.h"
@@ -177,10 +178,12 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
             // The LED after the injection (design D26)
             const wifi_led_t led = report.result == INJECTION_COMPLETE ? WIFI_LED_DONE :
                                    report.result == INJECTION_STALLED ? WIFI_LED_STALLED : WIFI_LED_STEADY;
+            // Updates go into the other slot (D11). Loaders so far don't report a version: 1.
+            updater_init(report.slot, 1, report.from_loader);
 #if PICOBOOT_WIFI_TEST_BUILD
-            const bool up = wifi_start(page_render, page_action, api_handle, led);    // With the test page
+            const bool up = wifi_start(page_render, page_action, api_handle, &UPDATER_UPLOAD, led);  // With the test page
 #else
-            const bool up = wifi_start(NULL, NULL, api_handle, led);
+            const bool up = wifi_start(NULL, NULL, api_handle, &UPDATER_UPLOAD, led);
 #endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);

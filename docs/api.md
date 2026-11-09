@@ -5,7 +5,7 @@
 | **Status** | Approved with phase 2, 2026-11-09 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
-The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot. The other endpoints of D18 come with their phases: firmware upload (phase 3), and payloads, boot choices and backups (phase 4).
+The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload. The other endpoints of D18 come with phase 4: payloads, boot choices and backups.
 
 ## Common rules
 
@@ -170,6 +170,21 @@ The last boot and the boot log (D22, D39).
 | `chip_stepping`, `rom` | As in the status |
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
+
+## POST /api/firmware
+
+An over-the-air update (D11). The body is an update file ([update-format.md](update-format.md)), sent with `Content-Type: application/octet-stream`; the Host rule applies as for every POST. The 1024-byte body limit doesn't apply.
+
+- **The Pico** streams it into the slot that isn't running, erasing and writing flash as it goes, then reads it back. An upload takes about 10 seconds, most of it erasing flash.
+- **The answer:**
+
+```json
+{"installed": true, "slot": "B", "version": "0.3.0-dev+1a2b3c4", "blob_written": false}
+```
+
+  - `slot` now holds the new firmware, on trial (D12); `blob_written` says whether its Wi-Fi area needed the file's blob (D14).
+- **Refusals** answer 400 with the codes of [update-format.md](update-format.md): `not_an_update`, `unsupported_format`, `bad_header`, `wrong_board`, `needs_usb_install`, `bad_size`, `needs_blob`, `bad_image`, `bad_blob`, `incomplete`. A refusal that comes from the header arrives before any flash is touched; the rest leave the other slot empty, never half a firmware.
+- **Also:** 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.
 
 ## POST /api/reboot
 

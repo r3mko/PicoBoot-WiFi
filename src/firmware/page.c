@@ -268,6 +268,11 @@ size_t page_render(char *buf, size_t size) {
 
     bootctl_t b;
     const bool stored = storage_bootctl_load(&b);
+    static const char *const states[] = {"installed", "empty", "TRIAL", "kept", "FAILED"};
+    put(&o, "  Slots              : A %s, B %s%s; running %c\n",
+        b.slot_state[0] < 5 ? states[b.slot_state[0]] : "?", b.slot_state[1] < 5 ? states[b.slot_state[1]] : "?",
+        b.pending_slot == BOOTCTL_SLOT_A ? " (A pending)" : b.pending_slot == BOOTCTL_SLOT_B ? " (B pending)" : "",
+        r->slot == BOOTCTL_SLOT_B ? 'B' : 'A');
     put(&o, "  Next power-on      : %s; CS %s%s\n",
         b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in gekkoboot" :
         b.active_payload == BOOTCTL_PAYLOAD_2 ? "payload 2 (built-in if not valid)" : "payload 1 (built-in if not valid)",

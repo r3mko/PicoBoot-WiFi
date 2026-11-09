@@ -6,6 +6,7 @@
 
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "bootctl.h"
 #include "report.h"
@@ -23,6 +24,11 @@ bool storage_bootctl_store(const bootctl_t *b);
 // gets its default); returns true if there was a record. Store refuses a record that isn't valid.
 bool storage_settings_load(settings_record_t *out);
 bool storage_settings_store(const settings_record_t *r);
+
+// Erases one sector, and programs whole pages, at an offset from the start of flash (interrupts off,
+// as above). For the update writer; the areas above have their own functions.
+void storage_flash_erase(uint32_t offset);
+void storage_flash_program(uint32_t offset, const uint8_t *data, size_t length);
 
 // Room in the boot log (design D39). It keeps 17 to 32 reports: when it wraps, a sector of 16 is erased.
 #define STORAGE_BOOTLOG_ENTRIES 32

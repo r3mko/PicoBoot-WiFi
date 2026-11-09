@@ -15,6 +15,8 @@ set(FIRMWARE_SOURCES
     json.c
     wifi.c
     api.c
+    update.c
+    updater.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )
@@ -79,6 +81,7 @@ target_link_libraries(firmware PRIVATE
     hardware_adc
     pico_cyw43_arch_lwip_poll
     pico_lwip_http
+    pico_sha256
 )
 
 # The CYW43 blob isn't compiled in: the driver reads it from Wi-Fi area A or B (design D14),
@@ -114,6 +117,7 @@ target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=${PI
 pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_BOARD="${PICO_BOARD}")   # Update files name it (D11)
 
 if(PICOBOOT_WIFI_USB_TRACE)
     pico_enable_stdio_usb(firmware 1)

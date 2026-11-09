@@ -37,6 +37,14 @@ static void program(void *ctx, uint32_t offset, const uint8_t *data, size_t leng
     restore_interrupts(irq);
 }
 
+void storage_flash_erase(uint32_t offset) {
+    erase_sector((void *)0, offset);
+}
+
+void storage_flash_program(uint32_t offset, const uint8_t *data, size_t length) {
+    program((void *)0, offset, data, length);
+}
+
 static const record_flash_t bootctl_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTCTL_OFFSET};
 static const record_flash_t bootlog_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_BOOTLOG_OFFSET};
 static const record_flash_t settings_flash = {erase_sector, program, (void *)(uintptr_t)LAYOUT_SETTINGS_OFFSET};

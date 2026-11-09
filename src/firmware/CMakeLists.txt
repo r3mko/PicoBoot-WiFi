@@ -140,3 +140,19 @@ add_custom_command(
     COMMENT "Building picoboot-wifi-install.uf2"
 )
 add_custom_target(install_uf2 ALL DEPENDS ${INSTALL_UF2})
+
+# The over-the-air update file (design D11): header, slot image and Wi-Fi blob (tools/mkupdate.py)
+set(UPDATE_BIN ${CMAKE_BINARY_DIR}/picoboot-wifi-update.bin)
+add_custom_command(
+    OUTPUT ${UPDATE_BIN}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkupdate.py
+        --firmware $<TARGET_FILE_DIR:firmware>/firmware.bin
+        --blob ${WIFI_BLOB_BIN}
+        --version ${PICOBOOT_WIFI_BUILD}
+        --board ${PICO_BOARD}
+        --output ${UPDATE_BIN}
+    DEPENDS firmware ${WIFI_BLOB_BIN} ${CMAKE_SOURCE_DIR}/tools/mkupdate.py
+        ${CMAKE_SOURCE_DIR}/src/common/layout.h ${CMAKE_SOURCE_DIR}/src/common/bootinfo.h
+    COMMENT "Building picoboot-wifi-update.bin"
+)
+add_custom_target(update_bin ALL DEPENDS ${UPDATE_BIN})

@@ -46,5 +46,6 @@ jobs:
           name: picoboot-wifi-${{ github.sha }}
           path: |
             build/picoboot-wifi-install.uf2
+            build/picoboot-wifi-update.bin
             build/src/loader/loader.elf
             build/src/firmware/firmware.elf

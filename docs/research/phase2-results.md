@@ -94,3 +94,43 @@ Build `bff4a6c`: why a payload was used (D22), auto-off (D20), Tx power levels (
 | `main()` to "PIO ready" | 301–347 µs | 329 µs (boot 14) |
 
 **Finding:** the injection is unchanged by phase 2. The owner did 5 Swiss boots rather than 10 and accepted that, since the gekkoboot series ran the same path.
+
+### Part B: phones while a game runs (2026-11-09)
+
+iPhone and Android joined with Swiss on screen; the UI opened by itself on both, and the tabs and repeated Diagnostics reloads worked. **No disturbance of the picture or sound** (risk R5), as in phase 0's stress test.
+
+### Part C: settings on the console (2026-11-09)
+
+The password change in the UI worked with the console running: the restart notice, the rejoin with the new password, the default-password banner gone, and back to `picoboot`. **Passed.**
+
+### Parts D, E and F: range, rail voltage and auto-off (2026-11-09)
+
+| Tx power | RSSI at the owner's usual distance (Mac) | 3V3 at the Pico |
+|---|---|---|
+| Max | −40 dBm | 3.14 V |
+| Medium (default) | −45 dBm | 3.14 V |
+| Low | −58 dBm | 3.14 V |
+| Wi-Fi off (auto-off) | | 3.21 V |
+
+**Findings:**
+- **Range:** even Low gives −58 dBm at the usual distance, a strong signal, and the UI loads without delay; the default Medium leaves a wide margin.
+- **Rail:** with the radio on, 3V3 reads 3.14 V at every Tx power level; the meter averages, and while idle the radio sends little. With Wi-Fi off it is 3.21 V. Both match phase 0 (3.15 V on, 3.21 V off), so the D38 advice (5 V wiring) stands, and auto-off gives the rail back its 0.07 V.
+- **Auto-off at 10 minutes:** Wi-Fi went off after about **10.5 minutes** without a client, within the 10–11.5 minutes the bench check predicted (D20).
+
+### Part G: warm reboot during a game (2026-11-09)
+
+Reboot from the UI while a game ran: **the game kept running**, and Wi-Fi came back. Design D8 holds with the phase 2 firmware.
+
+### Step 2.7 summary
+
+| Part | Result |
+|---|---|
+| A: injection, 5 Swiss and 5 gekkoboot cold boots | 10/10; margin 159.6–160.6 ms; unchanged from phase 1 |
+| B: phones while a game runs | UI opens by itself on iPhone and Android; no picture or sound disturbance |
+| C: settings on the console | Password change, rejoin and banner work |
+| D: range | −40 to −58 dBm at the usual distance from Max to Low; the UI works at Low |
+| E: rail voltage | 3.14 V with the radio on at every level, 3.21 V with Wi-Fi off |
+| F: auto-off at 10 minutes | Off after about 10.5 minutes without a client |
+| G: warm reboot during a game | The game kept running |
+
+**Done when (plan 2.7): results recorded.** Met. The phase's goal (D28), a phone reaching the status page from a closed console, is met.

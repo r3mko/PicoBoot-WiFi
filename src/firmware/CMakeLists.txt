@@ -98,7 +98,13 @@ pico_configure_ip4_address(firmware PRIVATE
 )
 
 # The Wi-Fi area image: the SDK's Wi-Fi-only CYW43439 blob behind our header (tools/mkwifiblob.py)
-set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+# PICOBOOT_WIFI_BLOB=bt takes the variant with Bluetooth instead: another blob with the same Wi-Fi
+# firmware, the stand-in for an update that brings a new blob (plan step 3.8)
+if(PICOBOOT_WIFI_BLOB STREQUAL "bt")
+    set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/wb43439A0_7_95_49_00_combined.h)
+else()
+    set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+endif()
 set(WIFI_BLOB_BIN ${CMAKE_BINARY_DIR}/wifi-blob.bin)
 add_custom_command(
     OUTPUT ${WIFI_BLOB_BIN}

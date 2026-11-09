@@ -14,6 +14,10 @@
 #include "wifi.h"
 #include "bootctl.h"
 #include "bootinfo.h"
+#include "bininfo.h"
+#include "layout.h"
+#include "slots.h"
+#include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
 #include "pico/time.h"
 
@@ -125,6 +129,21 @@ static int get_status(char *out, size_t size, size_t *len) {
         json_object_begin(&j, "states");
         json_string(&j, "A", state_name(b.slot_state[BOOTCTL_SLOT_A]));
         json_string(&j, "B", state_name(b.slot_state[BOOTCTL_SLOT_B]));
+        json_object_end(&j);
+        // The firmware in each slot (D13): this one's own build, the other's from its binary info
+        json_object_begin(&j, "versions");
+        for (uint8_t s = BOOTCTL_SLOT_A; s <= BOOTCTL_SLOT_B; s++) {
+            char v[32];
+            const uint8_t *image = (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE +
+                                                     (s == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET));
+            if (s == r->slot) {
+                json_string(&j, slot_name(s), PICOBOOT_WIFI_BUILD);
+            } else if (b.slot_state[s] != BOOTCTL_STATE_EMPTY && bininfo_version(image, LAYOUT_SLOT_SIZE, v, sizeof(v))) {
+                json_string(&j, slot_name(s), v);
+            } else {
+                json_null(&j, slot_name(s));
+            }
+        }
         json_object_end(&j);
     }
     json_object_end(&j);
@@ -290,6 +309,77 @@ static bool no_member(void *ctx, const char *key, const json_value_t *v) {
     return false;
 }
 
+// --- POST /api/boot (D12, D13): {"keep": true} or {"slot": "A" | "B"} -------------------------------
+
+typedef struct {
+    int fields;
+    bool keep;
+    int slot;                           // BOOTCTL_SLOT_A / _B, or -1
+    bool bad;
+    char field[JSON_KEY_MAX + 1];
+} boot_body_t;
+
+static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
+    boot_body_t *bb = ctx;
+    bb->fields++;
+    strcpy(bb->field, key);
+    if (strcmp(key, "keep") == 0) {
+        bb->keep = v->type == JSON_BOOL && v->boolean;
+        bb->bad = !bb->keep;
+    } else if (strcmp(key, "slot") == 0) {
+        bb->bad = v->type != JSON_STRING || (strcmp(v->string, "A") != 0 && strcmp(v->string, "B") != 0);
+        bb->slot = bb->bad ? -1 : (v->string[0] == 'B' ? BOOTCTL_SLOT_B : BOOTCTL_SLOT_A);
+    } else {
+        return false;                   // Unknown field
+    }
+    return !bb->bad;
+}
+
+static int post_boot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
+    boot_body_t bb = {.slot = -1};
+    switch (json_parse_object(body, body_len, on_boot_member, &bb)) {
+        case JSON_SYNTAX:
+            return error(out, size, len, 400, "bad_json", "the body must be a flat JSON object", NULL);
+        case JSON_STOPPED:
+            return bb.bad ? error(out, size, len, 400, "bad_value", "keep must be true; slot must be \"A\" or \"B\"", bb.field)
+                          : error(out, size, len, 400, "unknown_field", "boot takes keep or slot", bb.field);
+        case JSON_OK:
+            break;
+    }
+    if (bb.fields != 1) {
+        return error(out, size, len, 400, "bad_json", "send exactly one of keep and slot", NULL);
+    }
+    const uint8_t running = info->report->slot;
+    bootctl_t b;
+    storage_bootctl_load(&b);
+    json_out_t j;
+    json_init(&j, out, size);
+    json_object_begin(&j, NULL);
+    if (bb.keep) {
+        if (!slots_keep(&b, running)) {
+            return error(out, size, len, 409, "not_on_trial", "this firmware isn't on trial: there's nothing to keep", NULL);
+        }
+        if (!storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        json_bool(&j, "kept", true);
+    } else {
+        const slots_switch_t r = slots_switch(&b, running, (uint8_t)bb.slot);
+        if (r == SLOTS_NOT_BOOTABLE) {
+            return error(out, size, len, 409, "not_bootable", "that slot is empty: upload a firmware into it first", "slot");
+        }
+        if (r == SLOTS_SWITCHED && !storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        json_bool(&j, "rebooting", r == SLOTS_SWITCHED);
+        if (r == SLOTS_SWITCHED) {
+            net_reboot_soon(false);     // Warm: a game keeps running (D8)
+        }
+    }
+    json_object_end(&j);
+    return finish(&j, out, size, len);
+}
+
 static int post_reboot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
     char field[JSON_KEY_MAX + 1];
     switch (json_parse_object(body, body_len, no_member, field)) {
@@ -321,6 +411,12 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
     }
     if (strcmp(path, "/api/settings") == 0) {
         return post ? post_settings(body, body_len, out, out_size, out_len) : get_settings(out, out_size, out_len);
+    }
+    if (strcmp(path, "/api/boot") == 0) {
+        if (!post) {
+            return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);
+        }
+        return post_boot(body, body_len, out, out_size, out_len);
     }
     if (strcmp(path, "/api/reboot") == 0) {
         if (!post) {

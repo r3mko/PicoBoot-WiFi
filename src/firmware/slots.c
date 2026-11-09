@@ -43,3 +43,23 @@ bool slots_keep(bootctl_t *b, uint8_t running) {
     }
     return true;
 }
+
+slots_switch_t slots_switch(bootctl_t *b, uint8_t running, uint8_t target) {
+    const uint8_t state = b->slot_state[target];
+    if (state == BOOTCTL_STATE_EMPTY) {
+        return SLOTS_NOT_BOOTABLE;
+    }
+    if (target == running) {
+        return SLOTS_NOTHING_TO_DO;     // On trial: Keep is the way to keep it
+    }
+    if (state == BOOTCTL_STATE_KEPT || state == BOOTCTL_STATE_INSTALLED) {
+        b->active_slot = target;
+        if (b->pending_slot == running) {
+            b->pending_slot = BOOTCTL_NONE;     // Abandoned: it stays in the trial state, unkept
+        }
+    } else {
+        b->pending_slot = target;               // Another try, on trial: the loader starts it
+        b->slot_state[target] = BOOTCTL_STATE_TRIAL;
+    }
+    return SLOTS_SWITCHED;
+}

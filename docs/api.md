@@ -5,7 +5,7 @@
 | **Status** | Approved with phase 2, 2026-11-09 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
-The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload. The other endpoints of D18 come with phase 4: payloads, boot choices and backups.
+The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload and the slot choices. The other endpoints of D18 come with phase 4: payloads, the payload and IPL choices, and backups.
 
 ## Common rules
 
@@ -51,7 +51,8 @@ What the status page shows (D22).
 {
   "api": 1,
   "firmware": {"version": "0.3.0-dev+1a2b3c4", "slot": "A", "loader": 2, "pending": null,
-               "states": {"A": "kept", "B": "failed"}},
+               "states": {"A": "kept", "B": "failed"},
+               "versions": {"A": "0.3.0-dev+1a2b3c4", "B": "0.3.0-dev+9f8e7d6-crash-5s"}},
   "chip": {"stepping": 2, "rom": 2},
   "uptime_s": 34,
   "temperature_c": 38.4,
@@ -71,6 +72,7 @@ What the status page shows (D22).
 | `firmware.loader` | The installed loader's version (1 for loaders that don't report one); an update needing a newer one is refused (D11) |
 | `firmware.pending` | The slot with a new firmware on trial (D12), or `null` |
 | `firmware.states` | Per slot: `installed` (from a USB install), `empty` (being written, or an upload failed), `trial`, `kept`, `failed` |
+| `firmware.versions` | Per slot: the firmware's version, read from its image; `null` if the slot is empty or holds no PicoBoot-WiFi image |
 | `chip.stepping` | RP2350 stepping: 2 is A2, 3 is A3, 4 is A4 |
 | `chip.rom` | Boot ROM version |
 | `temperature_c` | RP2350 sensor; it reads low on a low 3.3 V rail |
@@ -196,6 +198,19 @@ An over-the-air update (D11). The body is an update file ([update-format.md](upd
 - **Also:**
   - 409 `on_trial` while the running firmware is itself on trial: the other slot holds the one to fall back to, so it isn't overwritten. Keep the new firmware first, or switch back to the other slot (a reboot alone continues the trial);
   - 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.
+
+## POST /api/boot
+
+The firmware page's choices (D12, D13). The body holds exactly one of:
+
+| Body | What it does | Answer |
+|---|---|---|
+| `{"keep": true}` | Keeps the running firmware, which is on trial: it becomes the active one (D12) | `{"kept": true}`; 409 `not_on_trial` if it isn't on trial |
+| `{"slot": "A"}` or `"B"` | Boots that slot (D13) | `{"rebooting": true}`, then a warm reboot half a second later; `{"rebooting": false}` if it's the running slot already; 409 `not_bootable` if it's empty |
+
+- **To a kept or installed slot,** it becomes the active one. Leaving a firmware that's on trial abandons the trial: that slot stays unkept and is never a fallback.
+- **To a slot that's on trial, unkept or failed,** it goes on trial again (D12).
+- Phase 4 adds the payload and "original IPL once" choices to this endpoint.
 
 ## POST /api/reboot
 

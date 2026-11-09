@@ -18,6 +18,7 @@ set(FIRMWARE_SOURCES
     update.c
     updater.c
     slots.c
+    bininfo.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )

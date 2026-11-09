@@ -21,3 +21,14 @@ bool slots_at_start(bootctl_t *b, uint8_t running, uint32_t loader_flags);
 // pressed Keep: it becomes the active one. The slot it replaces counts as kept from then on, as a
 // firmware that ran (so a later crash loop can fall back to it).
 bool slots_keep(bootctl_t *b, uint8_t running);
+
+// The firmware page's "Boot slot X" (D13); the caller reboots if it returns SLOTS_SWITCHED
+typedef enum {
+    SLOTS_SWITCHED,         // Boot control changed: X becomes the active slot, or goes on trial
+    SLOTS_NOTHING_TO_DO,    // X is the running slot already
+    SLOTS_NOT_BOOTABLE,     // X is empty (perhaps half written)
+} slots_switch_t;
+
+// To a kept or installed slot: it becomes the active one (a trial running now is abandoned: it stays
+// unkept and is never a fallback). To a slot on trial or failed: it goes on trial again (D12).
+slots_switch_t slots_switch(bootctl_t *b, uint8_t running, uint8_t target);

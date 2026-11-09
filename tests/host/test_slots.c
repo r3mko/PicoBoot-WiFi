@@ -122,6 +122,35 @@ static void test_crash_loop_after_keeping(void) {
     CHECK(p.running == BOOTCTL_SLOT_A);
 }
 
+static void test_switch(void) {
+    // To the other, kept slot: it becomes the active one
+    bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED && b.active_slot == BOOTCTL_SLOT_B);
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_B, BOOTCTL_SLOT_B) == SLOTS_NOTHING_TO_DO);
+    // Back from a trial: the trial is abandoned, unkept, and isn't a fallback
+    b = updated_to_b();
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_B, BOOTCTL_SLOT_A) == SLOTS_SWITCHED);
+    CHECK(b.active_slot == BOOTCTL_SLOT_A && b.pending_slot == BOOTCTL_NONE);
+    CHECK(b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_TRIAL);
+    boot_inputs_t in = {.had_por = true, .bootctl = &b};
+    boot_decision_t d = boot_decide(&in);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_NONE);
+    // To an unkept or failed slot: it goes on trial again
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED && b.pending_slot == BOOTCTL_SLOT_B);
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_FAILED;
+    b.pending_slot = BOOTCTL_NONE;
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED);
+    CHECK(b.pending_slot == BOOTCTL_SLOT_B && b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_TRIAL);
+    CHECK(b.active_slot == BOOTCTL_SLOT_A);
+    // Never to an empty slot
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_EMPTY;
+    b.pending_slot = BOOTCTL_NONE;
+    const bootctl_t before = b;
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_NOT_BOOTABLE);
+    CHECK(memcmp(&b, &before, sizeof(b)) == 0);
+}
+
 int main(void) {
     test_keep();
     test_keep_leaves_a_failed_slot_failed();
@@ -130,6 +159,7 @@ int main(void) {
     test_update_kept_after_a_power_on();
     test_failed_update_goes_back_for_good();
     test_crash_loop_after_keeping();
+    test_switch();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

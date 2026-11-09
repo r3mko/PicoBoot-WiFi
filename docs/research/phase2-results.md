@@ -134,3 +134,18 @@ Reboot from the UI while a game ran: **the game kept running**, and Wi-Fi came b
 | G: warm reboot during a game | The game kept running |
 
 **Done when (plan 2.7): results recorded.** Met. The phase's goal (D28), a phone reaching the status page from a closed console, is met.
+
+## 2.8 Code review and re-test (2026-11-09)
+
+**Code review** (a fresh Opus 5.5 reviewer): no high defects; one medium (DNS rebinding past the CSRF guard) and seven low findings, all fixed. They're listed in the implementation plan (phase 2, "Code review of phase 2").
+
+**Re-test before the merge** (the owner's choice), build `90babff`, USB power:
+
+| Check | Result |
+|---|---|
+| Both phones open the UI by themselves; a save from the UI goes through the new Host check | **Passed** |
+| POST with `Host: evil.example` | **Passed:** 403 `{"error":"forbidden",...}`; the same POST to 192.168.4.1 is saved |
+| Country change to Netherlands: the access point restarts, a phone rejoins, Settings shows NL; back to Worldwide | **Passed** (the review's one untested case) |
+| Test page buttons (payload choice) | **Passed** |
+
+**Step 2.8:** review fixes in, re-test passed.

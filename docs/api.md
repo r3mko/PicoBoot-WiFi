@@ -175,7 +175,7 @@ The last boot and the boot log (D22, D39).
 
 An over-the-air update (D11). The body is an update file ([update-format.md](update-format.md)), sent with `Content-Type: application/octet-stream`; the Host rule applies as for every POST. The 1024-byte body limit doesn't apply.
 
-- **The Pico** streams it into the slot that isn't running, erasing and writing flash as it goes, then reads it back. An upload takes about 10 seconds, most of it erasing flash.
+- **The Pico** streams it into the slot that isn't running, erasing and writing flash as it goes, then reads it back. An upload takes a few seconds (4 s on the bench in phase 3), most of it erasing flash.
 - **The answer:**
 
 ```json

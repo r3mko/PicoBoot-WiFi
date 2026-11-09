@@ -58,12 +58,13 @@ else()
     message(FATAL_ERROR "PICOBOOT_WIFI_TEST_CRASH must be empty, startup or after5s")
 endif()
 
-# The Wi-Fi blob: "wifi" (Wi-Fi only, D14) or "bt" (with Bluetooth: a test stand-in for a new blob)
-set(PICOBOOT_WIFI_BLOB "wifi" CACHE STRING "Wi-Fi blob: wifi, or bt for the blob-change test (plan step 3.8)")
-if(PICOBOOT_WIFI_BLOB STREQUAL "bt")
-    string(APPEND PICOBOOT_WIFI_BUILD "-btblob")
+# The Wi-Fi blob: "wifi" (D14), or "marked" (the same with a marker: a test stand-in for a new blob;
+# the SDK's Bluetooth variant doesn't come up without Bluetooth support, phase 3 console test)
+set(PICOBOOT_WIFI_BLOB "wifi" CACHE STRING "Wi-Fi blob: wifi, or marked for the blob-change test (plan step 3.8)")
+if(PICOBOOT_WIFI_BLOB STREQUAL "marked")
+    string(APPEND PICOBOOT_WIFI_BUILD "-newblob")
 elseif(NOT PICOBOOT_WIFI_BLOB STREQUAL "wifi")
-    message(FATAL_ERROR "PICOBOOT_WIFI_BLOB must be wifi or bt")
+    message(FATAL_ERROR "PICOBOOT_WIFI_BLOB must be wifi or marked")
 endif()
 
 # Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release

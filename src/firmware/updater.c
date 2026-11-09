@@ -11,6 +11,9 @@
 #include "json.h"
 #include "layout.h"
 #include "storage.h"
+#include "slots.h"
+#include "bootinfo.h"
+#include "hardware/structs/powman.h"
 #include "hardware/regs/addressmap.h"
 #include "pico/sha256.h"
 
@@ -154,6 +157,10 @@ static int end(bool complete, char *out, size_t size, size_t *len) {
         b.pending_slot = writer.slot;
         if (!storage_bootctl_store(&b)) {
             r = UPDATE_FLASH_WRITE;
+        } else {
+            // A new firmware: the loader tries it even if the slot's last trial failed this session
+            powman_hw->scratch[BOOTINFO_SCRATCH_SESSION] =
+                slots_session_new_trial(powman_hw->scratch[BOOTINFO_SCRATCH_SESSION], writer.slot);
         }
     }
     if (r != UPDATE_OK) {

@@ -14,7 +14,8 @@ Header (little-endian, 64 bytes), then the data exactly as the SDK header's arra
     8   fw_len      firmware bytes (CYW43_WIFI_FW_LEN)
     12  clm_len     CLM bytes (CYW43_CLM_LEN)
     16  data_len    bytes after the header
-    20  reserved    12 bytes of zero
+    20  reserved    12 bytes of zero, or a marker (--marker): text the firmware ignores, which
+                    makes a working blob that differs from the normal one, for update tests
     32  sha256      of the data, to tell blobs apart (design D14)
 """
 
@@ -49,8 +50,11 @@ def parse_sdk_header(text):
     return fw_len, clm_len, data
 
 
-def build_image(fw_len, clm_len, data):
-    header = HEADER.pack(MAGIC, VERSION, fw_len, clm_len, len(data), bytes(12), hashlib.sha256(data).digest())
+def build_image(fw_len, clm_len, data, marker=b""):
+    if len(marker) > 12:
+        raise ValueError(f"the marker is {len(marker)} bytes; at most 12 fit")
+    header = HEADER.pack(MAGIC, VERSION, fw_len, clm_len, len(data), marker.ljust(12, b"\0"),
+                         hashlib.sha256(data).digest())
     assert len(header) == HEADER_SIZE
     return header + data
 
@@ -64,6 +68,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description="Build a Wi-Fi area image from the SDK's CYW43 firmware header.")
     parser.add_argument("header", help="cyw43-driver firmware header, e.g. w43439A0_7_95_49_00_combined.h")
     parser.add_argument("output", help="image to write")
+    parser.add_argument("--marker", default="", help="up to 12 ASCII characters in the spare header bytes (tests)")
     args = parser.parse_args(argv[1:])
     try:
         with open(args.header) as f:
@@ -71,7 +76,11 @@ def main(argv):
     except (OSError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-    image = build_image(fw_len, clm_len, data)
+    try:
+        image = build_image(fw_len, clm_len, data, args.marker.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     limit = wifi_area_size()
     if len(image) > limit:
         print(f"Error: the image is {len(image)} bytes, more than a Wi-Fi area ({limit})", file=sys.stderr)

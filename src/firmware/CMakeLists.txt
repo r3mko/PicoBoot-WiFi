@@ -98,17 +98,18 @@ pico_configure_ip4_address(firmware PRIVATE
 )
 
 # The Wi-Fi area image: the SDK's Wi-Fi-only CYW43439 blob behind our header (tools/mkwifiblob.py)
-# PICOBOOT_WIFI_BLOB=bt takes the variant with Bluetooth instead: another blob with the same Wi-Fi
-# firmware, the stand-in for an update that brings a new blob (plan step 3.8)
-if(PICOBOOT_WIFI_BLOB STREQUAL "bt")
-    set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/wb43439A0_7_95_49_00_combined.h)
-else()
-    set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+# PICOBOOT_WIFI_BLOB=marked: the same blob with a marker in its spare header bytes, a blob that works
+# but differs, the stand-in for an update that brings a new blob (plan step 3.8)
+set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+set(WIFI_BLOB_MARKER_ARGS "")
+if(PICOBOOT_WIFI_BLOB STREQUAL "marked")
+    set(WIFI_BLOB_MARKER_ARGS --marker newblob)
 endif()
 set(WIFI_BLOB_BIN ${CMAKE_BINARY_DIR}/wifi-blob.bin)
 add_custom_command(
     OUTPUT ${WIFI_BLOB_BIN}
     COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${WIFI_BLOB_BIN}
+            ${WIFI_BLOB_MARKER_ARGS}
     DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${CMAKE_SOURCE_DIR}/src/common/layout.h
     COMMENT "Building the Wi-Fi area image"
 )

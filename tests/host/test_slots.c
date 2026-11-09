@@ -122,6 +122,39 @@ static void test_crash_loop_after_keeping(void) {
     CHECK(p.running == BOOTCTL_SLOT_A);
 }
 
+// The phase 3 console test: a trial fails, then a new upload into the same slot in the same session
+// must be tried (it wasn't: the session still said the slot's trial had failed)
+static void test_a_new_trial_in_the_same_session(void) {
+    pico_t p = {.b = updated_to_b()};
+    boot(&p, false, true);                  // Into B's trial...
+    boot(&p, false, false);                 // ...which crashes: back on A, B failed
+    CHECK(p.running == BOOTCTL_SLOT_A && p.b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_FAILED);
+    // A new upload into B: the updater's boot control and session changes, then its reboot
+    p.b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
+    p.b.pending_slot = BOOTCTL_SLOT_B;
+    p.session = slots_session_new_trial(p.session, BOOTCTL_SLOT_B);
+    boot(&p, false, true);
+    CHECK(p.running == BOOTCTL_SLOT_B && (p.flags & BOOTINFO_TRIAL));
+    // Without the session change it would have gone straight back to A
+    pico_t q = {.b = updated_to_b()};
+    boot(&q, false, true);
+    boot(&q, false, false);
+    q.b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
+    q.b.pending_slot = BOOTCTL_SLOT_B;
+    boot(&q, false, true);
+    CHECK(q.running == BOOTCTL_SLOT_A);
+    // Booting a failed slot again works the same way
+    p = (pico_t){.b = updated_to_b()};
+    boot(&p, false, true);
+    boot(&p, false, false);
+    CHECK(slots_switch(&p.b, p.running, BOOTCTL_SLOT_B) == SLOTS_SWITCHED);
+    p.session = slots_session_new_trial(p.session, BOOTCTL_SLOT_B);
+    boot(&p, false, true);
+    CHECK(p.running == BOOTCTL_SLOT_B && (p.flags & BOOTINFO_TRIAL));
+    CHECK(slots_session_new_trial(BOOTINFO_SESSION_FAILED_A | BOOTINFO_SESSION_FAILED_B, BOOTCTL_SLOT_A) ==
+          BOOTINFO_SESSION_FAILED_B);
+}
+
 static void test_switch(void) {
     // To the other, kept slot: it becomes the active one
     bootctl_t b = BOOTCTL_DEFAULT;
@@ -160,6 +193,7 @@ int main(void) {
     test_failed_update_goes_back_for_good();
     test_crash_loop_after_keeping();
     test_switch();
+    test_a_new_trial_in_the_same_session();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

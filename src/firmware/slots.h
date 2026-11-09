@@ -32,3 +32,8 @@ typedef enum {
 // To a kept or installed slot: it becomes the active one (a trial running now is abandoned: it stays
 // unkept and is never a fallback). To a slot on trial or failed: it goes on trial again (D12).
 slots_switch_t slots_switch(bootctl_t *b, uint8_t running, uint8_t target);
+
+// A new trial of `slot` is set up (an upload into it, or slots_switch() putting it on trial again):
+// the session word (BOOTINFO_SCRATCH_SESSION) without its note that the slot's trial failed in this
+// session, so the loader tries the new one before the next power-on (phase 3 console test)
+uint32_t slots_session_new_trial(uint32_t session, uint8_t slot);

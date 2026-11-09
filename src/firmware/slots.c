@@ -63,3 +63,7 @@ slots_switch_t slots_switch(bootctl_t *b, uint8_t running, uint8_t target) {
     }
     return SLOTS_SWITCHED;
 }
+
+uint32_t slots_session_new_trial(uint32_t session, uint8_t slot) {
+    return session & ~(slot == BOOTCTL_SLOT_B ? BOOTINFO_SESSION_FAILED_B : BOOTINFO_SESSION_FAILED_A);
+}

@@ -54,7 +54,9 @@
 #define BOOTINFO_SESSION_LAST_B     (1u << 9)   // ...and it was slot B (else A)
 #define BOOTINFO_SESSION_LAST_TRIAL (1u << 10)  // ...on trial
 #define BOOTINFO_SESSION_FAILED_A   (1u << 11)  // Slot A's trial failed in this session
-#define BOOTINFO_SESSION_FAILED_B   (1u << 12)  // Slot B's trial failed in this session
+#define BOOTINFO_SESSION_FAILED_B   (1u << 12)  // Slot B's trial failed in this session; the
+                                                // firmware clears it when it sets up a new trial
+                                                // of that slot (an upload, or booting it again)
 
 #define BOOTINFO_CRASH_LOOP         3           // Crashes in one session before the fallback (the owner's choice)
 

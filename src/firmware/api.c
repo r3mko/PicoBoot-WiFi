@@ -19,6 +19,7 @@
 #include "slots.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
+#include "hardware/structs/powman.h"
 #include "pico/time.h"
 
 static const page_info_t *info;
@@ -370,6 +371,11 @@ static int post_boot(const char *body, size_t body_len, char *out, size_t size, 
         }
         if (r == SLOTS_SWITCHED && !storage_bootctl_store(&b)) {
             return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        if (r == SLOTS_SWITCHED && b.pending_slot == bb.slot) {
+            // On trial again: the loader tries it even if its last trial failed this session
+            powman_hw->scratch[BOOTINFO_SCRATCH_SESSION] =
+                slots_session_new_trial(powman_hw->scratch[BOOTINFO_SCRATCH_SESSION], (uint8_t)bb.slot);
         }
         json_bool(&j, "rebooting", r == SLOTS_SWITCHED);
         if (r == SLOTS_SWITCHED) {

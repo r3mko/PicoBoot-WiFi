@@ -27,6 +27,7 @@ PROGRAMS = {
     "test_payload.c": ["firmware/payload.c"],
     "test_settings.c": ["firmware/settings.c", "common/records.c"],
     "test_json.c": ["firmware/json.c"],
+    "test_update.c": ["firmware/update.c"],
     "test_wifiblob.c": [],
 }
 

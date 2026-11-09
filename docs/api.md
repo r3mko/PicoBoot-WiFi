@@ -70,7 +70,7 @@ What the status page shows (D22).
 | `firmware.version` | Semver plus the git hash for test builds (D24) |
 | `firmware.slot` | `"A"` or `"B"`: the slot this firmware runs from |
 | `firmware.loader` | The installed loader's version (1 for loaders that don't report one); an update needing a newer one is refused (D11) |
-| `firmware.pending` | The slot with a new firmware on trial (D12), or `null` |
+| `firmware.pending` | The slot with a new firmware on trial (D12), or `null`. When it equals `firmware.slot`, the running firmware is the one on trial |
 | `firmware.states` | Per slot: `installed` (from a USB install), `empty` (being written, or an upload failed), `trial`, `kept`, `failed` |
 | `firmware.versions` | Per slot: the firmware's version, read from its image; `null` if the slot is empty or holds no PicoBoot-WiFi image |
 | `chip.stepping` | RP2350 stepping: 2 is A2, 3 is A3, 4 is A4 |
@@ -195,6 +195,7 @@ An over-the-air update (D11). The body is an update file ([update-format.md](upd
   - `slot` now holds the new firmware, on trial (D12); `blob_written` says whether its Wi-Fi area needed the file's blob (D14).
   - Half a second later the Pico reboots into the trial (D11). The reboot is warm: a running game keeps running (D8). The UI waits for the Pico to come back.
 - **Refusals** answer 400 with the codes of [update-format.md](update-format.md): `not_an_update`, `unsupported_format`, `bad_header`, `wrong_board`, `needs_usb_install`, `bad_size`, `needs_blob`, `bad_image`, `bad_blob`, `incomplete`. A refusal that comes from the header arrives before any flash is touched; the rest leave the other slot empty, never half a firmware.
+- **When the answer comes:** a refusal from the file itself (the header or a hash) comes after the whole body, which the Pico reads and drops. One from the request alone (the type, the Host, `busy`, `on_trial`, `needs_usb_install` without a loader) comes at once, and the Pico may close the connection while the client is still sending: a client should then still read the answer.
 - **Also:**
   - 409 `on_trial` while the running firmware is itself on trial: the other slot holds the one to fall back to, so it isn't overwritten. Keep the new firmware first, or switch back to the other slot (a reboot alone continues the trial);
   - 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.

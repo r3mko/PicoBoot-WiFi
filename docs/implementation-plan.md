@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.3, 2026-11-09 |
+| **Status** | Approved v1.3; draft v1.4 (phase 3 as built) for approval at the end of phase 3 |
 | **Design** | [architecture.md](architecture.md), Approved v1.4 |
 | **Owner** | Remko Kleinjan |
 
@@ -15,6 +15,7 @@
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
 | v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
+| v1.4 draft | 2026-11-09 | Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
 
 ## How this plan works
 
@@ -272,6 +273,17 @@ docs/                       design, plan, research, API, update-file format
 | 3.7 | **Test builds**: a firmware that crashes at start-up and one that crashes after 5 s, as CI artifacts | Opus | Built |
 | 3.8 | **Console tests**:<br>• update A→B, kept after a power-on;<br>• crash build → fallback;<br>• switching slots;<br>• power cut during an upload → the old firmware boots;<br>• update with a different blob (the Bluetooth variant as a stand-in) | Owner | Recorded |
 | 3.9 | **End of phase**: fresh Opus review, fixes, docs, merge | Opus, owner | Merged |
+
+**As built (2026-11-09):** results in [phase3-results.md](research/phase3-results.md); test builds are `0.3.0-dev`.
+
+| Step | What was built | The owner's choices |
+|---|---|---|
+| 3.1 | `docs/update-format.md`: a 256-byte header with the layout and loader versions, then the image and the blob | The blob always in release files; downgrades allowed, with a warning |
+| 3.2 | `tools/mkupdate.py` (Sonnet, reviewed), `build/picoboot-wifi-update.bin` on every build, a CI artifact | |
+| 3.3 | `update.c` (pure, host tested: whole uploads into a simulated flash) and `updater.c`; uploads stream from httpd's POST callbacks straight to flash, so no manual TCP window was needed. A host test feeds the files `mkupdate.py` makes through `update.c`. An upload takes about 4 s | |
+| 3.4 | Loader version 2: the session in POWMAN scratch, a crash being any reset without the firmware's clean-reboot word. The firmware's side in `slots.c` (pure). A watchdog (8 s) and a fault handler. No updates while on trial. Records leave another version's record alone (phase 2 review) | 3 crashes for the crash loop; the fallback for good |
+| 3.5, 3.6 | `POST /api/boot` (keep, boot a slot) and each slot's version from its binary info; the firmware page and the CLI (Sonnet, reviewed) | |
+| 3.7 | `PICOBOOT_WIFI_TEST_CRASH=startup` / `after5s`, as CI artifacts; `PICOBOOT_WIFI_BLOB=bt` for the blob-change test of 3.8 | |
 
 ## Phase 4: payload OTA
 

@@ -2,6 +2,8 @@
 
 Hardware tests from implementation plan phase 2, run by the owner on the `phase-2-wifi` builds.
 
+**Status:** approved by the owner with design v1.4, plan v1.3 and `docs/api.md`; phase 2 merged into `main` on 2026-11-09.
+
 **Setup:** the Pico 2 W from phases 0 and 1 (SSID suffix C2C4, RP2350 A2).
 
 ## Bench check of steps 2.1 and 2.2 (2026-11-08, USB power, no console)

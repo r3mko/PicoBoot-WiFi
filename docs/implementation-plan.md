@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.2; draft v1.3 (phase 2 as built) for approval at the end of phase 2 |
-| **Design** | [architecture.md](architecture.md), Approved v1.3 |
+| **Status** | Approved v1.3, 2026-11-09 |
+| **Design** | [architecture.md](architecture.md), Approved v1.4 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -14,7 +14,7 @@
 | v1.0 | 2026-11-08 | The owner approved the draft with DP1–DP5 ("approved, go ahead with phase 0"). DP1–DP5 are now design decisions D31–D35 (design v1.1). Phase 0 starts. |
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
 | v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
-| v1.3 draft | 2026-11-09 | Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
+| v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 
 ## How this plan works
 
@@ -207,7 +207,7 @@ docs/                       design, plan, research, API, update-file format
 
 ## Phase 2: Wi-Fi
 
-**Branch:** `phase-2-wifi`. **Done when (D28):** a phone reaches the status page from a closed console.
+**Branch:** `phase-2-wifi`, **merged** into `main` on 2026-11-09. **Done when (D28):** a phone reaches the status page from a closed console.
 
 | # | Step | Who | Done when |
 |---|---|---|---|

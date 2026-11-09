@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for phase 2 (plan step 2.3); approved with the phase |
+| **Status** | Approved with phase 2, 2026-11-09 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
 The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot. The other endpoints of D18 come with their phases: firmware upload (phase 3), and payloads, boot choices and backups (phase 4).

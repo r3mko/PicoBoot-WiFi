@@ -49,6 +49,19 @@ static int newest(const uint8_t *area, uint32_t magic, uint16_t version, uint16_
     return v0 ? 0 : (v1 ? 1 : -1);
 }
 
+const record_header_t *record_find_any(const uint8_t *area, uint32_t magic, uint16_t min_version,
+                                       uint16_t min_length) {
+    bool ok[2];
+    for (int i = 0; i < 2; i++) {
+        const record_header_t *r = sector(area, i);
+        ok[i] = record_intact(r, magic) && r->version >= min_version && r->length >= min_length;
+    }
+    if (ok[0] && ok[1]) {
+        return sector(area, (int32_t)(sector(area, 1)->seq - sector(area, 0)->seq) > 0 ? 1 : 0);
+    }
+    return ok[0] ? sector(area, 0) : (ok[1] ? sector(area, 1) : NULL);
+}
+
 // The sector a new record goes to (phase 2 review: firmwares of two versions, one per slot, D12):
 // - one without an intact record of this magic;
 // - else the one with the older record of this version;
@@ -81,12 +94,9 @@ const record_header_t *record_find(const uint8_t *area, uint32_t magic, uint16_t
     return sector(area, i);
 }
 
-bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
-                  const void *payload, uint16_t length) {
-    if (length > RECORD_MAX_PAYLOAD) {
-        return false;
-    }
-    const int target = target_sector(area, magic, version, length);
+// Writes the record into sector `target`, ahead of whatever the other sector holds
+static void write_sector(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
+                         const void *payload, uint16_t length, int target) {
     const int other = 1 - target;
 
     // The new record, padded with 0xFF to whole pages (programming 0xFF leaves flash erased)
@@ -109,6 +119,26 @@ bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t mag
     uint32_t offset = (uint32_t)target * RECORD_SECTOR_SIZE;
     flash->erase_sector(flash->ctx, offset);
     flash->program(flash->ctx, offset, image, pages * RECORD_PAGE_SIZE);
+}
 
+bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
+                  const void *payload, uint16_t length) {
+    if (length > RECORD_MAX_PAYLOAD) {
+        return false;
+    }
+    const int target = target_sector(area, magic, version, length);
+    write_sector(area, flash, magic, version, payload, length, target);
     return newest(area, magic, version, length) == target;
+}
+
+bool record_write_any(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
+                      const void *payload, uint16_t length) {
+    if (length > RECORD_MAX_PAYLOAD) {
+        return false;
+    }
+    // Plain alternation: the sector that doesn't hold the newest intact record of any version
+    const record_header_t *newest_any = record_find_any(area, magic, 0, 0);
+    const int target = newest_any == sector(area, 0) ? 1 : 0;
+    write_sector(area, flash, magic, version, payload, length, target);
+    return record_find_any(area, magic, 0, 0) == sector(area, target);
 }

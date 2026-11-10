@@ -51,15 +51,25 @@ static const record_flash_t settings_flash = {erase_sector, program, (void *)(ui
 static const ringlog_t bootlog = {FLASH_AREA(LAYOUT_BOOTLOG_OFFSET), LAYOUT_BOOTLOG_SIZE, &bootlog_flash};
 
 bool storage_bootctl_load(bootctl_t *out) {
-    const record_header_t *rec = record_find(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), BOOTCTL_MAGIC,
-                                             BOOTCTL_VERSION, sizeof(bootctl_t), NULL);
-    *out = rec ? *(const bootctl_t *)record_payload(rec) : BOOTCTL_DEFAULT;
-    return rec != NULL;
+    // A record of any format: the fields this firmware knows; the ones an older record lacks are zero
+    // (no payload names). A newer one's extra fields are dropped when this firmware writes (D42).
+    const record_header_t *rec = record_find_any(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), BOOTCTL_MAGIC, 1,
+                                                 BOOTCTL_LOADER_BYTES);
+    if (!rec) {
+        *out = BOOTCTL_DEFAULT;
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    memcpy(out, record_payload(rec), rec->length < sizeof(*out) ? rec->length : sizeof(*out));
+    for (int i = 0; i < 2; i++) {
+        out->payload_name[i][BOOTCTL_NAME_MAX] = '\0';     // Whatever the record held
+    }
+    return true;
 }
 
 bool storage_bootctl_store(const bootctl_t *b) {
-    return record_write(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), &bootctl_flash, BOOTCTL_MAGIC, BOOTCTL_VERSION,
-                        b, sizeof(*b));
+    return record_write_any(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), &bootctl_flash, BOOTCTL_MAGIC, BOOTCTL_VERSION,
+                            b, sizeof(*b));
 }
 
 bool storage_settings_load(settings_record_t *out) {

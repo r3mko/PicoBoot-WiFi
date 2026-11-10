@@ -10,6 +10,7 @@
 #include "cyw43_fixed_firmware.h"
 #include "layout.h"
 #include "bootctl.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 
 // Read by the CYW43 driver through CYW43_WIFI_FW_LEN, CYW43_CLM_LEN and fw_data

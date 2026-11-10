@@ -14,6 +14,7 @@
 #include "layout.h"
 #include "sha.h"
 #include "storage.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 
 static const uint32_t slot_offset[2] = {LAYOUT_PAYLOAD1_OFFSET, LAYOUT_PAYLOAD2_OFFSET};

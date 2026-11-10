@@ -18,6 +18,7 @@
 #include "layout.h"
 #include "slots.h"
 #include "payloads.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
 #include "hardware/structs/powman.h"

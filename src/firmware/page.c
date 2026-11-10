@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "payload.h"
 #include "layout.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 
 #define PAYLOAD_BASE(i) ((const uint32_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + \
@@ -57,6 +58,8 @@ void page_init(const page_info_t *i) {
     adc_init();
     adc_set_temp_sensor_enabled(true);
 }
+
+_Static_assert(!PICO_RP2350A || NUM_ADC_CHANNELS == 5, "platform_defs.h came before the board header");
 
 float page_temperature_c(void) {
     adc_select_input(NUM_ADC_CHANNELS - 1);     // The temperature sensor is the last ADC input

@@ -234,8 +234,9 @@ def uf2_payload(data, path):
     return bytes(out)
 
 
-def raw_payload(data, path, exact):
-    """Check a payload's header and footer; returns the payload (cut at the size its header gives)."""
+def raw_payload(data, path):
+    """Check a payload's header and footer; returns the payload, cut at the size its header gives: a
+    flash dump has padding after it, which mustn't count against the slot's size."""
     if data[:8] != PAYLOAD_MAGIC or len(data) < 12:
         raise Refused(f"{path} is not a payload")
     size = struct.unpack_from(">I", data, 8)[0]
@@ -243,8 +244,6 @@ def raw_payload(data, path, exact):
         raise Refused(f"{path} is not a good payload: its size field says {size}")
     if len(data) < size:
         raise Refused(f"{path} is {len(data)} bytes, its header says {size}; the file is cut short")
-    if exact and len(data) != size:
-        raise Refused(f"{path} is {len(data)} bytes, its header says {size}; the file is damaged")
     if data[size - 4:size] != b"PICO":
         raise Refused(f"{path} is not a good payload: it doesn't end with its footer")
     return data[:size]
@@ -265,9 +264,10 @@ def load_payload(path):
     except OSError as e:
         raise Refused(f"can't read {path}: {e.strerror}")
     if data[:4] == UF2_MAGIC:
-        return data, raw_payload(uf2_payload(data, path), path, False), "UF2"
+        return data, raw_payload(uf2_payload(data, path), path), "UF2"
     if data[:8] == PAYLOAD_MAGIC:
-        return data, raw_payload(data, path, True), "raw payload"
+        payload = raw_payload(data, path)
+        return payload, payload, "raw payload" + (", without the padding after it" if len(payload) < len(data) else "")
     if path.lower().endswith(".dol"):
         payload = convert_dol(data, path)
         return payload, payload, ".dol, converted"

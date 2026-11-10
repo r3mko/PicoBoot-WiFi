@@ -545,7 +545,8 @@ class PayloadFileTest(CliTestCase):
     def test_formats(self):
         uf2 = payload_uf2(PAYLOAD, 0xe48bff56, 0xe48bff59)
         for name, data, sent, kind in (("p.bin", PAYLOAD, PAYLOAD, "raw"), ("p.uf2", uf2, uf2, "UF2"),
-                                       ("p.dol", synthetic_dol(), PAYLOAD, "converted")):
+                                       ("p.dol", synthetic_dol(), PAYLOAD, "converted"),
+                                       ("dump.bin", PAYLOAD + b"\xff" * 4096, PAYLOAD, "without the padding")):
             with self.subTest(name=name):
                 body, payload, how = cli.load_payload(self.write(data, name))
                 self.assertEqual((body, payload), (sent, PAYLOAD))
@@ -560,7 +561,6 @@ class PayloadFileTest(CliTestCase):
             "install.uf2": (usb, "not a payload UF2"),
             "damaged.uf2": (uf2[:-7], "UF2 blocks"),
             "cut.bin": (PAYLOAD[:-8], "cut short"),
-            "long.bin": (PAYLOAD + b"x", "damaged"),
             "footer.bin": (PAYLOAD[:-1] + b"X", "footer"),
             "size.bin": (PAYLOAD[:8] + b"\0\0\0\x10" + PAYLOAD[12:], "size"),
             "not_ipl.dol": (synthetic_dol(entry=0x80003100), "Invalid entry point"),

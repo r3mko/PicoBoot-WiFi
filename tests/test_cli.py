@@ -1,21 +1,25 @@
 """Tests for tools/picoboot-wifi.py (the command-line client of docs/api.md), against a mock Pico."""
 
 import contextlib
+import hashlib
 import http.server
 import io
 import json
 import os
 import socket
+import struct
 import tempfile
 import threading
 import time
 import unittest
 from unittest import mock
 
-from helpers import load_tool, run_tool
+from helpers import REPO, load_tool, run_tool
 
 cli = load_tool("picoboot-wifi")
 mk = load_tool("mkupdate")
+mkuf2 = load_tool("mkuf2")
+ipl = load_tool("process_ipl")
 
 IMAGE = bytes(range(256)) * 700
 BLOB = b"W43B" + bytes(60) + b"blob data" * 1000
@@ -58,10 +62,15 @@ class Mock:
                     if answer == ("hang",):
                         time.sleep(1.0)     # Takes the body, never answers (the client times out)
                         return
-                    status, payload = answer
-                data = json.dumps(payload).encode()
+                    status, payload, *extra = answer
+                if isinstance(payload, bytes):      # A file download
+                    data, content_type = payload, "application/octet-stream"
+                else:
+                    data, content_type = json.dumps(payload).encode(), "application/json"
                 self.send_response(status)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", content_type)
+                for name, value in (extra[0] if extra else {}).items():
+                    self.send_header(name, value)
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Connection", "close")
                 self.end_headers()
@@ -433,6 +442,511 @@ class UpdateTest(CliTestCase):
     def test_unreachable(self):
         code, _, err = run(free_port_host(), "update", self.update_file(), "--yes")
         self.assertEqual(code, 3)
+
+
+def synthetic_dol(entry=0x81300000, base=0x81300000, text=bytes(range(200)) * 3):
+    """A one-section DOL with the IPL's addresses (or others)."""
+    header = [0x100] + [0] * 17 + [base] + [0] * 17 + [len(text)] + [0] * 17 + [0, 0, entry] + [0] * 7
+    return struct.pack(">64I", *header) + text
+
+
+def payload_status(chosen="payload1", target="payload2", p1=None, p2=None, once=False):
+    empty = {"valid": False, "name": "", "size": 0, "sha256": None}
+    return {**STATUS, "payloads": {"chosen": chosen, "upload_target": target, "original_ipl_once": once,
+                                   "usb_install": False, "payload1": p1 or empty, "payload2": p2 or empty}}
+
+
+def slot_of(payload, name):
+    return {"valid": True, "name": name, "size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+
+
+PAYLOAD = ipl.dol_to_payload(synthetic_dol())
+PAYLOAD_SHA = hashlib.sha256(PAYLOAD).hexdigest()
+
+
+def payload_uf2(payload, *families):
+    region = [("payload", 0x80000, payload, 0x180000)]
+    return b"".join(mkuf2.build_uf2(region, family) for family in families)
+
+
+class NameRuleTest(unittest.TestCase):
+    def test_examples(self):
+        table = [
+            ("swiss_r2119.dol", "Swiss r2119"),
+            ("gekkoboot_pico.uf2", "Gekkoboot pico"),
+            ("/some/dir/my__game  v2.1.tar.bin", "My game v2.1.tar"),   # only the last extension goes
+            ("  _x_  .bin", "X"),
+            ("café_menu.dol", "Caf menu"),                         # Not printable ASCII: dropped
+            ("élan.dol", "Lan"),
+            ("äö.dol", ""),
+            ("a" * 30 + ".dol", "A" + "a" * 23),
+            ("abcdefghijklmnopqrstuvw_xyz.dol", "Abcdefghijklmnopqrstuvw"),     # cut at 24: no trailing space
+            ("abcdefghijklmnopqrstuv_wxyz.dol", "Abcdefghijklmnopqrstuv w"),
+            ("abcdefghijklmnopqrstuvw__x.dol", "Abcdefghijklmnopqrstuvw"),
+        ]
+        for path, expected in table:
+            with self.subTest(path=path):
+                self.assertEqual(cli.name_from_file(path), expected)
+
+    def test_check_name(self):
+        self.assertEqual(cli.check_name("Swiss r2119"), "Swiss r2119")
+        self.assertEqual(cli.check_name(""), "")
+        self.assertEqual(cli.check_name("a" * 24), "a" * 24)
+        for bad in ("a" * 25, "café", "tab\there", "new\nline"):
+            with self.subTest(bad=bad), self.assertRaises(cli.Refused):
+                cli.check_name(bad)
+
+
+class ConverterCopyTest(unittest.TestCase):
+    """The CLI carries a copy of tools/process_ipl.py's converter; the copy must stay identical."""
+
+    def test_bundled_ipl(self):
+        with open(os.path.join(REPO, "assets", "ipl", "gekkoboot_r9_4.dol"), "rb") as f:
+            dol = f.read()
+        self.assertEqual(cli.dol_to_payload(dol), ipl.dol_to_payload(dol))
+        self.assertEqual(len(cli.dol_to_payload(dol)), 60548)       # As gekkoboot_pico.uf2 holds it
+
+    def test_synthetic_dols(self):
+        for text in (b"\0", b"x", bytes(range(256)) * 5, b"abc" * 1001):
+            with self.subTest(size=len(text)):
+                dol = synthetic_dol(text=text)
+                self.assertEqual(cli.dol_to_payload(dol), ipl.dol_to_payload(dol))
+        self.assertEqual(cli.scramble(bytearray(range(100))), ipl.scramble(bytearray(range(100))))
+
+    def test_the_same_errors(self):
+        for dol in (synthetic_dol(entry=0x80003100), synthetic_dol(base=0x80003100), b"\0" * 10,
+                    bytes(256), synthetic_dol()[:-5]):
+            with self.subTest(size=len(dol)):
+                with self.assertRaises(ValueError) as want:
+                    ipl.dol_to_payload(dol)
+                with self.assertRaises(ValueError) as got:
+                    cli.dol_to_payload(dol)
+                self.assertEqual(str(got.exception), str(want.exception))
+
+
+class PayloadStatusTest(CliTestCase):
+    def test_status_shows_the_payloads(self):
+        st = payload_status(p1=slot_of(PAYLOAD, "Swiss r2119"), once=True)
+        self.pico.route("GET", "/api/status", (200, st))
+        code, out, err = self.cli("status")
+        self.assertEqual(code, 0, err)
+        for text in ("payload1 chosen", "original IPL once: yes", "Payload 1: Swiss r2119", "KB",
+                     "Payload 2: empty, next upload goes here"):
+            self.assertIn(text, out)
+
+    def test_status_without_payloads_is_as_before(self):
+        self.pico.route("GET", "/api/status", (200, STATUS))
+        code, out, err = self.cli("status")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("Payload", out)
+
+
+class PayloadFileTest(CliTestCase):
+    def test_formats(self):
+        uf2 = payload_uf2(PAYLOAD, 0xe48bff56, 0xe48bff59)
+        for name, data, sent, kind in (("p.bin", PAYLOAD, PAYLOAD, "raw"), ("p.uf2", uf2, uf2, "UF2"),
+                                       ("p.dol", synthetic_dol(), PAYLOAD, "converted")):
+            with self.subTest(name=name):
+                body, payload, how = cli.load_payload(self.write(data, name))
+                self.assertEqual((body, payload), (sent, PAYLOAD))
+                self.assertIn(kind, how)
+
+    def test_refused_locally(self):
+        usb = mkuf2.build_uf2([("slot A", 0x200000, bytes(range(256)) * 16, 0x40000)])
+        uf2 = payload_uf2(PAYLOAD, 0xe48bff56)
+        bad = {
+            "notes.txt": (b"hello" * 100, "not a payload"),
+            "empty.bin": (b"", "not a payload"),
+            "install.uf2": (usb, "not a payload UF2"),
+            "damaged.uf2": (uf2[:-7], "UF2 blocks"),
+            "cut.bin": (PAYLOAD[:-8], "cut short"),
+            "long.bin": (PAYLOAD + b"x", "damaged"),
+            "footer.bin": (PAYLOAD[:-1] + b"X", "footer"),
+            "size.bin": (PAYLOAD[:8] + b"\0\0\0\x10" + PAYLOAD[12:], "size"),
+            "not_ipl.dol": (synthetic_dol(entry=0x80003100), "Invalid entry point"),
+            "short.dol": (b"\0" * 10, "DOL header"),
+        }
+        for name, (data, text) in bad.items():
+            with self.subTest(name=name):
+                code, _, err = self.cli("payload", "upload", self.write(data, name), "--yes")
+                self.assertEqual(code, 1)
+                self.assertIn(text, err)
+        self.assertEqual(self.pico.requests, [])
+
+
+class PayloadUploadTest(CliTestCase):
+    ANSWER = {"installed": True, "slot": "payload2", "name": "Gekkoboot pico", "size": len(PAYLOAD),
+              "sha256": PAYLOAD_SHA}
+
+    def setUp(self):
+        super().setUp()
+        self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(b"old", "Swiss r2119"))))
+        self.pico.route("POST", "/api/payload", (200, self.ANSWER))
+
+    def uploads(self):
+        return [r for r in self.pico.requests if r["path"] == "/api/payload"]
+
+    def test_raw_upload(self):
+        path = self.write(PAYLOAD, "gekkoboot_pico.bin")
+        code, out, err = self.cli("payload", "upload", path)
+        self.assertEqual(code, 0, err)
+        up = self.uploads()[0]
+        self.assertEqual(up["body"], PAYLOAD)
+        self.assertEqual(up["headers"]["Content-Type"], "application/octet-stream")
+        self.assertEqual(up["headers"]["X-Name"], "Gekkoboot pico")
+        self.assertEqual(up["headers"]["Host"], self.pico.host)
+        self.assertEqual(int(up["headers"]["Content-Length"]), len(PAYLOAD))
+        self.assertIn("Uploading into payload 2; payload 1 stays as it is", out)
+        self.assertIn(PAYLOAD_SHA, out)
+        self.assertIn("Uploading 100%", err)
+
+    def test_uf2_is_sent_as_it_is(self):
+        uf2 = payload_uf2(PAYLOAD, 0xe48bff56, 0xe48bff59)
+        code, out, err = self.cli("payload", "upload", self.write(uf2, "swiss_r2119.uf2"), "--name", "Mine")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.uploads()[0]["body"], uf2)
+        self.assertEqual(self.uploads()[0]["headers"]["X-Name"], "Mine")
+        self.assertIn(PAYLOAD_SHA, out)
+
+    def test_dol_is_converted(self):
+        code, out, err = self.cli("payload", "upload", self.write(synthetic_dol(), "swiss_r2119.dol"), "--yes")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.uploads()[0]["body"], PAYLOAD)
+        self.assertEqual(self.uploads()[0]["headers"]["X-Name"], "Swiss r2119")
+
+    def test_the_target_comes_from_the_status(self):
+        self.pico.route("GET", "/api/status", (200, payload_status("payload2", "payload1")))
+        code, out, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"))
+        self.assertEqual(code, 0, err)
+        self.assertIn("into payload 1; payload 2 stays", out)
+
+    def test_replacing_asks(self):
+        self.pico.route("GET", "/api/status", (200, payload_status("payload1", "payload2",
+                                                                 p2=slot_of(b"old", "Old one"))))
+        path = self.write(PAYLOAD, "a.bin")
+        code, out, err = self.cli("payload", "upload", path, stdin="n\n")
+        self.assertEqual(code, 1)
+        self.assertIn("Old one", err)
+        self.assertEqual(self.uploads(), [])
+        code, out, err = self.cli("payload", "upload", path, stdin="y\n")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self.uploads()), 1)
+
+    def test_bad_name_before_any_request(self):
+        code, _, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"), "--name", "x" * 25)
+        self.assertEqual(code, 1)
+        self.assertIn("24", err)
+        self.assertEqual(self.pico.requests, [])
+
+    def test_a_different_sha_in_the_answer_is_an_error(self):
+        self.pico.route("POST", "/api/payload", (200, {**self.ANSWER, "sha256": "0" * 64}))
+        code, _, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"))
+        self.assertEqual(code, 1)
+        self.assertIn("not the one sent", err)
+
+    def test_refusals_from_the_pico(self):
+        self.pico.route("POST", "/api/payload", (400, {"error": "too_large", "message": "the payload is too large"}))
+        code, _, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"))
+        self.assertEqual(code, 1)
+        self.assertIn("too large", err)
+        self.pico.route("POST", "/api/payload", (503, {"error": "busy", "message": "a transfer is running"}))
+        code, _, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"))
+        self.assertEqual(code, 1)
+        self.assertIn("a transfer is running", err)
+
+    def test_a_lost_answer_is_checked(self):
+        patcher = mock.patch.object(cli, "UPLOAD_READ_TIMEOUT", 0.3)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        uf2 = payload_uf2(PAYLOAD, 0xe48bff56)
+        for name, data in (("a.bin", PAYLOAD), ("a.uf2", uf2), ("a.dol", synthetic_dol())):
+            with self.subTest(name=name):
+                self.pico.route("POST", "/api/payload", ("hang",))
+                self.pico.route("GET", "/api/status", (200, payload_status()),
+                                (200, payload_status("payload2", "payload1", p2=slot_of(PAYLOAD, "A"))))
+                code, out, err = self.cli("--timeout", "0.5", "payload", "upload", self.write(data, name), "--yes")
+                self.assertEqual(code, 0, err)
+                self.assertIn("checking what happened", err)
+                self.assertIn("went through", out)
+                self.assertIn(PAYLOAD_SHA, out)
+
+    def test_a_lost_answer_and_nothing_there(self):
+        patcher = mock.patch.object(cli, "UPLOAD_READ_TIMEOUT", 0.3)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for after in (payload_status(), payload_status("payload1", "payload2", p2=slot_of(b"other", "Other"))):
+            self.pico.route("POST", "/api/payload", ("hang",))
+            self.pico.route("GET", "/api/status", (200, payload_status()), (200, after))
+            code, _, err = self.cli("--timeout", "0.5", "payload", "upload", self.write(PAYLOAD, "a.bin"), "--yes")
+            self.assertEqual(code, 1)
+            self.assertIn("didn't go through", err)
+
+    def test_unreachable(self):
+        code, _, err = run(free_port_host(), "payload", "upload", self.write(PAYLOAD, "a.bin"), "--yes")
+        self.assertEqual(code, 3)
+
+    def test_old_firmware_without_payloads(self):
+        self.pico.route("GET", "/api/status", (200, STATUS))
+        code, _, err = self.cli("payload", "upload", self.write(PAYLOAD, "a.bin"), "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("no payload support", err)
+
+
+class PayloadCommandsTest(CliTestCase):
+    def assert_post(self, path, body):
+        req = self.pico.requests[-1]
+        self.assertEqual((req["method"], req["path"]), ("POST", path))
+        self.assertEqual(req["headers"]["Content-Type"], "application/json")
+        self.assertEqual(json.loads(req["body"]), body)
+
+    def test_choose(self):
+        self.pico.route("POST", "/api/boot", (200, {"payload": "builtin"}))
+        code, out, err = self.cli("payload", "choose", "builtin")
+        self.assertEqual(code, 0, err)
+        self.assert_post("/api/boot", {"payload": "builtin"})
+        self.pico.route("POST", "/api/boot", (409, {"error": "not_valid", "message": "payload 2 holds no valid payload"}))
+        code, _, err = self.cli("payload", "choose", "payload2")
+        self.assertEqual(code, 1)
+        self.assertIn("holds no valid payload", err)
+        self.assertEqual(self.cli("payload", "choose", "payload3")[0], 2)
+
+    def test_rename(self):
+        self.pico.route("POST", "/api/payload/name", (200, {"slot": "payload1", "name": "Swiss"}))
+        code, out, err = self.cli("payload", "rename", "payload1", "Swiss")
+        self.assertEqual(code, 0, err)
+        self.assert_post("/api/payload/name", {"slot": "payload1", "name": "Swiss"})
+        count = len(self.pico.requests)
+        code, _, err = self.cli("payload", "rename", "payload1", "x" * 25)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.pico.requests), count)
+
+    def test_delete(self):
+        self.pico.route("POST", "/api/payload/delete", (200, {"slot": "payload2", "deleted": True}))
+        code, out, err = self.cli("payload", "delete", "payload2", "--yes")
+        self.assertEqual(code, 0, err)
+        self.assert_post("/api/payload/delete", {"slot": "payload2"})
+        self.pico.requests.clear()
+        code, out, err = self.cli("payload", "delete", "payload2", stdin="n\n")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.pico.requests, [])
+        code, out, err = self.cli("payload", "delete", "payload2", stdin="y\n")
+        self.assertEqual(code, 0, err)
+
+    def test_delete_the_chosen_one(self):
+        self.pico.route("POST", "/api/payload/delete",
+                        (409, {"error": "chosen", "message": "payload 1 is the choice; choose another first"}))
+        code, _, err = self.cli("payload", "delete", "payload1", "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("is the choice", err)
+
+    def test_ipl_once(self):
+        self.pico.route("POST", "/api/boot", (200, {"original_ipl_once": True}))
+        code, out, err = self.cli("ipl-once")
+        self.assertEqual(code, 0, err)
+        self.assert_post("/api/boot", {"original_ipl_once": True})
+        code, out, err = self.cli("ipl-once", "--off")
+        self.assertEqual(code, 0, err)
+        self.assert_post("/api/boot", {"original_ipl_once": False})
+
+    def test_convert_needs_no_pico(self):
+        path = self.write(synthetic_dol(), "swiss_r2119.dol")
+        code, out, err = run(free_port_host(), "payload", "convert", path)
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(self.tmp.name, "swiss_r2119.bin"), "rb") as f:
+            self.assertEqual(f.read(), PAYLOAD)
+        self.assertIn(PAYLOAD_SHA, out)
+
+    def test_convert_does_not_overwrite(self):
+        path = self.write(synthetic_dol(), "a.dol")
+        target = self.write(b"mine", "a.bin")
+        code, _, err = self.cli("payload", "convert", path)
+        self.assertEqual(code, 1)
+        self.assertIn("--force", err)
+        with open(target, "rb") as f:
+            self.assertEqual(f.read(), b"mine")
+        code, _, err = self.cli("payload", "convert", path, "--force")
+        self.assertEqual(code, 0, err)
+        with open(target, "rb") as f:
+            self.assertEqual(f.read(), PAYLOAD)
+        other = os.path.join(self.tmp.name, "other.bin")
+        self.assertEqual(self.cli("payload", "convert", path, "-o", other)[0], 0)
+        self.assertTrue(os.path.exists(other))
+
+    def test_convert_refuses_a_non_ipl_dol(self):
+        path = self.write(synthetic_dol(entry=0x80003100), "game.dol")
+        code, _, err = self.cli("payload", "convert", path)
+        self.assertEqual(code, 1)
+        self.assertIn("Invalid entry point", err)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "game.bin")))
+
+
+class BackupTest(CliTestCase):
+    def disposition(self, name):
+        return {"Content-Disposition": f'attachment; filename="{name}"'}
+
+    def setUp(self):
+        super().setUp()
+        self.cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.addCleanup(os.chdir, self.cwd)
+
+    def read(self, name):
+        with open(os.path.join(self.tmp.name, name), "rb") as f:
+            return f.read()
+
+    def test_payload(self):
+        self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "Swiss r2119"))))
+        self.pico.route("GET", "/api/backup/payload1", (200, PAYLOAD, self.disposition("Swiss r2119.bin")))
+        code, out, err = self.cli("backup", "payload1")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.read("Swiss r2119.bin"), PAYLOAD)
+        self.assertIn(PAYLOAD_SHA, out)
+        self.assertEqual(self.pico.requests[-1]["headers"]["Host"], self.pico.host)
+
+    def test_only_the_base_name_of_the_header_is_used(self):
+        self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "x"))))
+        for evil in ("../../evil.bin", "/tmp/evil.bin", "..\\..\\evil.bin"):
+            with self.subTest(evil=evil):
+                self.pico.route("GET", "/api/backup/payload1", (200, PAYLOAD, self.disposition(evil)))
+                code, out, err = self.cli("backup", "payload1", "--force")
+                self.assertEqual(code, 0, err)
+                self.assertEqual(self.read("evil.bin"), PAYLOAD)
+        self.assertEqual(os.listdir(self.tmp.name), ["evil.bin"])
+
+    def test_output_overrides_the_name(self):
+        self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "x"))))
+        self.pico.route("GET", "/api/backup/payload1", (200, PAYLOAD, self.disposition("x.bin")))
+        out_path = os.path.join(self.tmp.name, "mine.bin")
+        code, _, err = self.cli("backup", "payload1", "-o", out_path)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.read("mine.bin"), PAYLOAD)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "x.bin")))
+
+    def test_a_wrong_sha256_is_not_saved(self):
+        self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "x"))))
+        damaged = bytearray(PAYLOAD)
+        damaged[100] ^= 1
+        self.pico.route("GET", "/api/backup/payload1", (200, bytes(damaged), self.disposition("x.bin")))
+        code, _, err = self.cli("backup", "payload1")
+        self.assertEqual(code, 1)
+        self.assertIn("doesn't match", err)
+        self.assertEqual(os.listdir(self.tmp.name), [])
+
+    def test_an_empty_slot_and_busy(self):
+        self.pico.route("GET", "/api/status", (200, payload_status()))
+        self.pico.route("GET", "/api/backup/payload2", (409, {"error": "not_valid", "message": "payload 2 is empty"}))
+        code, _, err = self.cli("backup", "payload2")
+        self.assertEqual(code, 1)
+        self.assertIn("payload 2 is empty", err)
+        self.pico.route("GET", "/api/backup/settings", (503, {"error": "busy", "message": "an upload is running"}))
+        code, _, err = self.cli("backup", "settings")
+        self.assertEqual(code, 1)
+        self.assertIn("an upload is running", err)
+        self.assertEqual(os.listdir(self.tmp.name), [])
+
+    def test_firmware(self):
+        update = mk.build_update(IMAGE, BLOB, "0.4.0", "pico2_w", True)
+        self.pico.route("GET", "/api/backup/firmware", (200, update, self.disposition("picoboot-wifi-0.4.0-update.bin")))
+        code, out, err = self.cli("backup", "firmware")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.read("picoboot-wifi-0.4.0-update.bin"), update)
+        self.assertIn("0.4.0", out)
+
+    def test_a_damaged_update_file_is_not_saved(self):
+        update = mk.build_update(IMAGE, BLOB, "0.4.0", "pico2_w", True)
+
+        def flip(offset):
+            data = bytearray(update)
+            data[offset] ^= 1
+            return bytes(data)
+
+        bad = {
+            "image": (flip(300), "image SHA-256"),
+            "blob": (flip(len(update) - 5), "blob SHA-256"),
+            "header": (flip(60), "header SHA-256"),
+            "short": (update[:-1], "bytes, its header says"),
+            "long": (update + b"x", "bytes, its header says"),
+            "not an update": (b"hello" * 100, "not a PicoBoot-WiFi update"),
+        }
+        for name, (data, text) in bad.items():
+            with self.subTest(name=name):
+                self.pico.route("GET", "/api/backup/firmware", (200, data, self.disposition("f.bin")))
+                code, _, err = self.cli("backup", "firmware")
+                self.assertEqual(code, 1)
+                self.assertIn(text, err)
+        self.assertEqual(os.listdir(self.tmp.name), [])
+
+    def test_settings(self):
+        settings = {"ssid": "", "country": "XX", "channel": 6, "tx_power": "medium", "auto_off_minutes": 10, "led": True}
+        self.pico.route("GET", "/api/backup/settings",
+                        (200, json.dumps(settings).encode(), self.disposition("picoboot-wifi-settings.json")))
+        code, out, err = self.cli("backup", "settings")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(self.read("picoboot-wifi-settings.json")), settings)
+        for body in (b"not json {", b"[1, 2]"):
+            self.pico.route("GET", "/api/backup/settings", (200, body, self.disposition("s.json")))
+            code, _, err = self.cli("backup", "settings", "--force")
+            self.assertEqual(code, 1)
+            self.assertIn("not a JSON object", err)
+
+    def test_no_overwrite_without_force(self):
+        settings = b'{"led": true}'
+        self.pico.route("GET", "/api/backup/settings", (200, settings, self.disposition("picoboot-wifi-settings.json")))
+        existing = self.write(b"mine", "picoboot-wifi-settings.json")
+        code, _, err = self.cli("backup", "settings")
+        self.assertEqual(code, 1)
+        self.assertIn("--force", err)
+        self.assertEqual(self.read("picoboot-wifi-settings.json"), b"mine")
+        self.pico.requests.clear()
+        code, _, err = self.cli("backup", "settings", "-o", existing)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.pico.requests, [])        # -o is checked before the download
+        code, _, err = self.cli("backup", "settings", "--force")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.read("picoboot-wifi-settings.json"), settings)
+
+    def test_without_content_disposition(self):
+        self.pico.route("GET", "/api/backup/settings", (200, b"{}"))
+        code, _, err = self.cli("backup", "settings")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.read("picoboot-wifi-settings.json"), b"{}")
+
+    def test_unreachable(self):
+        code, _, err = run(free_port_host(), "backup", "settings", "-o", os.path.join(self.tmp.name, "s.json"))
+        self.assertEqual(code, 3)
+
+
+class RestoreSettingsTest(CliTestCase):
+    def test_restore(self):
+        settings = {"ssid": "Mine", "channel": 11}
+        self.pico.route("POST", "/api/settings", (200, {"saved": True, "wifi_restart": True, "ssid_in_use": "Mine"}))
+        code, out, err = self.cli("restore-settings", self.write(json.dumps(settings).encode(), "s.json"))
+        self.assertEqual(code, 0, err)
+        req = self.pico.requests[0]
+        self.assertEqual((req["method"], req["path"]), ("POST", "/api/settings"))
+        self.assertEqual(req["headers"]["Content-Type"], "application/json")
+        self.assertEqual(json.loads(req["body"]), settings)
+        self.assertIn("restarts", out)
+        self.assertIn("Mine", out)
+
+    def test_no_restart(self):
+        self.pico.route("POST", "/api/settings", (200, {"saved": True, "wifi_restart": False, "ssid_in_use": "x"}))
+        code, out, err = self.cli("restore-settings", self.write(b'{"led": false}', "s.json"))
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("restarts", out)
+
+    def test_refused_and_bad_files(self):
+        self.pico.route("POST", "/api/settings", (400, {"error": "bad_value", "message": "channel must be 1 to 11"}))
+        code, _, err = self.cli("restore-settings", self.write(b'{"channel": 99}', "s.json"))
+        self.assertEqual(code, 1)
+        self.assertIn("channel must be", err)
+        count = len(self.pico.requests)
+        for data in (b"not json", b"[1]"):
+            code, _, err = self.cli("restore-settings", self.write(data, "t.json"))
+            self.assertEqual(code, 1)
+        code, _, err = self.cli("restore-settings", os.path.join(self.tmp.name, "missing.json"))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.pico.requests), count)
 
 
 if __name__ == "__main__":

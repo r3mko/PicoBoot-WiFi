@@ -246,7 +246,8 @@ def confirm(question, yes):
 
 def cmd_update(args):
     version, size = read_update_header(args.file)       # before any request
-    running = get_status(args).get("firmware", {}).get("version")
+    before = get_status(args).get("firmware", {})
+    running = before.get("version")
     print(f"Update file: {version}\nRunning:     {running}")
     cmp = compare_versions(version, running)
     if cmp is None:
@@ -260,7 +261,15 @@ def cmd_update(args):
     if not confirm(question, args.yes):
         print("Cancelled.")
         raise Cancelled()
-    body = check(*upload(args, args.file, size))
+    try:
+        body = check(*upload(args, args.file, size))
+    except Unreachable:
+        # The whole file may have gone through with only the answer lost: ask the Pico what it did
+        if args.no_wait:
+            raise
+        sys.stderr.write("No answer from the Pico; checking what happened...\n")
+        report_unanswered(wait_for_pico(args), before)
+        return
     print(f"Installed {body.get('version')} in slot {body.get('slot')}, on trial.")
     if body.get("rebooting") and not args.no_wait:
         st = wait_for_pico(args)
@@ -270,6 +279,19 @@ def cmd_update(args):
             # It crashed on trial and the loader went back (D12)
             raise Refused(f"the new firmware didn't come up: the Pico went back to slot {fw.get('slot')}, "
                           f"and slot {body.get('slot')} is marked failed")
+
+
+def report_unanswered(st, before):
+    """After an upload without an answer: say what the status shows, by the slot it would go into."""
+    fw = st.get("firmware", {})
+    target = "B" if before.get("slot") == "A" else "A"
+    print(status_line(st))
+    if fw.get("slot") == target and fw.get("pending") == target:
+        print(f"The update went through: slot {target} runs it on trial.")
+        return
+    state = (fw.get("states") or {}).get(target)
+    raise Refused(f"the upload's answer was lost, and slot {target} is {state}: the update didn't go through, "
+                  "or its trial failed; try again")
 
 
 def cmd_keep(args):

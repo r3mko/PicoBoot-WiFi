@@ -8,6 +8,7 @@ import os
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -53,7 +54,11 @@ class Mock:
                 if answers is None:
                     status, payload = 404, {"error": "not_found", "message": "no such endpoint"}
                 else:
-                    status, payload = answers.pop(0) if len(answers) > 1 else answers[0]
+                    answer = answers.pop(0) if len(answers) > 1 else answers[0]
+                    if answer == ("hang",):
+                        time.sleep(1.0)     # Takes the body, never answers (the client times out)
+                        return
+                    status, payload = answer
                 data = json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
@@ -340,6 +345,24 @@ class UpdateTest(CliTestCase):
         self.assertEqual(code, 1)
         self.assertIn("didn't come up", err)
         self.assertIn("slot A", err)
+
+    def test_a_lost_answer_is_checked(self):
+        # Phase 3 bench: the whole file went in, but the answer never came back
+        patcher = mock.patch.object(cli, "UPLOAD_READ_TIMEOUT", 0.3)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.pico.route("POST", "/api/firmware", ("hang",))
+        self.pico.route("GET", "/api/status", (200, STATUS), (200, TRIAL_STATUS))
+        code, out, err = self.cli("--timeout", "0.5", "update", self.update_file(), "--yes")
+        self.assertEqual(code, 0, err)
+        self.assertIn("checking what happened", err)
+        self.assertIn("went through", out)
+        self.pico.route("POST", "/api/firmware", ("hang",))
+        self.pico.route("GET", "/api/status", (200, STATUS),
+                        (200, {**STATUS, "firmware": {**STATUS["firmware"], "states": {"A": "kept", "B": "empty"}}}))
+        code, out, err = self.cli("--timeout", "0.5", "update", self.update_file(), "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("slot B is empty", err)
 
     def test_no_wait(self):
         code, out, _ = self.cli("update", self.update_file(), "--yes", "--no-wait")

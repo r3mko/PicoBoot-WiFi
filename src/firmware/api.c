@@ -484,7 +484,9 @@ static int post_payload(bool rename, const char *body, size_t body_len, char *ou
     const int status = rename ? payloads_rename((uint8_t)pb.slot, pb.name, &code, &message)
                               : payloads_delete((uint8_t)pb.slot, &code, &message);
     if (status != 200) {
-        return error(out, size, len, status, code, message, rename ? "name" : "slot");
+        // The field only when it's the cause: the name (400) or the slot (409 chosen), not busy or flash
+        return error(out, size, len, status, code, message,
+                     status == 400 || status == 409 ? (rename ? "name" : "slot") : NULL);
     }
     json_out_t j;
     json_init(&j, out, size);

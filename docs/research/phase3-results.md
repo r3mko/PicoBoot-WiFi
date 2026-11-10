@@ -2,6 +2,8 @@
 
 Hardware tests from implementation plan phase 3, run by the owner on the `phase-3-firmware-ota` builds.
 
+**Status:** approved by the owner with design v1.5, plan v1.4, `docs/update-format.md` and `docs/api.md`; phase 3 merged into `main` on 2026-11-10.
+
 **Setup:** the Pico 2 W from phases 0 to 2 (SSID suffix C2C4, RP2350 A2); `curl` from a Mac joined to the access point.
 
 ## Bench check of step 3.3 (2026-11-09, USB power, no console)

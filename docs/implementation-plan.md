@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.3; draft v1.4 (phase 3 as built) for approval at the end of phase 3 |
-| **Design** | [architecture.md](architecture.md), Approved v1.4 |
+| **Status** | Approved v1.4, 2026-11-10 |
+| **Design** | [architecture.md](architecture.md), Approved v1.5 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -15,7 +15,7 @@
 | v1.1 | 2026-11-08 | Approved by the owner. Phase 0 as built (see its "As built" note), and what its results change. **Phase 1:** a new step 1.3 for the glitch protection (D36), the last flash sector kept free (D37), the RP2350 stepping in the report, and a glitch check among the console tests. **Phase 2:** notes on lwIP (DHCP, send buffer) and the Tx power default. **Phase 5:** the 5 V recommendation (D38) in the README. Phase 1's steps are renumbered 1.1–1.12. |
 | v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
-| v1.4 draft | 2026-11-09 | Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
+| v1.4 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
 
 ## How this plan works
 
@@ -260,7 +260,7 @@ docs/                       design, plan, research, API, update-file format
 
 ## Phase 3: firmware OTA
 
-**Branch:** `phase-3-firmware-ota`. **Done when (D28):** an update, a failed trial and a switch all work in the console without USB.
+**Branch:** `phase-3-firmware-ota`, **merged** into `main` on 2026-11-10. **Done when (D28):** an update, a failed trial and a switch all work in the console without USB.
 
 | # | Step | Who | Done when |
 |---|---|---|---|

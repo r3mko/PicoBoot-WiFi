@@ -530,7 +530,7 @@ class PayloadStatusTest(CliTestCase):
         self.pico.route("GET", "/api/status", (200, st))
         code, out, err = self.cli("status")
         self.assertEqual(code, 0, err)
-        for text in ("payload1 chosen", "original IPL once: yes", "Payload 1: Swiss r2119", "KB",
+        for text in ("payload 1 chosen", "original IPL once: yes", "Payload 1: Swiss r2119", "KB",
                      "Payload 2: empty, next upload goes here"):
             self.assertIn(text, out)
 

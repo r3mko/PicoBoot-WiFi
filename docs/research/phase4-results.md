@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 4, run by the owner on the `phase-4-payload-ota` builds.
 
-**Status:** in progress (steps 4.1 to 4.4 checked on the bench).
+**Status:** in progress (steps 4.1 to 4.7 checked on the bench; the phones and the console tests of 4.8 to come).
 
 **Setup:** the Pico 2 W from phases 0 to 3 (SSID suffix C2C4, RP2350 A2); `curl` and `tools/picoboot-wifi.py` from a Mac joined to the access point. The payloads are the release files Swiss r2119 (`PicoBoot/swiss_r2119.uf2`, RP2040 and RP2350 blocks) and gekkoboot r9.4 (`gekkoboot_pico.uf2`, RP2040 blocks only).
 
@@ -37,3 +37,20 @@ Build `eb21cfb`, installed over Wi-Fi with the CLI and kept. Payload 1 holds Swi
 | The test page's boot log for the IPL-once boot | **Passed:** `-` for the payload, transfers and CS |
 
 **Finding:** downloads run at about 0.3 to 0.6 MB/s, a few seconds for a payload. The busy answer of the delete named the field `slot`; it now names a field only when the field is the cause.
+
+## Bench check of steps 4.5 to 4.7 (2026-11-11, USB power, no console)
+
+Build `e1a2ad5`, installed over Wi-Fi with the CLI and kept (slot B). The web UI on the Mac, then the CLI.
+
+| Check | Result |
+|---|---|
+| The page: `gekkoboot_r9_4.dol` converted in the browser and uploaded | **Passed:** into payload 2 as "Gekkoboot r9 4", the name the page made from the file name |
+| The page: delete payload 1, upload `swiss_r2119.uf2` into it | **Passed:** payload 1 holds "Swiss r2119" |
+| CLI `status` | **Passed:** the payloads, their names and sizes, the next upload's slot, original IPL once |
+| CLI `payload convert` of Swiss's regular `.dol` | **Passed:** refused, "Invalid entry point or base address: 0x80397940 / 0x00397940", as `process_ipl.py` says |
+| CLI `payload upload gekkoboot_pico.uf2` | **Passed:** asked before replacing payload 2's "Gekkoboot r9 4"; installed as "Gekkoboot pico", SHA-256 `0614b3f7…` |
+| CLI `payload choose`, `ipl-once`, `ipl-once --off` | **Passed:** the status shows each |
+| CLI `backup payload2`, `firmware`, `settings` | **Passed:** saved under the Pico's file names (`Gekkoboot pico.bin`, `picoboot-wifi-0.4.0-dev+e1a2ad5-update.bin`, `picoboot-wifi-settings.json`), each checked first |
+| CLI `restore-settings` | **Passed:** saved, no Wi-Fi restart |
+
+**Finding:** the CLI named slots as the API does in two places ("payload1 chosen"); it now says "payload 1", like the rest of its output.

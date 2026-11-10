@@ -420,7 +420,7 @@ def print_status(st):
         print("             The password is still the default; change it in the settings.")
     pl = st.get("payloads")
     if pl:
-        line = f"Payloads:    {pl.get('chosen')} chosen; original IPL once: {'yes' if pl.get('original_ipl_once') else 'no'}"
+        line = f"Payloads:    {slot_label(pl.get('chosen') or '?')} chosen; original IPL once: {'yes' if pl.get('original_ipl_once') else 'no'}"
         print(line + (" (a USB install changed payload 1)" if pl.get("usb_install") else ""))
         for slot in ("payload1", "payload2"):
             p = pl.get(slot) or {}
@@ -526,7 +526,7 @@ def cmd_reboot(args):
 
 
 def slot_label(slot):
-    return f"payload {slot[-1]}" if slot.startswith("payload") else slot
+    return f"payload {slot[-1]}" if slot.startswith("payload") else "the built-in gekkoboot" if slot == "builtin" else slot
 
 
 def cmd_payload_upload(args):
@@ -565,7 +565,7 @@ def cmd_payload_upload(args):
 
 def cmd_payload_choose(args):
     post(args, "/api/boot", {"payload": args.payload})
-    print(f"The next power-on injects {args.payload}.")
+    print(f"The next power-on injects {slot_label(args.payload)}.")
 
 
 def cmd_payload_rename(args):

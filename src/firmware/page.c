@@ -119,21 +119,25 @@ static void put_log(out_t *o) {
     for (unsigned i = 0; i < n; i++) {
         const boot_report_t *r = &log_rows[i];
         const bool ran = r->result == INJECTION_COMPLETE || r->result == INJECTION_STALLED;
-        char counts[24] = "-", margin[12] = "-", cs[16] = "-";
+        const bool skipped = r->result == INJECTION_SKIPPED;   // Original IPL once: nothing was sent
+        char counts[24] = "-", margin[12] = "-", cs[16] = "-", xfers[12] = "-";
         if (ran) {
             snprintf(counts, sizeof(counts), "%lu/%lu", (unsigned long)r->cs_raw, (unsigned long)r->cs_clocked);
             // The real margin: to the first clocked transfer, which a glitch doesn't move
             snprintf(margin, sizeof(margin), "%ld",
                      (long)(r->margin_clocked_us >= 0 ? r->margin_clocked_us : r->margin_raw_us));
         }
-        if (r->result != INJECTION_NOT_RUN) {
+        if (!skipped) {
+            snprintf(xfers, sizeof(xfers), "%lu", (unsigned long)(r->payload_words / WORDS_PER_TRANSFER));
+        }
+        if (r->result != INJECTION_NOT_RUN && !skipped) {
             snprintf(cs, sizeof(cs), "%s%s", r->cs_high_at_ready ? "high" : "low", r->cs_pulldown_test ? " (pd)" : "");
         }
-        put(o, "  %4lu  %c   %-5s %-9s %5lu  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
+        put(o, "  %4lu  %c   %-5s %-9s %5s  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
             r->slot == BOOTCTL_SLOT_B ? 'B' : 'A', r->power_on ? reset_reason(r->chip_reset) : "warm",
-            r->result == INJECTION_NOT_RUN ? "-" : (r->payload == PAYLOAD_SOURCE_BUILTIN ? "built-in" :
+            r->result == INJECTION_NOT_RUN || skipped ? "-" : (r->payload == PAYLOAD_SOURCE_BUILTIN ? "built-in" :
                                                     r->payload == PAYLOAD_SOURCE_PAYLOAD2 ? "payload 2" : "payload 1"),
-            (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), margin, counts, cs, short_result(r));
+            xfers, margin, counts, cs, short_result(r));
     }
 }
 
@@ -244,7 +248,7 @@ size_t page_render(char *buf, size_t size) {
         (unsigned long)r->chip_reset, r->power_on ? "yes" : "no (warm)");
     put(&o, "  RP2350             : stepping A%u, boot ROM version %u\n", r->chip_version, r->rom_version);
     put(&o, "  Injection          : %s\n", result_name(r->result));
-    if (r->result != INJECTION_NOT_RUN) {
+    if (r->result != INJECTION_NOT_RUN && r->result != INJECTION_SKIPPED) {
         put(&o, "  Payload            : %s, %lu transfers (%lu bytes), %lu words delivered\n", payload_name(r->payload),
             (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), (unsigned long)(r->payload_words * 4),
             (unsigned long)r->words_delivered);

@@ -33,7 +33,7 @@ set(PICOBOOT_WIFI_INJECTION_KHZ 250000 CACHE STRING "CPU clock during the inject
 set(PICOBOOT_WIFI_FLASH_CLKDIV 3 CACHE STRING "Flash clock divider, from clk_sys (design D27)")
 
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
-set(PICOBOOT_WIFI_VERSION "0.3.0-dev")
+set(PICOBOOT_WIFI_VERSION "0.4.0-dev")
 execute_process(
     COMMAND git -c safe.directory=* rev-parse --short HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}

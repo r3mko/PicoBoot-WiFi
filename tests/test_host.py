@@ -179,7 +179,21 @@ class PayloadFileInteropTest(unittest.TestCase):
                 with open(os.path.join(folder, name), "rb") as f:
                     result = self.feed(f.read())
                 self.assertEqual((result[0], result[2]), ("ok", str(size)))
-        # Our converter gives gekkoboot's own payload, byte for byte
-        import hashlib
-        with open(os.path.join(folder, "gekkoboot_pico.uf2"), "rb") as f:
-            self.assertEqual(self.feed(f.read())[1], hashlib.sha256(self.payload).hexdigest())
+        # Our converter frames and scrambles as these projects do: a release payload, descrambled and
+        # wrapped as a .dol (as PicoBoot-DX's uf2dol.py does), comes back byte for byte. (Their .dol
+        # files aren't the builds in these UF2s, so the round trip is the comparison there is.)
+        import struct
+        for name in ("gekkoboot_pico.uf2", "swiss_r2119.uf2"):
+            with self.subTest(name), open(os.path.join(folder, name), "rb") as f:
+                blocks = {}
+                data = f.read()
+                for off in range(0, len(data), 512):
+                    addr, size, family = struct.unpack_from("<I I 8x I", data, off + 12)
+                    blocks.setdefault(family, {})[addr] = data[off + 32:off + 32 + size]
+                first = blocks[next(iter(blocks))]
+                image = b"".join(first[a] for a in sorted(first))
+                payload = image[:struct.unpack(">I", image[8:12])[0]]
+                plain = bytes(self.ipl.scramble(bytearray(0x720) + payload[32:-4])[0x720:])
+                header = [0x100] + [0] * 17 + [0x81300000] + [0] * 17 + [len(plain)] + [0] * 17 + [0, 0, 0x81300000] + [0] * 7
+                dol = struct.pack(">64I", *header) + plain
+                self.assertEqual(self.ipl.dol_to_payload(dol), payload)

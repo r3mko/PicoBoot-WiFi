@@ -90,6 +90,12 @@ void payloads_status(json_out_t *j, bool usb_install) {
     json_object_end(j);
 }
 
+// A choice, a rename or an upload over Wi-Fi settles a USB install of payload 1 that no console has taken yet
+// (D17, main.c): its fingerprint is recorded, so the next power-on keeps what the user chose
+static void settle_usb_install(bootctl_t *b) {
+    b->payload1_fingerprint = payload_fingerprint(slot_base(BOOTCTL_PAYLOAD_1), slot_size[BOOTCTL_PAYLOAD_1]);
+}
+
 int payloads_choose(uint8_t slot, const char **code, const char **message) {
     if (slot != BOOTCTL_PAYLOAD_BUILTIN && payload_check(slot_base(slot), slot_size[slot]) == PAYLOAD_INVALID) {
         *code = "not_valid";
@@ -99,6 +105,7 @@ int payloads_choose(uint8_t slot, const char **code, const char **message) {
     bootctl_t b;
     storage_bootctl_load(&b);
     b.active_payload = slot;
+    settle_usb_install(&b);
     if (!storage_bootctl_store(&b)) {
         *code = "flash_write";
         *message = "writing flash failed; nothing changed";
@@ -117,6 +124,7 @@ int payloads_rename(uint8_t slot, const char *name, const char **code, const cha
     storage_bootctl_load(&b);
     memset(b.payload_name[slot], 0, sizeof(b.payload_name[slot]));
     memcpy(b.payload_name[slot], name, strlen(name));
+    settle_usb_install(&b);
     if (!storage_bootctl_store(&b)) {
         *code = "flash_write";
         *message = "writing flash failed; nothing changed";
@@ -286,15 +294,14 @@ static int end(bool complete, char *out, size_t size, size_t *len) {
     payloadup_result_t r = complete ? payloadup_finish(&writer) : PAYLOADUP_INCOMPLETE;
     sha_release();
     if (r == PAYLOADUP_OK) {
-        // Verified: it becomes the choice (D15), with its name, and payload 1 its new fingerprint
+        // Verified: it becomes the choice (D15), with its name; payload 1's fingerprint is recorded, its
+        // new one or one a USB install left unsettled (D17)
         bootctl_t b;
         storage_bootctl_load(&b);
         b.active_payload = target;
         memset(b.payload_name[target], 0, sizeof(b.payload_name[target]));
         memcpy(b.payload_name[target], upload_name, strlen(upload_name));
-        if (target == BOOTCTL_PAYLOAD_1) {
-            b.payload1_fingerprint = payload_fingerprint(slot_base(target), slot_size[target]);
-        }
+        settle_usb_install(&b);
         if (!storage_bootctl_store(&b)) {
             r = PAYLOADUP_FLASH_WRITE;
         }

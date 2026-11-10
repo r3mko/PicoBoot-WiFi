@@ -99,7 +99,7 @@ What the status page shows (D22).
 | `chosen` | What the next power-on injects: `payload1`, `payload2` or `builtin` (the built-in gekkoboot, which also boots when the chosen payload isn't valid) |
 | `upload_target` | Where the next upload goes: the payload slot that isn't the choice; payload 2 while the built-in is the choice (D42) |
 | `original_ipl_once` | The next power-on boots the console's own IPL, then this clears itself |
-| `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17) |
+| `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17). Every power-on says so until a complete injection, or a choice, rename or upload over Wi-Fi, records the new payload 1 |
 | `payloadN.valid` | It holds a payload with a good header, size and footer |
 | `payloadN.name` | The name you gave it (D42); `""` for none, e.g. after a USB install |
 | `payloadN.sha256` | Of the payload's own bytes; `null` while an upload runs and it isn't known yet |

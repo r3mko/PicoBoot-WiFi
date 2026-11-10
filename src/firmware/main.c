@@ -324,12 +324,23 @@ int main(void) {
         }
         // D17 and "original IPL once" into boot control, now that flash may be written
         bool changed = false;
-        if (report.payload1_fingerprint != bootctl.payload1_fingerprint) {
-            bootctl.payload1_fingerprint = report.payload1_fingerprint;
-            if (report.payload_usb_install) {
-                bootctl.active_payload = BOOTCTL_PAYLOAD_1;     // It stays the choice; its name is unknown
+        if (report.payload_usb_install) {
+            // Payload 1 stays the choice, its name unknown. Its fingerprint is recorded only after a
+            // complete injection (D17): the drag-and-drop reboots the Pico on USB power, without a
+            // console, and until a console took it each power-on counts as the first after the USB
+            // install, so the page says so at the one the user sees. A choice, a rename or an upload
+            // over Wi-Fi records it too (payloads.c).
+            if (bootctl.active_payload != BOOTCTL_PAYLOAD_1 || bootctl.payload_name[BOOTCTL_PAYLOAD_1][0]) {
+                bootctl.active_payload = BOOTCTL_PAYLOAD_1;
                 bootctl.payload_name[BOOTCTL_PAYLOAD_1][0] = '\0';
+                changed = true;
             }
+            if (report.result == INJECTION_COMPLETE) {
+                bootctl.payload1_fingerprint = report.payload1_fingerprint;
+                changed = true;
+            }
+        } else if (report.payload1_fingerprint != bootctl.payload1_fingerprint) {
+            bootctl.payload1_fingerprint = report.payload1_fingerprint;     // Payload 1 isn't valid any more
             changed = true;
         }
         if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {

@@ -20,9 +20,9 @@ body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-s
 main { max-width:640px; margin:0 auto; padding:12px 16px 32px; }
 h1 { font-size:20px; margin:8px 0 12px; }
 h2 { font-size:16px; margin:20px 0 8px; }
-nav { display:flex; gap:4px; margin-bottom:12px; border-bottom:1px solid var(--line); }
-nav button { flex:1; background:none; border:0; border-bottom:3px solid transparent; color:var(--dim);
-  font:inherit; font-weight:600; padding:10px 4px; }
+nav { display:flex; overflow-x:auto; gap:2px; margin-bottom:12px; border-bottom:1px solid var(--line); }
+nav button { flex:1 0 auto; background:none; border:0; border-bottom:3px solid transparent; color:var(--dim);
+  font:inherit; font-size:14px; font-weight:600; padding:10px 6px; }
 nav button[aria-selected=true] { color:var(--accent); border-bottom-color:var(--accent); }
 .banner { border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--warn-bg); color:var(--warn-text); }
 .banner.bad { background:var(--bad-bg); color:var(--bad-text); }
@@ -46,21 +46,26 @@ input[type=text], input[type=password], select { width:100%; font:inherit; paddi
 .err { color:var(--bad-text); background:var(--bad-bg); border-radius:6px; padding:4px 8px; margin-top:4px; font-size:14px; }
 .err:empty { display:none; }
 .hint { color:var(--dim); font-size:13px; margin-top:2px; }
-button.btn { font:inherit; font-weight:600; padding:11px 18px; border-radius:8px; border:1px solid var(--accent);
-  background:var(--accent); color:var(--on-accent); margin:16px 8px 0 0; }
-button.btn.sec { background:none; color:var(--accent); }
-button.btn.danger { background:none; color:var(--bad-text); border-color:var(--bad-text); }
+a.btn { display:inline-block; text-decoration:none; }
+.btn { font:inherit; font-weight:600; padding:11px 18px; border-radius:8px; border:1px solid var(--accent);
+  background:var(--accent); color:var(--on-accent); margin:16px 8px 0 0; font-size:16px; }
+.btn.sec { background:none; color:var(--accent); }
+.btn.danger { background:none; color:var(--bad-text); border-color:var(--bad-text); }
 button:disabled { opacity:.5; }
 .row .btn { margin:6px 0 0 8px; padding:6px 12px; }
+.row dd div { display:flex; flex-wrap:wrap; justify-content:flex-end; }
+.hint a { color:var(--accent); }
 progress { width:100%; height:14px; margin-top:12px; }
 [hidden] { display:none !important; }
 </style>
+<script src="/dol.js" defer></script>
 </head>
 <body>
 <main>
 <h1>PicoBoot</h1>
 <nav role="tablist">
   <button role="tab" data-tab="status" aria-selected="true">Status</button>
+  <button role="tab" data-tab="pl" aria-selected="false">Payloads</button>
   <button role="tab" data-tab="diag" aria-selected="false">Diagnostics</button>
   <button role="tab" data-tab="fw" aria-selected="false">Firmware</button>
   <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
@@ -75,6 +80,35 @@ progress { width:100%; height:14px; margin-top:12px; }
 <div id="b-reverted" class="banner" hidden>Your last Wi-Fi change was undone at this start: no device joined with it.</div>
 
 <section id="tab-status"><div class="card"><dl id="status-list"></dl></div></section>
+
+<section id="tab-pl" hidden>
+  <div id="b-usb" class="banner" hidden>This power-on booted payload 1 because it was changed over USB. It's now the choice.</div>
+  <div class="card"><dl id="pl-list"></dl></div>
+  <div id="pl-ask" class="banner" hidden style="margin-top:12px">
+    <span id="pl-ask-msg"></span>
+    <div><button class="btn danger" id="pl-ask-yes">Yes, delete</button><button class="btn sec" id="pl-ask-no">Cancel</button></div>
+  </div>
+  <div id="pl-ren" hidden>
+    <label for="pl-ren-name" id="pl-ren-label">Name</label>
+    <input type="text" id="pl-ren-name" maxlength="24" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="hint">0 to 24 printable ASCII characters.</div>
+    <button class="btn" id="pl-ren-go">Rename</button><button class="btn sec" id="pl-ren-no">Cancel</button>
+  </div>
+  <div id="pl-err" class="err"></div>
+  <h2>Upload a payload</h2>
+  <input type="file" id="pl-file">
+  <div class="hint">A .dol, a payload .uf2 or a raw payload.</div>
+  <div class="err" id="pl-up-err"></div>
+  <div id="pl-up-box" hidden>
+    <label for="pl-up-name">Name</label>
+    <input type="text" id="pl-up-name" maxlength="24" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="err" id="pl-name-err"></div>
+    <div id="pl-up-info" class="banner" hidden style="margin-top:12px"></div>
+    <button class="btn" id="pl-up-go">Upload</button><button class="btn sec" id="pl-up-cancel">Cancel</button>
+  </div>
+  <progress id="pl-bar" max="1" value="0" hidden></progress>
+  <div class="hint" id="pl-up-msg"></div>
+</section>
 
 <section id="tab-diag" hidden>
   <div id="diag-body"></div>
@@ -104,6 +138,8 @@ progress { width:100%; height:14px; margin-top:12px; }
     <progress id="up-bar" max="1" value="0" hidden></progress>
     <div class="hint" id="up-msg"></div>
   </div>
+  <p><a href="/api/backup/firmware" download>Download a backup of the running firmware</a></p>
+  <div class="hint">Saved as an update file that can be installed again here.</div>
 </section>
 
 <section id="tab-settings" hidden>
@@ -136,6 +172,14 @@ progress { width:100%; height:14px; margin-top:12px; }
     <div id="saved" class="banner ok" hidden style="margin-top:14px">Saved.</div>
     <button class="btn" type="submit" id="save">Save</button>
   </form>
+
+  <h2>Backup</h2>
+  <p><a href="/api/backup/settings" download>Download the settings</a></p>
+  <div class="hint">The Wi-Fi password isn't in the file.</div>
+  <label for="rs-file">Restore from a file</label>
+  <input type="file" id="rs-file">
+  <div class="err" id="rs-err"></div>
+  <div id="rs-ok" class="banner ok" hidden></div>
 
   <h2>Reboot</h2>
   <div class="hint">A warm reboot doesn't touch a running game. The Wi-Fi drops for a few seconds.</div>
@@ -185,8 +229,8 @@ async function api(path, body, timeoutMs) {
 function show(name) {
   tab = name;
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", b.dataset.tab === name);
-  for (const t of ["status", "diag", "fw", "settings"]) $("tab-" + t).hidden = t !== name;
-  if (name === "status" || name === "fw") loadStatus();
+  for (const t of ["status", "pl", "diag", "fw", "settings"]) $("tab-" + t).hidden = t !== name;
+  if (name === "status" || name === "fw" || name === "pl") loadStatus();
   else if (name === "diag") loadDiag();
   else { loadStatus(); loadSettings(); }
 }
@@ -208,6 +252,15 @@ function banners() {
 const hms = s => Math.floor(s / 3600) + ":" + String(Math.floor(s / 60) % 60).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 const row = (k, v, note) => `<div class="row"><dt>${k}</dt><dd>${v}${note ? `<span class="note">${note}</span>` : ""}</dd></div>`;
 
+// The payload the next power-on injects, by name and slot
+const plLabel = (p, k) => (p[k].name ? esc(p[k].name) + ", " : "") + "payload " + k.slice(-1);
+function nextBoot(s) {
+  const p = s.payloads;
+  if (!p) return "?";
+  if (p.original_ipl_once) return "The console's own IPL, once";
+  return p.chosen !== "builtin" && p[p.chosen].valid ? plLabel(p, p.chosen) : "Built-in gekkoboot";
+}
+
 async function loadStatus() {
   const r = await api("/api/status");
   if (!r || !r.ok) return false;
@@ -219,20 +272,22 @@ async function loadStatus() {
       row("Other slot " + esc(otherSlot(s.firmware.slot)), esc(s.firmware.versions[otherSlot(s.firmware.slot)] || "none"),
         esc(s.firmware.states[otherSlot(s.firmware.slot)])) +
       row("Chip", "RP2350 A" + esc(s.chip.stepping) + ", boot ROM v" + esc(s.chip.rom)) +
+      row("Boots next", nextBoot(s)) +
       row("Uptime", hms(s.uptime_s)) +
       row("Temperature", s.temperature_c.toFixed(1) + " °C", "Reads low when the 3.3 V rail is low") +
       row("Wi-Fi name", esc(s.wifi.ssid)) +
       row("Wi-Fi clients", esc(s.wifi.clients));
   }
   if (tab === "fw") renderFw();
+  if (tab === "pl") renderPl();
   return true;
 }
 // Refresh every 5 s while the Status tab and the page are visible
 setInterval(() => {
-  if (tab === "status" && document.visibilityState === "visible" && !restarting) loadStatus();
+  if ((tab === "status" || tab === "pl") && document.visibilityState === "visible" && !restarting && !uploading) loadStatus();
 }, 5000);
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && tab === "status" && !restarting) loadStatus();
+  if (document.visibilityState === "visible" && (tab === "status" || tab === "pl") && !restarting && !uploading) loadStatus();
 });
 
 // ---- Firmware ----
@@ -378,9 +433,154 @@ $("up-go").onclick = () => {
   x.send(f);
 };
 
+// ---- Payloads ----
+const PLS = ["payload1", "payload2"];
+let plBlob = null;       // the payload to upload: the file as is, or the converted .dol
+let plAct = null;        // the slot the inline delete or rename is about
+
+function renderPl() {
+  const p = lastStatus.payloads;
+  if (!p) return;
+  $("b-usb").hidden = !p.usb_install;
+  const btn = (a, k, t, c) => `<button class="btn ${c || "sec"}" data-pl="${a}" data-slot="${k}">${t}</button>`;
+  let h = "";
+  for (const k of PLS) {
+    const q = p[k], ch = p.chosen === k;
+    const tags = [ch ? "chosen: boots at the next power-on" : "", k === p.upload_target ? "next upload goes here" : ""].filter(Boolean).join("; ");
+    h += `<div class="row"><dt>Payload ${k.slice(-1)}${tags ? `<span class="note">${tags}</span>` : ""}</dt><dd>` +
+      (q.valid ? `${q.name ? esc(q.name) : "no name"}<span class="note">${mb(q.size)}${q.sha256 ? ", SHA-256 " + esc(q.sha256.slice(0, 12)) : ""}</span><div>` +
+        (ch ? "" : btn("choose", k, "Choose") + btn("delete", k, "Delete", "danger")) + btn("rename", k, "Rename") +
+        `<a class="btn sec" href="/api/backup/${k}" download>Download</a></div>` : "empty") + `</dd></div>`;
+  }
+  h += `<div class="row"><dt>Built-in gekkoboot${p.chosen === "builtin" ? `<span class="note">chosen: boots at the next power-on</span>` : ""}</dt><dd>` +
+    `<span class="note">Also boots when the chosen payload isn't valid</span>` +
+    (p.chosen === "builtin" ? "" : `<div>${btn("choose", "builtin", "Choose")}</div>`) + `</dd></div>` +
+    `<div class="row"><dt>Original IPL once</dt><dd>${p.original_ipl_once ? "on" : "off"}` +
+    `<span class="note">The next power-on starts the GameCube's own IPL (menu, clock, language), once.</span>` +
+    `<div>${btn("ipl", p.original_ipl_once ? "off" : "on", p.original_ipl_once ? "Cancel" : "Set")}</div></dd></div>`;
+  $("pl-list").innerHTML = h;
+}
+
+// Post a payload change, then show what the Pico has now; errors go under the list
+async function plPost(path, body) {
+  $("pl-err").textContent = "";
+  const r = await api(path, body);
+  if (!r || !r.ok) $("pl-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Nothing changed.";
+  await loadStatus();
+}
+const plNameErr = n => n.length > 24 ? "The name can be at most 24 characters." : printable(n) ? "" : "Use printable ASCII characters only (no accents or emoji).";
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-pl]");
+  if (!b || uploading || restarting) return;
+  const k = b.dataset.slot, p = lastStatus.payloads;
+  $("pl-ask").hidden = $("pl-ren").hidden = true;
+  plAct = k;
+  switch (b.dataset.pl) {
+    case "choose": return plPost("/api/boot", { payload: k });
+    case "ipl": return plPost("/api/boot", { original_ipl_once: k === "on" });
+    case "delete":
+      $("pl-ask-msg").textContent = "Delete payload " + k.slice(-1) + (p[k].name ? " (" + p[k].name + ")" : "") + "? You can upload it again, or from a backup.";
+      $("pl-ask").hidden = false; return;
+    case "rename":
+      $("pl-ren-label").textContent = "New name for payload " + k.slice(-1);
+      $("pl-ren-name").value = p[k].name;
+      $("pl-ren").hidden = false; $("pl-ren-name").focus();
+  }
+});
+$("pl-ask-no").onclick = () => { $("pl-ask").hidden = true; };
+$("pl-ask-yes").onclick = () => { $("pl-ask").hidden = true; if (!uploading && plAct) plPost("/api/payload/delete", { slot: plAct }); };
+$("pl-ren-no").onclick = () => { $("pl-ren").hidden = true; };
+$("pl-ren-go").onclick = () => {
+  const n = $("pl-ren-name").value.trim(), m = plNameErr(n);
+  if (m) { $("pl-err").textContent = m; return; }
+  $("pl-ren").hidden = true;
+  if (!uploading && plAct) plPost("/api/payload/name", { slot: plAct, name: n });
+};
+
+// A file name to a payload name: no extension, "_" to a space, printable ASCII, spaces collapsed, first letter up, 24 characters
+function nameFrom(fn) {
+  const n = fn.replace(/(?!^)\.[^.]*$/, "").replace(/_/g, " ").replace(/[^\x20-\x7e]/g, "").replace(/ +/g, " ").trim();
+  return (n.charAt(0).toUpperCase() + n.slice(1)).slice(0, 24).trimEnd();
+}
+
+function plReset() {
+  plBlob = null;
+  $("pl-up-box").hidden = $("pl-up-info").hidden = $("pl-bar").hidden = true;
+  $("pl-up-err").textContent = $("pl-up-msg").textContent = $("pl-name-err").textContent = "";
+}
+$("pl-up-cancel").onclick = () => { plReset(); $("pl-file").value = ""; };
+
+$("pl-file").onchange = async () => {
+  plReset();
+  const f = $("pl-file").files[0];
+  if (!f || uploading) return;
+  const bad = m => { $("pl-up-err").textContent = m; };
+  let blob = f;
+  try {
+    const dv = new DataView(await f.slice(0, 8).arrayBuffer());
+    const head = String.fromCharCode(...new Uint8Array(dv.buffer));
+    if (head.slice(0, 4) === "PBWU") return bad("This is a firmware update, not a payload. Install it on the Firmware tab.");
+    if (head === "IPLBOOT ") {
+      // A raw payload may have padding after its own size (a flash dump): send just the payload
+      const v = new DataView(await f.arrayBuffer()), size = v.byteLength >= 12 ? v.getUint32(8, false) : 0;
+      if (size < 36 || size % 4) return bad("This payload's header gives a size that isn't valid (" + size + " bytes).");
+      if (v.byteLength < size) return bad("This payload is cut short: its header says " + size + " bytes, the file has " + v.byteLength + ".");
+      if (v.getUint32(size - 4, false) !== 0x5049434F) return bad("This payload doesn't end with the PICO footer.");
+      blob = f.slice(0, size);
+    } else if (dv.getUint32(0, true) !== 0x0A324655) {
+      if (!window.PicoBootDol) return bad("The .dol converter isn't loaded yet. Try again in a moment.");
+      try { blob = PicoBootDol.dolToPayload(new Uint8Array(await f.arrayBuffer())); } catch (e) { return bad(e.message); }
+    }
+  } catch (e) { return bad("Can't read this file."); }
+  await loadStatus();
+  const p = lastStatus && lastStatus.payloads;
+  if (!p) return bad("Can't reach PicoBoot.");
+  plBlob = blob;
+  const t = p.upload_target, o = t === "payload1" ? "payload 2" : "payload 1";
+  $("pl-up-name").value = nameFrom(f.name);
+  $("pl-up-info").className = p[t].valid ? "banner" : "banner ok";
+  $("pl-up-info").innerHTML = `${mb(blob.size)}. It goes into payload ${t.slice(-1)} and boots at the next power-on; ${o} stays as it is.` +
+    (p[t].valid ? ` <b>This replaces ${p[t].name ? esc(p[t].name) : "the payload there"}.</b>` : "");
+  $("pl-up-box").hidden = $("pl-up-info").hidden = false;
+};
+
+$("pl-up-go").onclick = () => {
+  if (!plBlob || restarting || uploading) return;
+  const n = $("pl-up-name").value.trim(), m = plNameErr(n);
+  $("pl-name-err").textContent = m;
+  if (m) return;
+  const blob = plBlob;
+  uploading = true;
+  $("pl-up-box").hidden = true; $("pl-file").disabled = true;
+  $("pl-bar").hidden = false; $("pl-bar").value = 0;
+  $("pl-up-msg").textContent = "Uploading…";
+  const done = msg => {
+    uploading = false; plBlob = null; $("pl-file").disabled = false; $("pl-file").value = "";
+    $("pl-up-err").textContent = msg; $("pl-up-msg").textContent = ""; $("pl-bar").hidden = true;
+    return loadStatus();
+  };
+  const x = new XMLHttpRequest();
+  x.open("POST", "/api/payload");
+  x.setRequestHeader("Content-Type", "application/octet-stream");
+  if (n) x.setRequestHeader("X-Name", n);
+  x.timeout = 60000;
+  x.upload.onprogress = e => { if (e.lengthComputable) $("pl-bar").value = e.loaded / e.total; };
+  x.upload.onload = () => { $("pl-bar").value = 1; $("pl-up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot writes and checks the flash. Please wait…"; };
+  x.onerror = x.ontimeout = () => done("No answer from PicoBoot, so the upload may or may not have gone through. Check the list above.");
+  x.onload = () => {
+    let d = null;
+    try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+    if (x.status !== 200 || !d || !d.installed) return done((d && d.message) || "Error " + x.status);
+    done("").then(() => { $("pl-up-msg").textContent = "Installed into payload " + d.slot.slice(-1) + (d.name ? " as " + d.name : "") + ". It boots at the next power-on."; });
+  };
+  x.send(blob);
+};
+
 // ---- Diagnostics ----
 const RESETS = { POR: "power-on reset", BOR: "brown-out reset", RUN: "RUN pin reset", WDOG: "watchdog reset", other: "other reset" };
-const RESULTS = { not_run: "not run: warm boot", no_cs: "no console seen", complete: "complete", stalled: "stalled" };
+const RESULTS = { not_run: "not run: warm boot", no_cs: "no console seen", complete: "complete", stalled: "stalled",
+  skipped: "skipped: original IPL once" };
 const PAYLOADS = { payload1: "payload 1", payload2: "payload 2", builtin: "built-in gekkoboot", none: "none" };
 const us = v => v < 1000 ? v + " µs" : (v / 1000).toFixed(1) + " ms";
 const margin = b => b.margin_clocked_us >= 0 ? us(b.margin_clocked_us) : b.margin_raw_us >= 0 ? us(b.margin_raw_us) : "none";
@@ -408,9 +608,9 @@ async function loadDiag() {
     row("Wi-Fi up after", us(w.up_ms * 1000)) + `</dl></div>` +
     `<h2>Boot log</h2><div class="scroll"><table><thead><tr><th>Boot</th><th>Slot</th><th>Start</th><th>Payload</th>` +
     `<th>Transfers</th><th>Margin</th><th>Raw/clocked</th><th>Result</th></tr></thead><tbody>` +
-    log.map(e => `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${esc(PAYLOADS[e.payload] || e.payload)}</td>` +
-      `<td>${Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}</td>` +
-      `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`).join("") + `</tbody></table></div>`;
+    log.map(e => { const nr = e.result === "skipped" || e.result === "not_run"; return `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${nr ? "—" : esc(PAYLOADS[e.payload] || e.payload)}</td>` +
+      `<td>${nr ? "—" : Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}</td>` +
+      `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`; }).join("") + `</tbody></table></div>`;
 }
 $("diag-refresh").onclick = loadDiag;
 
@@ -532,6 +732,24 @@ async function waitForRestart(ssidHtml, newPassword, delayMs) {
   n.className = "banner ok";
   n.innerHTML = `Wi-Fi is back. <b>${ssidHtml}</b> is in use with the new settings.`;
 }
+
+$("rs-file").onchange = async () => {
+  const f = $("rs-file").files[0];
+  $("rs-err").textContent = ""; $("rs-ok").hidden = true;
+  if (!f || restarting) return;
+  let body;
+  try { body = JSON.parse(await f.text()); } catch (e) { /* checked below */ }
+  $("rs-file").value = "";
+  if (!body || typeof body !== "object" || Array.isArray(body)) { $("rs-err").textContent = "This isn't a settings file."; return; }
+  const r = await api("/api/settings", body);
+  if (!r) { $("rs-err").textContent = "No answer from PicoBoot, so the settings may or may not be restored."; return; }
+  const d = r.data || {};
+  if (!r.ok) { $("rs-err").textContent = d.message || "Error " + r.status; return; }
+  if (d.wifi_restart) return waitForRestart(esc(d.ssid_in_use || settings.ssid_in_use), "password" in body, 3000);
+  $("rs-ok").textContent = "Restored."; $("rs-ok").hidden = false;
+  await loadSettings();
+  loadStatus();
+};
 
 // Asked inline, not with confirm(): captive-portal sheets may not show dialogs
 const askReboot = on => { $("reboot").hidden = on; $("reboot-ask").hidden = !on; };

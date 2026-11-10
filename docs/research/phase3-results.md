@@ -92,3 +92,23 @@ Margins on the power-ons: 161.4–161.6 ms, CS 1544/1544, as before.
 | The firmware page and the CLI on hardware | Passed |
 
 **Done when (plan 3.8): results recorded.** Met. The phase's goal (D28), an update, a failed trial and a switch all working in the console without USB, is met.
+
+## 3.9 Code review and re-test (2026-11-10)
+
+**Code review** (a fresh Opus 5.5 reviewer): one high, one medium-high, two medium and two low findings; all fixed (`0e23c77`), listed in the implementation plan (phase 3, "Code review of phase 3").
+
+**Re-test**, build `0e23c77`:
+
+| Check | Result |
+|---|---|
+| After a USB install, the Firmware tab shows slot B empty, with no Boot button, although it still held an earlier build | **Passed** |
+| The test page: "the chip reports the AP up" (the keep rule's check, the owner's choice) | **Passed**, on every boot |
+| An upload from the Firmware tab: back on trial, "running the new firmware on trial"; Keep | **Passed** |
+| A CLI upload cut off with Ctrl-C at 45%, then again | **Passed:** the second one went through (slot A on trial, boot 41). Its answer was lost because the Mac had switched back to its home Wi-Fi; the CLI now checks the status when an answer is lost (`53d3612`) |
+| The start-up crash build | **Passed:** back on A, B marked failed (boot 42). The CLI's new check wasn't seen: an old copy of the CLI was used |
+| Console: an update kept by the next power-on, with the chip reporting the AP up | **Passed** (boot 45) |
+| 5 Swiss cold boots | **Passed:** boots 46–50, margin 158.5–160.2 ms, mean 159.4 ms; CS 1544/1544 |
+
+**Margin:** boot 45 had 154.7 ms, the lowest so far. The 5 boots after it are back at 158.5–160.2 ms, like every other phase 3 boot. Boot 45 was the first start of a cold console, and trial boots aren't slower in general (boot 31, also a trial power-on, had 161.5 ms), so it's the console's own spread. Against PicoBoot-DX (165.5 ms in phase 0) the mean costs 6.1 ms, within D10's 10 ms. To watch in phase 4.
+
+**Step 3.9:** review fixes in, re-test passed.

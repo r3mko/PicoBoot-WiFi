@@ -98,6 +98,18 @@ boot_decision_t boot_decide(const boot_inputs_t *in) {
             d.flags[1] = d.flags[0];
         }
     }
+    // Never an empty slot (phase 3 review): an empty active slot gives way to the second choice,
+    // which then starts in its place (BOOTINFO_FALLBACK) and becomes the active one
+    for (int i = 0; i < 2; i++) {
+        if (d.slots[i] != BOOTCTL_NONE && b->slot_state[d.slots[i]] == BOOTCTL_STATE_EMPTY) {
+            d.slots[i] = BOOTCTL_NONE;
+        }
+    }
+    if (d.slots[0] == BOOTCTL_NONE && d.slots[1] != BOOTCTL_NONE) {
+        d.slots[0] = d.slots[1];
+        d.flags[0] = d.flags[1] | BOOTINFO_FALLBACK;
+        d.slots[1] = BOOTCTL_NONE;
+    }
 
     d.session[0] = start_word(s, d.slots[0], d.flags[0]);
     // Starting the second means the first held no valid image: that ends a trial of it too

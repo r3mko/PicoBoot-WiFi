@@ -33,7 +33,7 @@ typedef struct {
     uint8_t slot;               // The slot this firmware runs from (BOOTCTL_SLOT_A / _B)
     bool fallback;              // The loader's first choice held no valid image
     bool bootctl_default;       // No valid boot control record: defaults used
-    uint8_t loader_flags;       // BOOTINFO_TRIAL, _TRIAL_FAILED, _CRASH_FALLBACK from the loader (D12)
+    uint8_t loader_flags;       // BOOTINFO_FALLBACK, _TRIAL, _TRIAL_FAILED, _CRASH_FALLBACK (D12)
     uint8_t loader_version;     // The installed loader's version (1 if it reports none)
 
     payload_source_t payload;

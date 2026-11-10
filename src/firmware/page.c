@@ -252,8 +252,8 @@ size_t page_render(char *buf, size_t size) {
         put(&o, "  Wi-Fi              : blob from Wi-Fi %c, AP up %lu ms after the injection\n",
             info.wifi_area == BOOTCTL_SLOT_B ? 'B' : 'A', (unsigned long)info.wifi_up_ms);
     }
-    put(&o, "  Wi-Fi start        : CYW43 init %lu ms, AP start %lu ms\n",
-        (unsigned long)info.cyw43_init_ms, (unsigned long)info.ap_start_ms);
+    put(&o, "  Wi-Fi start        : CYW43 init %lu ms, AP start %lu ms; the chip reports the AP %s\n",
+        (unsigned long)info.cyw43_init_ms, (unsigned long)info.ap_start_ms, info.ap_confirmed ? "up" : "NOT UP");
     {
         // QMI M0 read: command byte, widths (0 = x1, 1 = x2, 2 = x4), dummy bits, clock divider
         const uint32_t rfmt = info.qmi_rfmt, div = info.qmi_timing & 0xFFu;

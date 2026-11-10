@@ -298,10 +298,16 @@ power on -> boot ROM -> loader (flash offset 0)
   - **Never a fallback:** a slot that's empty (perhaps half written), failed, or on trial isn't started in place of a slot without a valid image.
   - **No update while on trial:** the running firmware refuses one (`on_trial`), since the other slot holds the firmware to fall back to.
   - **The loader reports its version (2)** in boot info; the phase 3 firmware needs it, so it comes with one USB install (D11).
+  - **After the phase 3 review:**
+    - **Keeping is checked:** after a complete power-on injection, the firmware asks the Wi-Fi chip whether the access point is up (the owner's choice). A firmware on trial whose Wi-Fi doesn't come up reboots as a crash, so the loader goes back.
+    - **Updates only from the active firmware,** into the other slot: never into the active slot, which would skip the trial. A firmware started in place of an active slot without an image becomes the active one.
+    - **An empty slot is never started.** After a USB install, slot B counts as empty: the install doesn't touch it, so it may hold anything.
+    - **An update writes the image's first sector last,** once the image's hash is right: that sector holds the block the boot ROM looks for, so a cut-off or damaged upload never leaves a slot the ROM would start.
 
 **D13 (Decision): switch freely between two good slots.**
 - The firmware page shows both slots: version, build, state (active / pending / failed / empty).
 - *Boot slot X* writes boot control and reboots. Nothing is erased.
+- **As built in phase 3:** a kept slot becomes the active one at once; any other slot with a firmware (from a USB install, unkept or failed) goes on trial first (D12). Going back to the active slot from a trial abandons the trial.
 
 **D14 (Decision): the Wi-Fi blob outside the slots, one copy per slot, at fixed addresses.**
 - **Pairing:** slot A uses Wi-Fi A and slot B uses Wi-Fi B. An update can then bring a new blob without touching the one the fallback firmware needs.

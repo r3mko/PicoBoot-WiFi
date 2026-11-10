@@ -282,8 +282,28 @@ docs/                       design, plan, research, API, update-file format
 | 3.2 | `tools/mkupdate.py` (Sonnet, reviewed), `build/picoboot-wifi-update.bin` on every build, a CI artifact | |
 | 3.3 | `update.c` (pure, host tested: whole uploads into a simulated flash) and `updater.c`; uploads stream from httpd's POST callbacks straight to flash, so no manual TCP window was needed. A host test feeds the files `mkupdate.py` makes through `update.c`. An upload takes about 4 s | |
 | 3.4 | Loader version 2: the session in POWMAN scratch, a crash being any reset without the firmware's clean-reboot word. The firmware's side in `slots.c` (pure). A watchdog (8 s) and a fault handler. No updates while on trial. Records leave another version's record alone (phase 2 review) | 3 crashes for the crash loop; the fallback for good |
-| 3.5, 3.6 | `POST /api/boot` (keep, boot a slot) and each slot's version from its binary info; the firmware page and the CLI (Sonnet, reviewed) | |
-| 3.7 | `PICOBOOT_WIFI_TEST_CRASH=startup` / `after5s`, as CI artifacts; `PICOBOOT_WIFI_BLOB=bt` for the blob-change test of 3.8 | |
+| 3.5, 3.6 | `POST /api/boot` (keep, boot a slot) and each slot's version from its binary info; the Firmware tab (the UI is 9.5 KB gzipped) and `tools/picoboot-wifi.py`, each by a Sonnet subagent in a worktree, reviewed | |
+| 3.7 | `PICOBOOT_WIFI_TEST_CRASH=startup` / `after5s` and `PICOBOOT_WIFI_BLOB=marked`, as CI artifacts | |
+| 3.8 | Console tests all passed after one fix: a failed trial's note in the session word also blocked a new trial of that slot in the same session; the firmware now clears it when it sets up a new trial. The SDK's Bluetooth blob, the planned stand-in for a new blob, didn't come up without Bluetooth support (its trial failed and was undone); the stand-in became the Wi-Fi blob with a marker | |
+
+**Code review of phase 3** (a fresh Opus 5.5 reviewer, 2026-11-10):
+- **Overall:** the normal paths the bench and console tests covered held up. The findings were in paths those tests didn't reach: a firmware running in place of the active one, a switch to a slot that only counted as installed, the keep rule, and a cut-off upload. Findings 1–4 were confirmed by host simulations.
+- **Re-test before the merge:** bench (the access point reported up, keep, a cut-off upload followed by another, the Firmware tab after a USB install) and one console power-on for the keep.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **High:** an update could go into the active slot, after a fallback boot or in the half second before a switch's reboot. It then started without a trial or a way back. And a cut-off upload over an old image could leave a slot the boot ROM accepts (the image has no hash) | Fixed: updates only from the active firmware (`slots_update_target()`); a firmware started in place of the active slot takes over; no upload while a reboot is due, and no other POST while an upload runs; the loader never starts an empty slot; the image's first sector is written last. Host tests |
+| 2 | **Medium-high:** a trial was kept even if Wi-Fi never came up: the driver doesn't report a failed start | Fixed (the owner's choice): kept only if the chip reports the AP up; on trial without Wi-Fi, a reboot as a crash |
+| 3 | **Medium:** "Boot slot X" to a slot that only counted as installed (after a USB install it may hold anything) made it active at once | Fixed: it goes on trial; after a USB install slot B counts as empty; only a slot with a PicoBoot-WiFi firmware is offered |
+| 4 | **Medium:** a cut-off upload left the SHA-256 hardware claimed; the next upload waited for it until the watchdog reset, counted as a crash | Fixed: an unfinished hash is released first |
+| 5 | **Low:** the UI and CLI reported "on trial" after an upload without checking that the new firmware came up | Fixed: both compare the running slot with the one installed; CLI test |
+| 6 | **Low, for phase 4:** once a record's version changes, a firmware of the other version rewrites its own record in place, without the power-cut safety | Phase 4: allow for it when a record's version changes |
+
+**For phase 4:**
+- **Boot control** keeps its format: a new `BOOTCTL_VERSION` needs a loader that reads it, so a loader version 3 and a USB install.
+- **The payload and "original IPL once" choices** go into `POST /api/boot` beside `keep` and `slot`.
+- **Backups** that include the settings (the Wi-Fi password) are to be POST-only (phase 2 review, DNS rebinding).
+- **The update writer's pattern** (pure C behind an io struct, host-tested with simulated flash and interop with the Python tools) suits the payload upload of step 4.1.
 
 ## Phase 4: payload OTA
 

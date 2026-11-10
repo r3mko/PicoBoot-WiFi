@@ -365,6 +365,14 @@ static int post_boot(const char *body, size_t body_len, char *out, size_t size, 
         }
         json_bool(&j, "kept", true);
     } else {
+        // Only into a slot that holds a PicoBoot-WiFi firmware: after a USB install the other slot
+        // may hold anything (phase 3 review)
+        char v[32];
+        const uint8_t *image = (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE +
+                                                 (bb.slot == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET));
+        if (bb.slot != running && !bininfo_version(image, LAYOUT_SLOT_SIZE, v, sizeof(v))) {
+            return error(out, size, len, 409, "not_bootable", "that slot holds no PicoBoot-WiFi firmware", "slot");
+        }
         const slots_switch_t r = slots_switch(&b, running, (uint8_t)bb.slot);
         if (r == SLOTS_NOT_BOOTABLE) {
             return error(out, size, len, 409, "not_bootable", "that slot is empty: upload a firmware into it first", "slot");
@@ -409,6 +417,10 @@ static int post_reboot(const char *body, size_t body_len, char *out, size_t size
 
 int api_handle(bool post, const char *path, const char *body, size_t body_len,
                char *out, size_t out_size, size_t *out_len) {
+    if (post && net_upload_running()) {
+        // A reboot or an AP restart would cut the upload off (phase 3 review)
+        return error(out, out_size, out_len, 503, "busy", "an upload is in progress: try again when it's done", NULL);
+    }
     if (strcmp(path, "/api/status") == 0 || strcmp(path, "/api/diagnostics") == 0) {
         if (post) {
             return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);

@@ -26,6 +26,7 @@ static update_env_t env = {PICOBOOT_WIFI_BOARD, LAYOUT_VERSION, 1};
 static bool can_update;
 static update_t writer;                 // One upload at a time (net.c makes sure)
 static pico_sha256_state_t sha;
+static bool sha_running;                // The hardware is claimed until finished or cleaned up
 
 void updater_init(uint8_t running_slot, uint32_t loader_version, bool from_loader) {
     running = running_slot;
@@ -52,10 +53,21 @@ static const uint8_t *io_read(void *ctx, uint32_t offset) {
     return (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + offset);
 }
 
-// The RP2350's SHA-256 hardware, without DMA
+// The RP2350's SHA-256 hardware, without DMA. A hash an upload left unfinished (cut off, or a failed
+// boot control write) still holds the hardware: release it first, or the start would wait forever
+// inside the lwIP callback until the watchdog took it for a crash (phase 3 review).
+static void sha_release(void) {
+    if (sha_running) {
+        pico_sha256_cleanup(&sha);
+        sha_running = false;
+    }
+}
+
 static void io_sha_start(void *ctx) {
     (void)ctx;
+    sha_release();
     pico_sha256_start_blocking(&sha, SHA256_BIG_ENDIAN, false);
+    sha_running = true;
 }
 
 static void io_sha_update(void *ctx, const uint8_t *data, size_t length) {
@@ -67,6 +79,7 @@ static void io_sha_finish(void *ctx, uint8_t out[32]) {
     (void)ctx;
     sha256_result_t result;
     pico_sha256_finish(&sha, &result);
+    sha_running = false;
     memcpy(out, result.bytes, 32);
 }
 
@@ -126,20 +139,24 @@ static int begin(const char *path, uint32_t length, char *out, size_t size, size
     if (!can_update) {
         return answer_error(UPDATE_NEEDS_USB_INSTALL, out, size, len);
     }
-    // While this firmware is on trial, the other slot holds the one to fall back to (D12)
+    // Into the other slot, and only from the active firmware (D12; phase 3 review)
     bootctl_t b;
     storage_bootctl_load(&b);
-    if (b.pending_slot == running) {
+    uint8_t target;
+    const slots_update_t t = slots_update_target(&b, running, &target);
+    if (t != SLOTS_UPDATE_OK) {
         json_out_t j;
         json_init(&j, out, size);
         json_object_begin(&j, NULL);
-        json_string(&j, "error", "on_trial");
-        json_string(&j, "message", "this firmware is on trial: keep it first, or switch back to the other slot");
+        json_string(&j, "error", t == SLOTS_UPDATE_ON_TRIAL ? "on_trial" : "not_active");
+        json_string(&j, "message", t == SLOTS_UPDATE_ON_TRIAL ?
+                    "this firmware is on trial: keep it first, or switch back to the other slot" :
+                    "this firmware runs in place of the active one: boot the active slot, or wait for the reboot");
         json_object_end(&j);
         *len = json_finish(&j);
         return 409;
     }
-    update_begin(&writer, &io, &env, running == BOOTCTL_SLOT_B ? BOOTCTL_SLOT_A : BOOTCTL_SLOT_B, length);
+    update_begin(&writer, &io, &env, target, length);
     return writer.result == UPDATE_OK ? 200 : answer_error(writer.result, out, size, len);
 }
 
@@ -149,6 +166,7 @@ static void data(const uint8_t *bytes, size_t length) {
 
 static int end(bool complete, char *out, size_t size, size_t *len) {
     update_result_t r = complete ? update_finish(&writer) : UPDATE_INCOMPLETE;
+    sha_release();                              // Whatever the upload left
     if (r == UPDATE_OK) {
         // The slot holds the new firmware: on trial at the next start (D12)
         bootctl_t b;

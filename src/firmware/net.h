@@ -41,7 +41,7 @@ typedef struct {
 
 // Starts the access point, the DHCP and DNS servers (every name answers with 192.168.4.1, so phones
 // open the page by themselves) and the HTTP server. cyw43_arch_init_with_country() must have
-// succeeded first. Returns false on failure.
+// succeeded first. Returns false if the chip doesn't report the access point up.
 bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api,
                const net_upload_t *upload);
 
@@ -55,6 +55,9 @@ void net_poll(void);
 
 // Requests the HTTP server has taken, of any kind (D41: a client came through)
 uint32_t net_requests(void);
+
+// An upload is streaming in: the API refuses changes that would reboot or restart the AP meanwhile
+bool net_upload_running(void);
 
 // A warm reboot half a second from now, after the answer is out
 void net_reboot_soon(bool through_rom);

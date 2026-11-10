@@ -18,7 +18,7 @@ static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
 static bootctl_t updated_to_b(void) {
-    bootctl_t b = BOOTCTL_DEFAULT;          // After a USB install: A installed, running
+    bootctl_t b = BOOTCTL_DEFAULT;          // After a USB install: A installed, running, B empty
     b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
     b.pending_slot = BOOTCTL_SLOT_B;
     return b;
@@ -156,10 +156,11 @@ static void test_a_new_trial_in_the_same_session(void) {
 }
 
 static void test_switch(void) {
-    // To the other, kept slot: it becomes the active one
+    // To the other, kept slot: it becomes the active one; the running one from a USB install is kept
     bootctl_t b = BOOTCTL_DEFAULT;
     b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
     CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED && b.active_slot == BOOTCTL_SLOT_B);
+    CHECK(b.slot_state[BOOTCTL_SLOT_A] == BOOTCTL_STATE_KEPT);
     CHECK(slots_switch(&b, BOOTCTL_SLOT_B, BOOTCTL_SLOT_B) == SLOTS_NOTHING_TO_DO);
     // Back from a trial: the trial is abandoned, unkept, and isn't a fallback
     b = updated_to_b();
@@ -176,12 +177,57 @@ static void test_switch(void) {
     CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED);
     CHECK(b.pending_slot == BOOTCTL_SLOT_B && b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_TRIAL);
     CHECK(b.active_slot == BOOTCTL_SLOT_A);
+    // To a slot installed over USB (it may hold anything): on trial, not straight to active
+    b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_INSTALLED;
+    CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_SWITCHED);
+    CHECK(b.active_slot == BOOTCTL_SLOT_A && b.pending_slot == BOOTCTL_SLOT_B &&
+          b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_TRIAL);
     // Never to an empty slot
+    b.pending_slot = BOOTCTL_NONE;
     b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_EMPTY;
     b.pending_slot = BOOTCTL_NONE;
     const bootctl_t before = b;
     CHECK(slots_switch(&b, BOOTCTL_SLOT_A, BOOTCTL_SLOT_B) == SLOTS_NOT_BOOTABLE);
     CHECK(memcmp(&b, &before, sizeof(b)) == 0);
+}
+
+// Phase 3 review finding 1: updates only from the active firmware, into the other slot
+static void test_update_target(void) {
+    bootctl_t b = BOOTCTL_DEFAULT;
+    uint8_t t = 9;
+    CHECK(slots_update_target(&b, BOOTCTL_SLOT_A, &t) == SLOTS_UPDATE_OK && t == BOOTCTL_SLOT_B);
+    b = updated_to_b();                     // Running B on trial: A is its fallback
+    CHECK(slots_update_target(&b, BOOTCTL_SLOT_B, &t) == SLOTS_UPDATE_ON_TRIAL);
+    b = BOOTCTL_DEFAULT;                    // Running B in place of the active A (or a switch under way)
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    CHECK(slots_update_target(&b, BOOTCTL_SLOT_B, &t) == SLOTS_UPDATE_NOT_ACTIVE);
+}
+
+// Phase 3 review finding 1, the UI path: "Boot slot B" to a B without an image left A running in
+// place of the active B, and the next update went into B without a trial
+static void test_running_in_place_of_the_active_slot(void) {
+    bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_A] = BOOTCTL_STATE_KEPT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    b.active_slot = BOOTCTL_SLOT_B;         // B active, but rom_chain_image() refused it: A starts second
+    boot_inputs_t in = {.had_por = true, .bootctl = &b};
+    boot_decision_t d = boot_decide(&in);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && d.slots[1] == BOOTCTL_SLOT_A);
+    const uint32_t flags = d.flags[1] | BOOTINFO_FALLBACK;     // As the loader passes it on
+    CHECK(slots_at_start(&b, BOOTCTL_SLOT_A, flags));
+    CHECK(b.active_slot == BOOTCTL_SLOT_A && b.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_EMPTY);
+    uint8_t t;
+    CHECK(slots_update_target(&b, BOOTCTL_SLOT_A, &t) == SLOTS_UPDATE_OK && t == BOOTCTL_SLOT_B);
+    // ...and an update into B is a trial again
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
+    b.pending_slot = BOOTCTL_SLOT_B;
+    d = boot_decide(&in);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && (d.flags[0] & BOOTINFO_TRIAL));
+    // A trial slot without an image isn't taken over by the fallback rule: the trial just failed
+    bootctl_t c = updated_to_b();
+    CHECK(slots_at_start(&c, BOOTCTL_SLOT_A, BOOTINFO_FALLBACK | BOOTINFO_TRIAL_FAILED));
+    CHECK(c.active_slot == BOOTCTL_SLOT_A && c.slot_state[BOOTCTL_SLOT_B] == BOOTCTL_STATE_FAILED);
 }
 
 int main(void) {
@@ -194,6 +240,8 @@ int main(void) {
     test_crash_loop_after_keeping();
     test_switch();
     test_a_new_trial_in_the_same_session();
+    test_update_target();
+    test_running_in_place_of_the_active_slot();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

@@ -98,6 +98,11 @@ typedef struct {
     uint32_t written;                   // Bytes of the current part written to flash
     uint32_t sector_fill;
     uint8_t sector[4096];
+    // The image's first sector, erased first but programmed last, once the image's hash is right: it
+    // holds the block the boot ROM looks for, so a cut-off or damaged upload never leaves a slot it
+    // would start, whatever boot control says (phase 3 review)
+    uint32_t first_bytes;
+    uint8_t first[4096];
 } update_t;
 
 // Starts an upload into `slot` (BOOTCTL_SLOT_A or _B), the slot that isn't running

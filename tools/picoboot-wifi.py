@@ -262,8 +262,14 @@ def cmd_update(args):
         raise Cancelled()
     body = check(*upload(args, args.file, size))
     print(f"Installed {body.get('version')} in slot {body.get('slot')}, on trial.")
-    if body.get("rebooting"):
-        after_reboot(args)
+    if body.get("rebooting") and not args.no_wait:
+        st = wait_for_pico(args)
+        print(status_line(st))
+        fw = st.get("firmware", {})
+        if fw.get("slot") != body.get("slot") or fw.get("pending") != body.get("slot"):
+            # It crashed on trial and the loader went back (D12)
+            raise Refused(f"the new firmware didn't come up: the Pico went back to slot {fw.get('slot')}, "
+                          f"and slot {body.get('slot')} is marked failed")
 
 
 def cmd_keep(args):

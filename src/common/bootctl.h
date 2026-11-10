@@ -44,9 +44,12 @@ typedef struct {
     uint32_t payload1_fingerprint;  // Phase 4: detects USB payload installs (D17)
 } bootctl_t;
 
-// What boot control means when the area holds no valid record: the state right after a USB install
+// What boot control means when the area holds no valid record: the state right after a USB install.
+// Slot B counts as empty: the install doesn't touch it, so it may hold anything (an old or a test
+// build), and is never started until an update has written it (phase 3 review).
 static const bootctl_t BOOTCTL_DEFAULT = {
     .active_slot = BOOTCTL_SLOT_A,
     .pending_slot = BOOTCTL_NONE,
+    .slot_state = {BOOTCTL_STATE_INSTALLED, BOOTCTL_STATE_EMPTY},
     .active_payload = BOOTCTL_PAYLOAD_1,
 };

@@ -304,6 +304,10 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
             api_error(503, "busy", "another upload is in progress");
             return ERR_VAL;
         }
+        if (pending_reboot != REBOOT_NONE) {
+            api_error(503, "busy", "PicoBoot is about to reboot");
+            return ERR_VAL;
+        }
     } else if (api) {
         if (!content_type_is(http_request, http_request_len, "application/json")) {
             api_error(415, "unsupported_type", "send the body as Content-Type: application/json");
@@ -403,6 +407,8 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
 
 // --- Start, restart and main loop ---------------------------------------------------------------
 
+static bool ap_bss_up(void);
+
 static void ap_up(const net_ap_t *ap) {
     // As cyw43_arch_enable_ap_mode(), with the country of the settings instead of the one given to
     // cyw43_arch_init_with_country(): the driver sends it to the chip each time the AP comes up
@@ -427,7 +433,13 @@ bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_a
     uploader = upload;
     ap_up(ap);
     httpd_init();
-    return true;
+    // The driver doesn't say whether the chip came up (cyw43_wifi_set_up() returns nothing): ask it
+    // whether the AP's BSS is up (phase 3 review: a trial is kept only with Wi-Fi really up, D12)
+    return ap_bss_up();
+}
+
+bool net_upload_running(void) {
+    return upload_connection != NULL;
 }
 
 // Whether the chip still has the AP's BSS up ("bss" iovar for the AP's bsscfg; an error means down,

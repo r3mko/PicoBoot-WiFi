@@ -27,13 +27,15 @@ static void test_power_on_rule(void) {
     CHECK(!decide(false, true, NULL).power_on);
 }
 
-static void test_no_boot_control_means_slot_a_then_b(void) {
+static void test_no_boot_control_means_slot_a_only(void) {
+    // After a USB install slot B may hold anything: it isn't started until an update wrote it
     boot_decision_t d = decide(true, false, NULL);
-    CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_SLOT_B && d.bootctl_default);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_NONE && d.bootctl_default);
 }
 
 static void test_active_slot_first_then_the_other(void) {
     bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
     b.active_slot = BOOTCTL_SLOT_B;
     boot_decision_t d = decide(false, true, &b);
     CHECK(d.slots[0] == BOOTCTL_SLOT_B && d.slots[1] == BOOTCTL_SLOT_A && !d.bootctl_default);
@@ -44,6 +46,7 @@ static void test_active_slot_first_then_the_other(void) {
 
 static void test_garbage_active_slot_means_slot_a(void) {
     bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
     b.active_slot = 7;
     boot_decision_t d = decide(true, false, &b);
     CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_SLOT_B);
@@ -185,6 +188,25 @@ static void test_the_second_choice_is_never_empty_failed_or_on_trial(void) {
     CHECK(c.d.slots[1] == BOOTCTL_NONE);
 }
 
+// Phase 3 review: an empty slot is never started; an empty active slot gives way to the other one
+static void test_an_empty_slot_is_never_started(void) {
+    bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_A] = BOOTCTL_STATE_EMPTY;         // An update into it was cut off
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    boot_decision_t d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && (d.flags[0] & BOOTINFO_FALLBACK) && d.slots[1] == BOOTCTL_NONE);
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_FAILED;        // Nothing to start: BOOTSEL
+    d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_NONE && d.slots[1] == BOOTCTL_NONE);
+    // A trial of B with an empty active A: no second choice
+    b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_A] = BOOTCTL_STATE_EMPTY;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
+    b.pending_slot = BOOTCTL_SLOT_B;
+    d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && (d.flags[0] & BOOTINFO_TRIAL) && d.slots[1] == BOOTCTL_NONE);
+}
+
 static void test_session_word(void) {
     // A garbage word is a new session; crash counts saturate
     boot_inputs_t in = {.had_por = true, .marker_set = true, .session = 0x12345678u};
@@ -204,7 +226,7 @@ static void test_bootinfo_check_byte(void) {
 
 int main(void) {
     test_power_on_rule();
-    test_no_boot_control_means_slot_a_then_b();
+    test_no_boot_control_means_slot_a_only();
     test_active_slot_first_then_the_other();
     test_garbage_active_slot_means_slot_a();
     test_bootinfo_check_byte();
@@ -217,6 +239,7 @@ int main(void) {
     test_clean_reboots_reset_the_crash_count();
     test_the_second_choice_is_never_empty_failed_or_on_trial();
     test_session_word();
+    test_an_empty_slot_is_never_started();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

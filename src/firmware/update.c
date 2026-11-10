@@ -188,7 +188,12 @@ static void flush_sector(update_t *u) {
     const uint32_t pages = (u->sector_fill + PAGE - 1) / PAGE;
     memset(u->sector + u->sector_fill, 0xFF, pages * PAGE - u->sector_fill);
     u->io->erase_sector(u->io->ctx, u->area_offset + u->written);
-    u->io->program(u->io->ctx, u->area_offset + u->written, u->sector, pages * PAGE);
+    if (u->stage == UPDATE_STAGE_IMAGE && u->written == 0) {
+        memcpy(u->first, u->sector, pages * PAGE);  // Programmed last, by end_part()
+        u->first_bytes = pages * PAGE;
+    } else {
+        u->io->program(u->io->ctx, u->area_offset + u->written, u->sector, pages * PAGE);
+    }
     u->written += SECTOR;
     u->sector_fill = 0;
 }
@@ -205,7 +210,10 @@ static void end_part(update_t *u) {
     const bool image = u->stage == UPDATE_STAGE_IMAGE;
     if (memcmp(sha, image ? u->header.image_sha256 : u->header.blob_sha256, 32) != 0) {
         u->result = image ? UPDATE_BAD_IMAGE : UPDATE_BAD_BLOB;
-        return;
+        return;                         // An image's first sector stays erased
+    }
+    if (image) {
+        u->io->program(u->io->ctx, u->area_offset, u->first, u->first_bytes);
     }
     if (image && u->header.blob_size) {
         start_part(u, UPDATE_STAGE_BLOB);

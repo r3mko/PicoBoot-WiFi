@@ -281,6 +281,31 @@ static void test_bad_parts(void) {
     free(f.data);
 }
 
+// Phase 3 review: the image's first sector, which holds the boot ROM's block, is programmed last
+static bool slot_b_first_sector_erased(void) {
+    for (uint32_t i = 0; i < LAYOUT_SECTOR_SIZE; i++) if (flash[LAYOUT_SLOT_B_OFFSET + i] != 0xFF) return false;
+    return true;
+}
+
+static void test_first_sector_last(void) {
+    file_t f = make_file(true, NULL);
+    // Cut off anywhere after the first erase: the slot's first sector is erased, so the boot ROM
+    // won't start what's there (the old image or half of the new one)
+    const size_t cuts[] = {256 + 4096, 256 + 4097, 256 + 70000, 256 + sizeof(image) - 1, 256 + sizeof(image) + 5000};
+    for (unsigned i = 0; i < sizeof(cuts) / sizeof(cuts[0]); i++) {
+        reset_flash();
+        CHECK(upload(&f, 0, cuts[i]) == UPDATE_INCOMPLETE);
+        CHECK(i == 4 ? !slot_b_first_sector_erased() : slot_b_first_sector_erased());   // Past the image: written
+    }
+    reset_flash();                                                      // A damaged image
+    f.data[256 + 9000] ^= 1;
+    CHECK(upload(&f, 0, 0) == UPDATE_BAD_IMAGE && slot_b_first_sector_erased());
+    f.data[256 + 9000] ^= 1;
+    reset_flash();                                                      // A whole one: written last
+    CHECK(upload(&f, 0, 0) == UPDATE_OK && slot_b_holds_image());
+    free(f.data);
+}
+
 static void test_codes(void) {
     CHECK(strcmp(update_result_code(UPDATE_OK), "ok") == 0);
     CHECK(strcmp(update_result_code(UPDATE_USB_INSTALL_FILE), "not_an_update") == 0);
@@ -301,6 +326,7 @@ int main(void) {
     test_file_without_blob();
     test_header_refusals();
     test_bad_parts();
+    test_first_sector_last();
     test_codes();
     free(flash);
     if (failures) {

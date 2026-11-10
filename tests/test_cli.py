@@ -312,6 +312,7 @@ class UpdateTest(CliTestCase):
         return [r for r in self.pico.requests if r["path"] == "/api/firmware"]
 
     def test_upload_is_exactly_the_file(self):
+        self.pico.route("GET", "/api/status", (200, STATUS), (200, TRIAL_STATUS))
         path = self.update_file()
         code, out, err = self.cli("update", path, "--yes")
         self.assertEqual(code, 0, err)
@@ -332,12 +333,21 @@ class UpdateTest(CliTestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Running slot B, version 0.4.0, on trial", out)
 
+    def test_a_new_firmware_that_crashed_is_reported(self):
+        # Phase 3 review: after the reboot the Pico is back on the old slot (the trial failed)
+        self.pico.route("GET", "/api/status", (200, STATUS))
+        code, out, err = self.cli("update", self.update_file(), "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("didn't come up", err)
+        self.assertIn("slot A", err)
+
     def test_no_wait(self):
         code, out, _ = self.cli("update", self.update_file(), "--yes", "--no-wait")
         self.assertEqual(code, 0)
         self.assertEqual([r["path"] for r in self.pico.requests], ["/api/status", "/api/firmware"])
 
     def test_prompt_yes_and_no(self):
+        self.pico.route("GET", "/api/status", (200, STATUS), (200, TRIAL_STATUS))
         path = self.update_file()
         code, out, err = self.cli("update", path, stdin="y\n")
         self.assertEqual(code, 0, err)

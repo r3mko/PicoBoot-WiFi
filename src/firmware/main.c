@@ -79,7 +79,8 @@ static void read_boot_info(void) {
         report.slot = (info & BOOTINFO_SLOT_B) ? BOOTCTL_SLOT_B : BOOTCTL_SLOT_A;
         report.fallback = info & BOOTINFO_FALLBACK;
         report.bootctl_default = info & BOOTINFO_BOOTCTL_DEFAULT;
-        report.loader_flags = (uint8_t)(info & (BOOTINFO_TRIAL | BOOTINFO_TRIAL_FAILED | BOOTINFO_CRASH_FALLBACK));
+        report.loader_flags = (uint8_t)(info & (BOOTINFO_FALLBACK | BOOTINFO_TRIAL | BOOTINFO_TRIAL_FAILED |
+                                                BOOTINFO_CRASH_FALLBACK));
         report.loader_version = (uint8_t)((info & BOOTINFO_LOADER_MASK) >> BOOTINFO_LOADER_SHIFT);
         if (report.loader_version == 0) {
             report.loader_version = 1;      // Loaders before version 2 don't report one
@@ -174,6 +175,17 @@ static uint32_t flash_dma_64k_us(void) {
 }
 
 // The access point with the report page, after the injection (design D9). Doesn't return.
+// A firmware on trial that can't bring Wi-Fi up reboots as a crash (no clean-reboot word), so the
+// loader goes back to the other slot (D12, the owner's choice in the phase 3 review). Off trial it
+// carries on as before.
+static void fail_trial(void) {
+    if (report.loader_flags & BOOTINFO_TRIAL) {
+        TRACE("on trial without Wi-Fi: failing the trial\n");
+        watchdog_reboot(0, 0, 0);
+        while (true) {}
+    }
+}
+
 // D12: a firmware on trial that has done a complete power-on injection and brought Wi-Fi up keeps
 // itself (the other way is the firmware page's Keep)
 static void keep_if_proved(void) {
@@ -200,6 +212,7 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
     page.dma_64k_us = flash_dma_64k_us();
     page.wifi_area = wifiblob_select(report.slot);
     TRACE("Wi-Fi blob: area %d (-1 = none valid)\n", page.wifi_area);
+    bool wifi_ran = false;
     if (page.wifi_area >= 0) {
         const uint64_t t_init = time_us_64();
         const int err = cyw43_arch_init_with_country(wifi_country());
@@ -219,12 +232,19 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
 #endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
-            if (up) {
+            if (!up) {
+                fail_trial();           // On trial, a firmware without Wi-Fi is undone (D12)
+            }
+            {
+                wifi_ran = true;
+                page.ap_confirmed = up;
                 page.wifi_up_ms = (uint32_t)((time_us_64() - t_start) / 1000);
                 page_init(&page);
                 api_init(&page);
                 TRACE("Wi-Fi up after %lu ms; page at http://192.168.4.1/\n", (unsigned long)page.wifi_up_ms);
-                keep_if_proved();
+                if (up) {
+                    keep_if_proved();   // D12: a complete power-on injection, then the AP really up
+                }
                 do {
                     net_poll();
                     watchdog_update();
@@ -237,6 +257,11 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
                 TRACE("Wi-Fi off: no client for %u minutes (design D20)\n", wifi_settings()->auto_off_minutes);
             }
         }
+    }
+
+    // A firmware on trial without a Wi-Fi blob, or whose CYW43 didn't initialise, is undone (D12)
+    if (!wifi_ran) {
+        fail_trial();
     }
 
     // Wi-Fi is off (D20), or there's no Wi-Fi blob, or Wi-Fi failed to start: idle until the next

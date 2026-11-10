@@ -253,7 +253,7 @@ function renderFw() {
     const tags = [k === f.slot ? "running" : "", k === f.pending ? "pending (on trial)" : ""].filter(Boolean).join(", ");
     h += `<div class="row"><dt>Slot ${k}${tags ? `<span class="note">${tags}</span>` : ""}</dt><dd>${v ? esc(v) : "no firmware"}` +
       `<span class="note">${esc(STATES[st] || st)}</span>` +
-      (k !== f.slot && st !== "empty" ? `<button class="btn sec" data-boot="${k}">Boot slot ${k}</button>` : "") + `</dd></div>`;
+      (k !== f.slot && st !== "empty" && v ? `<button class="btn sec" data-boot="${k}">Boot slot ${k}</button>` : "") + `</dd></div>`;
   }
   $("fw-slots").innerHTML = h;
   $("fw-trial").hidden = !trial;
@@ -368,7 +368,12 @@ $("up-go").onclick = () => {
     $("up-msg").textContent = "Installed into slot " + (d.slot || slotNote) + "; PicoBoot restarts into it on trial…";
     await pollUntilBack(2000);
     uploading = false; $("up-file").disabled = false; $("up-file").value = ""; upFile = null;
-    $("up-msg").textContent = "PicoBoot is back, running the new firmware on trial.";
+    // Check that the new firmware came up: if it crashed, the loader went back (D12)
+    const f = lastStatus && lastStatus.firmware;
+    $("up-msg").textContent = f && f.slot === d.slot && f.pending === d.slot ?
+      "PicoBoot is back, running the new firmware on trial." :
+      "The new firmware didn't come up: PicoBoot went back to slot " + (f ? f.slot : "?") +
+      ", and slot " + d.slot + " is marked failed.";
   };
   x.send(f);
 };

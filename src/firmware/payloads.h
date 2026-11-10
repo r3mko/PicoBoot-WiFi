@@ -32,5 +32,10 @@ int payloads_choose(uint8_t slot, const char **code, const char **message);
 int payloads_rename(uint8_t slot, const char *name, const char **code, const char **message);
 int payloads_delete(uint8_t slot, const char **code, const char **message);
 
+// The backup of a payload (D42): the payload as it sits in flash, of its own size (which the status's
+// sha256 covers), named after its name ("Swiss r2119.bin"; "payload1.bin" without one). False if the
+// slot holds no valid payload.
+bool payloads_file(uint8_t slot, net_file_t *file);
+
 // A name the user may give (D42): printable ASCII, at most BOOTCTL_NAME_MAX characters
 bool payloads_name_ok(const char *name);

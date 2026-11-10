@@ -81,9 +81,9 @@ uint32_t wifi_country(void) {
 }
 
 bool wifi_start(net_page_fn page, net_action_fn action, net_api_fn api, const net_upload_t *const *uploads,
-                wifi_led_t led) {
+                const net_download_t *download, wifi_led_t led) {
     const net_ap_t ap = ap_settings();
-    if (!net_start(&ap, page, action, api, uploads)) {
+    if (!net_start(&ap, page, action, api, uploads, download)) {
         return false;
     }
     led_pattern = led;

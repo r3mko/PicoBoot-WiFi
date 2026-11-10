@@ -57,6 +57,7 @@
 #define LWIP_HTTPD_DYNAMIC_HEADERS  0
 #define HTTPD_USE_CUSTOM_FSDATA     1       // net/fsdata_custom.c
 #define HTTPD_LIMIT_SENDING_TO_2MSS 0       // Fill the send buffer, for throughput
+#define LWIP_HTTPD_DYNAMIC_FILE_READ 1      // Downloads: httpd reads them through fs_read_custom()
 // Copy response data into the TCP segments: net.c frees a response when httpd closes it, which
 // can be before the client has acknowledged (and before a retransmission of) the last segment
 #define HTTP_IS_DATA_VOLATILE(hs)   TCP_WRITE_FLAG_COPY

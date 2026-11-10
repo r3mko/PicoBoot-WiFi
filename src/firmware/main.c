@@ -236,9 +236,9 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
             updater_init(report.slot, report.loader_version, report.from_loader);
             static const net_upload_t *const uploads[] = {&UPDATER_UPLOAD, &PAYLOADS_UPLOAD, NULL};
 #if PICOBOOT_WIFI_TEST_BUILD
-            const bool up = wifi_start(page_render, page_action, api_handle, uploads, led);  // With the test page
+            const bool up = wifi_start(page_render, page_action, api_handle, uploads, &API_DOWNLOAD, led);  // With the test page
 #else
-            const bool up = wifi_start(NULL, NULL, api_handle, uploads, led);
+            const bool up = wifi_start(NULL, NULL, api_handle, uploads, &API_DOWNLOAD, led);
 #endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);

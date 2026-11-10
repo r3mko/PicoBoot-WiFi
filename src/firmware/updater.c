@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "updater.h"
 #include "update.h"
@@ -20,6 +21,8 @@
 #ifndef PICOBOOT_WIFI_BOARD
 #error "PICOBOOT_WIFI_BOARD (PICO_BOARD) comes from CMakeLists.txt"
 #endif
+
+extern char __flash_binary_start[], __flash_binary_end[];   // This image, from the SDK's linker script
 
 static uint8_t running;
 static update_env_t env = {PICOBOOT_WIFI_BOARD, LAYOUT_VERSION, 1};
@@ -81,6 +84,39 @@ static bool io_slot_emptied(void *ctx, uint8_t slot) {
 
 static const update_io_t io = {io_erase, io_program, io_read, io_sha_start, io_sha_update, io_sha_finish,
                                io_slot_emptied, NULL};
+
+// --- The backup (GET /api/backup/firmware, D42) --------------------------------------------------
+
+bool updater_backup(int wifi_area, net_file_t *file) {
+    static uint8_t header[UPDATE_HEADER_SIZE];      // Sent from here until the download ends
+    const uint8_t *image = io_read(NULL, running == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET);
+    const uint8_t *blob = io_read(NULL, wifi_area == BOOTCTL_SLOT_B ? LAYOUT_WIFI_B_OFFSET : LAYOUT_WIFI_A_OFFSET);
+    update_header_t h = {
+        .flags = UPDATE_FLAG_BLOB,
+        .layout = LAYOUT_VERSION,
+        .loader = BOOTINFO_LOADER_NEEDED,
+        .image_size = (uint32_t)(__flash_binary_end - __flash_binary_start),
+        .blob_size = update_wifi_image_size(blob),
+        .board = PICOBOOT_WIFI_BOARD,
+        .version = PICOBOOT_WIFI_BUILD,
+    };
+    if ((wifi_area != BOOTCTL_SLOT_A && wifi_area != BOOTCTL_SLOT_B) || !h.blob_size) {
+        return false;
+    }
+    sha_of(image, h.image_size, h.image_sha256);
+    sha_of(blob, h.blob_size, h.blob_sha256);
+    update_build_header(&h, header);
+    sha_of(header, UPDATE_HEADER_HASHED, header + UPDATE_HEADER_HASHED);
+    snprintf(file->filename, sizeof(file->filename), "picoboot-wifi-%s-update.bin", PICOBOOT_WIFI_BUILD);
+    file->type = "application/octet-stream";
+    file->parts[0].data = header;
+    file->parts[0].length = UPDATE_HEADER_SIZE;
+    file->parts[1].data = image;
+    file->parts[1].length = h.image_size;
+    file->parts[2].data = blob;
+    file->parts[2].length = h.blob_size;
+    return true;
+}
 
 // --- The upload hooks ----------------------------------------------------------------------------
 

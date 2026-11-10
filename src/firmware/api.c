@@ -18,6 +18,7 @@
 #include "layout.h"
 #include "slots.h"
 #include "payloads.h"
+#include "updater.h"
 #include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
@@ -517,6 +518,52 @@ static int post_reboot(const char *body, size_t body_len, char *out, size_t size
     return finish(&j, out, size, len);
 }
 
+// --- GET /api/backup/... (D42): downloads, which net.c streams ---------------------------------------
+
+static bool backup_handles(const char *path) {
+    return strncmp(path, "/api/backup/", 12) == 0;
+}
+
+static int backup_open(const char *path, net_file_t *file, char *out, size_t size, size_t *len) {
+    const char *what = path + 12;
+    const int slot = payloads_slot(what);
+    if (slot == BOOTCTL_PAYLOAD_1 || slot == BOOTCTL_PAYLOAD_2) {
+        return payloads_file((uint8_t)slot, file) ? 200
+             : error(out, size, len, 409, "not_valid", "that slot holds no valid payload", NULL);
+    }
+    if (strcmp(what, "firmware") == 0) {
+        return updater_backup(info->wifi_area, file) ? 200
+             : error(out, size, len, 500, "internal", "the Wi-Fi blob this firmware runs with isn't there", NULL);
+    }
+    if (strcmp(what, "settings") == 0) {
+        // The settings as POST /api/settings takes them, without the password (D41, D42)
+        static char json[320];                      // Sent from here until the download ends
+        const settings_t *s = wifi_settings();
+        json_out_t j;
+        json_init(&j, json, sizeof(json));
+        json_object_begin(&j, NULL);
+        json_string(&j, "ssid", s->ssid);
+        json_string(&j, "country", s->country);
+        json_int(&j, "channel", s->channel);
+        json_string(&j, "tx_power", SETTINGS_TX_NAMES[s->tx_power]);
+        json_int(&j, "auto_off_minutes", s->auto_off_minutes);
+        json_bool(&j, "led", s->led);
+        json_object_end(&j);
+        const size_t n = json_finish(&j);
+        if (!n) {
+            return error(out, size, len, 500, "internal", "the settings didn't fit", NULL);
+        }
+        file->type = "application/json";
+        strcpy(file->filename, "picoboot-wifi-settings.json");
+        file->parts[0].data = (const uint8_t *)json;
+        file->parts[0].length = (uint32_t)n;
+        return 200;
+    }
+    return error(out, size, len, 404, "not_found", "the backups are payload1, payload2, firmware and settings", NULL);
+}
+
+const net_download_t API_DOWNLOAD = {backup_handles, backup_open};
+
 // --- Routing --------------------------------------------------------------------------------------
 
 int api_handle(bool post, const char *path, const char *body, size_t body_len,
@@ -545,6 +592,9 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
             return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);
         }
         return post_payload(path[13] == 'n', body, body_len, out, out_size, out_len);
+    }
+    if (backup_handles(path)) {
+        return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // GETs are downloads
     }
     if (strcmp(path, "/api/reboot") == 0) {
         if (!post) {

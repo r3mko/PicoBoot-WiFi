@@ -10,13 +10,14 @@ The web UI and the CLI tool use this API. Phase 2 defines status, settings, diag
 ## Common rules
 
 - **Address:** `http://192.168.4.1/api/…`, over the access point. There is no other login: the Wi-Fi password is the gate (D19).
-- **Responses** are JSON (`Content-Type: application/json`), never cached (`Cache-Control: no-store`), one per connection (`Connection: close`).
+- **Responses** are JSON (`Content-Type: application/json`), never cached (`Cache-Control: no-store`), one per connection (`Connection: close`). The backups are files (below).
 - **POST bodies** are JSON, sent with `Content-Type: application/json`; anything else gets 415.
   - **Why:** a page on another site can't send that content type to the Pico without a CORS preflight, which the Pico doesn't answer. So a web page a phone opened elsewhere can't change settings through it.
 - **POSTs must be addressed to `Host: 192.168.4.1`** (or `192.168.4.1:80`); anything else gets 403.
   - **Why:** the Pico's DNS answers every name with its own address. A page opened elsewhere could otherwise point its own name at the Pico and send same-origin requests, which need no preflight (DNS rebinding).
 - **Body size:** at most 1024 bytes for the endpoints here; more gets 413.
 - **While an upload streams in,** other POSTs get 503 `busy`: a reboot or an access-point restart would cut it off.
+- **One transfer of a file at a time:** while a backup downloads, uploads and payload deletes get 503 `busy`, so what it sends can't change under it; a backup asked for during an upload or another backup gets 503 `busy` too.
 - **Compatibility:**
   - Later phases add fields; clients ignore fields they don't know.
   - `api` in the status counts up only when a field changes meaning or goes away.
@@ -261,6 +262,18 @@ A payload upload (D15, D16, D42). The body is a payload UF2 (any family: the Pic
 |---|---|---|
 | `/api/payload/name` | `{"slot": "payload1", "name": "Swiss r2119"}` | `{"slot": ..., "name": ...}`; 400 `bad_value` for a name that isn't 0–24 printable ASCII characters |
 | `/api/payload/delete` | `{"slot": "payload2"}` | `{"slot": ..., "deleted": true}`; 409 `chosen` if it's the choice (D42: choose another one first) |
+
+## GET /api/backup/…
+
+Backups (D22, D42): plain downloads, streamed from flash, with `Content-Disposition: attachment` and a file name. Each one can go back the way the Pico takes it.
+
+| Path | What | File name | Restore with |
+|---|---|---|---|
+| `/api/backup/payload1`, `/payload2` | The payload as it sits in flash (`IPLBOOT ` … `PICO`), of the size the status gives. Its SHA-256 is the status's `sha256`. 409 `not_valid` if the slot holds no valid payload | Its name and `.bin`: `Swiss r2119.bin`, or `payload1.bin` without a name. Characters other than letters, digits and ` ._()+-` become `_` | `POST /api/payload` |
+| `/api/backup/firmware` | The running firmware as an update file (`docs/update-format.md`): the image in its slot, the Wi-Fi blob it runs with, and a header the Pico makes as `mkupdate.py` does. The same bytes as the update file of that build | `picoboot-wifi-` and the version and `-update.bin`: `picoboot-wifi-1.0.0-update.bin` | `POST /api/firmware`: into the other slot, on trial |
+| `/api/backup/settings` | The settings as `POST /api/settings` takes them, without the password (D41): `{"ssid":"","country":"XX","channel":6,"tx_power":"medium","auto_off_minutes":10,"led":true}` | `picoboot-wifi-settings.json` | `POST /api/settings` with the file as its body |
+
+Only the running firmware is offered: the image size of the other slot's isn't recorded. A POST to these paths gets 405.
 
 ## POST /api/reboot
 

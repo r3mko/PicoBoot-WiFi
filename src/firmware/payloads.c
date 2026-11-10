@@ -125,7 +125,34 @@ int payloads_rename(uint8_t slot, const char *name, const char **code, const cha
     return 200;
 }
 
+bool payloads_file(uint8_t slot, net_file_t *file) {
+    if (slot > BOOTCTL_PAYLOAD_2 || payload_check(slot_base(slot), slot_size[slot]) == PAYLOAD_INVALID) {
+        return false;
+    }
+    bootctl_t b;
+    storage_bootctl_load(&b);
+    const char *name = b.payload_name[slot][0] ? b.payload_name[slot] : payloads_name(slot);
+    size_t n = 0;
+    for (; name[n] && n < BOOTCTL_NAME_MAX; n++) {
+        // Safe in a quoted file name on any system: letters, digits and a few marks; others become _
+        const char c = name[n];
+        const bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                           strchr(" ._()+-", c) != NULL;
+        file->filename[n] = plain ? c : '_';
+    }
+    strcpy(file->filename + n, ".bin");
+    file->type = "application/octet-stream";
+    file->parts[0].data = (const uint8_t *)slot_base(slot);
+    file->parts[0].length = BigEndian32(slot_base(slot)[2]);
+    return true;
+}
+
 int payloads_delete(uint8_t slot, const char **code, const char **message) {
+    if (net_download_running()) {
+        *code = "busy";                         // It may be this payload's backup
+        *message = "a download is in progress: try again when it's done";
+        return 503;
+    }
     bootctl_t b;
     storage_bootctl_load(&b);
     if (b.active_payload == slot) {

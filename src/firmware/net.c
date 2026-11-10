@@ -51,7 +51,8 @@ static dns_server_t dns_server;
 static net_page_fn render_page;
 static net_action_fn page_action;
 static net_api_fn api_handler;
-static const net_upload_t *uploader;
+static const net_upload_t *const *uploaders;
+static const net_upload_t *uploader;    // The handler of the upload in progress
 static void *upload_connection;     // The upload in progress, or NULL
 static uint32_t requests;
 static int client_count;
@@ -294,7 +295,14 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
         }
         return ERR_VAL;
     }
-    const bool upload = api && uploader && strlen(uri) < POST_URI_MAX && uploader->handles(uri);
+    const net_upload_t *handler = NULL;
+    for (int i = 0; api && uploaders && uploaders[i] && strlen(uri) < POST_URI_MAX; i++) {
+        if (uploaders[i]->handles(uri)) {
+            handler = uploaders[i];
+            break;
+        }
+    }
+    const bool upload = handler != NULL;
     if (upload) {
         if (!content_type_is(http_request, http_request_len, "application/octet-stream")) {
             api_error(415, "unsupported_type", "send the file as Content-Type: application/octet-stream");
@@ -327,12 +335,13 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
     for (int i = 0; i < POSTS_MAX; i++) {
         if (!posts[i].connection) {
             if (upload) {
-                api_answer.status = uploader->begin(uri, (uint32_t)content_len, api_answer.json,
-                                                    sizeof(api_answer.json), &api_answer.len);
+                api_answer.status = handler->begin(uri, http_request, http_request_len, (uint32_t)content_len,
+                                                   api_answer.json, sizeof(api_answer.json), &api_answer.len);
                 if (api_answer.status != 200) {
                     return ERR_VAL;         // Refused before any of the body came: the answer is ready
                 }
                 upload_connection = connection;
+                uploader = handler;
             }
             posts[i].connection = connection;
             strcpy(posts[i].uri, uri);
@@ -426,16 +435,36 @@ static void ap_up(const net_ap_t *ap) {
 }
 
 bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api,
-               const net_upload_t *upload) {
+               const net_upload_t *const *uploads) {
     render_page = page;
     page_action = action;
     api_handler = api;
-    uploader = upload;
+    uploaders = uploads;
     ap_up(ap);
     httpd_init();
     // The driver doesn't say whether the chip came up (cyw43_wifi_set_up() returns nothing): ask it
     // whether the AP's BSS is up (phase 3 review: a trial is kept only with Wi-Fi really up, D12)
     return ap_bss_up();
+}
+
+bool net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size) {
+    const char *end, *v = header_value(headers, headers_len, name, &end);
+    if (!v || out_size == 0) {
+        return false;
+    }
+    size_t n = 0;
+    while (v + n < end && v[n] && v[n] != '\r' && v[n] != '\n') {
+        n++;
+    }
+    while (n && v[n - 1] == ' ') {
+        n--;
+    }
+    if (n >= out_size) {
+        return false;
+    }
+    memcpy(out, v, n);
+    out[n] = '\0';
+    return true;
 }
 
 bool net_upload_running(void) {

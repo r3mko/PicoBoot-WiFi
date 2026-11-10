@@ -13,6 +13,12 @@
 #include "bootinfo.h"
 #include "storage.h"
 #include "settings.h"
+#include "payload.h"
+#include "layout.h"
+#include "hardware/regs/addressmap.h"
+
+#define PAYLOAD_BASE(i) ((const uint32_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + \
+                         ((i) ? LAYOUT_PAYLOAD2_OFFSET : LAYOUT_PAYLOAD1_OFFSET)))
 #include "wifi.h"
 #include "hardware/adc.h"
 #include "hardware/structs/powman.h"
@@ -83,6 +89,7 @@ static const char *result_name(injection_result_t r) {
         case INJECTION_COMPLETE: return "complete";
         case INJECTION_STALLED: return "STALLED";
         case INJECTION_NO_CS: return "no CS seen (no console?)";
+        case INJECTION_SKIPPED: return "skipped: original IPL once";
         default: return "not run: a warm boot (design D8)";
     }
 }
@@ -91,6 +98,7 @@ static const char *short_result(const boot_report_t *r) {
     const uint32_t expected = SKIPPED_TRANSFERS + r->payload_words / WORDS_PER_TRANSFER;
     switch (r->result) {
         case INJECTION_NOT_RUN: return "warm (not run)";
+        case INJECTION_SKIPPED: return "IPL once";
         case INJECTION_NO_CS: return "no CS";
         case INJECTION_STALLED: return "STALLED";
         default: break;
@@ -273,6 +281,12 @@ size_t page_render(char *buf, size_t size) {
 
     bootctl_t b;
     const bool stored = storage_bootctl_load(&b);
+    put(&o, "  Payloads           : 1 \"%s\" %s, 2 \"%s\" %s; chosen %s%s%s\n",
+        b.payload_name[0], payload_check(PAYLOAD_BASE(0), LAYOUT_PAYLOAD1_SIZE) ? "valid" : "none",
+        b.payload_name[1], payload_check(PAYLOAD_BASE(1), LAYOUT_PAYLOAD2_SIZE) ? "valid" : "none",
+        b.active_payload == BOOTCTL_PAYLOAD_2 ? "2" : b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in" : "1",
+        (b.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) ? "; ORIGINAL IPL at the next power-on" : "",
+        r->payload_usb_install ? "; this power-on: payload 1 from a USB install (D17)" : "");
     static const char *const states[] = {"installed", "empty", "TRIAL", "kept", "FAILED"};
     put(&o, "  Slots              : A %s, B %s%s; running %c\n",
         b.slot_state[0] < 5 ? states[b.slot_state[0]] : "?", b.slot_state[1] < 5 ? states[b.slot_state[1]] : "?",

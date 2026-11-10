@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "payload.h"
+#include "bootctl.h"
 #include "endian.h"
 
 static int failures;
@@ -73,7 +74,17 @@ static void test_damaged_payloads_are_refused(void) {
     CHECK(payload_check(region, 8) == PAYLOAD_INVALID);   // A region too small for the header
 }
 
+
+// D15, D42: an upload goes into the payload slot that isn't the choice; payload 2 for the built-in
+static void test_upload_target(void) {
+    CHECK(payload_upload_target(BOOTCTL_PAYLOAD_1) == BOOTCTL_PAYLOAD_2);
+    CHECK(payload_upload_target(BOOTCTL_PAYLOAD_2) == BOOTCTL_PAYLOAD_1);
+    CHECK(payload_upload_target(BOOTCTL_PAYLOAD_BUILTIN) == BOOTCTL_PAYLOAD_2);
+    CHECK(payload_upload_target(77) == BOOTCTL_PAYLOAD_2);
+}
+
 int main(void) {
+    test_upload_target();
     test_valid_payloads_are_rounded_up_to_whole_transfers();
     test_sizes_that_dont_fit_are_refused();
     test_damaged_payloads_are_refused();

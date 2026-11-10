@@ -22,6 +22,7 @@ typedef enum {
     INJECTION_NO_CS,            // The console's first CS didn't come (no console: on the bench)
     INJECTION_COMPLETE,         // All words sent and the data line released
     INJECTION_STALLED,          // First CS seen, but not complete in time
+    INJECTION_SKIPPED,          // "Original IPL once" (D22): this power-on boots the console's own IPL
 } injection_result_t;
 
 typedef struct {
@@ -39,6 +40,8 @@ typedef struct {
     payload_source_t payload;
     uint8_t payload_chosen;     // Boot control's choice (BOOTCTL_PAYLOAD_*), BOOTCTL_NONE if no injection;
                                 // a different `payload` means the chosen one wasn't valid (D22)
+    bool payload_usb_install;   // Payload 1 changed since it was recorded: a USB install, so it boots (D17)
+    uint32_t payload1_fingerprint;      // Payload 1's fingerprint at this power-on (D17)
     uint32_t payload_words;     // Words to send (256 per 1K transfer)
     uint32_t words_delivered;
     injection_result_t result;

@@ -5,7 +5,7 @@
 | **Status** | Approved with phase 2, 2026-11-09; the phase 3 additions with phase 3, 2026-11-10 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
-The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload and the slot choices. The other endpoints of D18 come with phase 4: payloads, the payload and IPL choices, and backups.
+The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload and the slot choices; phase 4 the payloads, the payload and IPL choices, and backups.
 
 ## Common rules
 
@@ -81,6 +81,27 @@ What the status page shows (D22).
 | `wifi.clients` | Clients joined to the access point |
 | `wifi.password_is_default` | Still `picoboot`: the UI shows the D19 banner |
 | `wifi.reverted` | At this start, the firmware undid a Wi-Fi change that no client confirmed (D41) |
+| `payloads` | The payloads (D15, D42), below |
+
+`payloads`:
+
+```json
+"payloads": {
+  "chosen": "payload1", "upload_target": "payload2", "original_ipl_once": false, "usb_install": false,
+  "payload1": {"valid": true, "name": "Swiss r2119", "size": 1349956, "sha256": "9f2c…"},
+  "payload2": {"valid": false, "name": "", "size": 0, "sha256": null}
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `chosen` | What the next power-on injects: `payload1`, `payload2` or `builtin` (the built-in gekkoboot, which also boots when the chosen payload isn't valid) |
+| `upload_target` | Where the next upload goes: the payload slot that isn't the choice; payload 2 while the built-in is the choice (D42) |
+| `original_ipl_once` | The next power-on boots the console's own IPL, then this clears itself |
+| `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17) |
+| `payloadN.valid` | It holds a payload with a good header, size and footer |
+| `payloadN.name` | The name you gave it (D42); `""` for none, e.g. after a USB install |
+| `payloadN.sha256` | Of the payload's own bytes; `null` while an upload runs and it isn't known yet |
 
 ## GET /api/settings
 
@@ -167,7 +188,7 @@ The last boot and the boot log (D22, D39).
 | `payload` | `none`, `payload1`, `payload2` or `builtin` |
 | `payload_chosen` | Boot control's choice, in the same names; `none` without an injection. If it differs from `payload`, the chosen payload wasn't valid and the built-in one went instead |
 | `payload_words`, `words_delivered` | Words to send (256 per 1K transfer) and words sent |
-| `result` | `not_run` (warm boot), `no_cs` (no console), `complete` or `stalled` |
+| `result` | `not_run` (warm boot), `skipped` ("original IPL once"), `no_cs` (no console), `complete` or `stalled` |
 | `main_to_ready_us` | `main()` to "PIO ready" |
 | `margin_raw_us`, `margin_clocked_us` | "PIO ready" to the first CS edge, and to the first real transfer; −1 if none (D31, D36) |
 | `injection_us` | From the first CS to the end of the injection |
@@ -175,6 +196,7 @@ The last boot and the boot log (D22, D39).
 | `cs_high_at_ready` | CS level at "PIO ready" |
 | `cs_pulldown_test` | The boot ran in the CS pull-down test mode |
 | `chip_stepping`, `rom` | As in the status |
+| `payload_usb_install` | Payload 1 had changed since it was recorded, so it booted (D17) |
 | `loader` | The loader's version |
 | `trial` | The loader started this slot on trial (D12) |
 | `trial_failed` | The other slot's trial failed in this session: it crashed, or held no image |
@@ -215,7 +237,30 @@ The firmware page's choices (D12, D13). The body holds exactly one of:
 - **Back to the active slot from a firmware on trial:** the trial is abandoned. That slot stays unkept and is never a fallback.
 - **To a kept slot:** it becomes the active one. A running firmware from a USB install counts as kept from then on.
 - **To any other slot with a firmware** (from a USB install, on trial, unkept or failed): it goes on trial (D12). After a USB install the other slot may hold anything, so it's never made active straight away.
-- Phase 4 adds the payload and "original IPL once" choices to this endpoint.
+| `{"payload": "payload1"}`, `"payload2"` or `"builtin"` | The payload for the next power-ons (D15) | `{"payload": ...}`; 409 `not_valid` if that slot holds no valid payload |
+| `{"original_ipl_once": true}` (or `false`) | The next power-on boots the console's own IPL, e.g. to set its clock or language; then it clears itself | `{"original_ipl_once": true}` |
+
+Payload choices take effect at the next power-on; nothing reboots.
+
+## POST /api/payload
+
+A payload upload (D15, D16, D42). The body is a payload UF2 (any family: the Pico takes one family's blocks in order from `0x10080000`) or a raw payload (`IPLBOOT ` … `PICO`), sent as `application/octet-stream`. A `.dol` is converted first, by the UI or the CLI. An optional header `X-Name` gives the payload's name: at most 24 printable ASCII characters.
+
+- **It goes into** the slot that isn't the choice (`upload_target`), and becomes the choice once it's verified. The payload that boots now is never touched.
+- **The answer:**
+
+```json
+{"installed": true, "slot": "payload2", "name": "Swiss r2119", "size": 1349956, "sha256": "9f2c…"}
+```
+
+- **Refusals** answer 400: `not_a_payload` (neither format, no payload blocks at `0x10080000`, e.g. the USB install file), `bad_uf2` (a broken block, or the payload's blocks not in order), `too_large` (more than the slot: 1.5 MB for payload 1, 1.5 MB − 4 KB for payload 2), `bad_payload` (the size or footer, or cut short), `bad_readback`, `incomplete`, `bad_value` (the name). The ones from the header come before any flash is touched; the rest leave the slot without a valid payload, and the choice unchanged. Also 500 `flash_write`, 503 `busy`, 415 as for the firmware upload.
+
+## POST /api/payload/name and /api/payload/delete
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `/api/payload/name` | `{"slot": "payload1", "name": "Swiss r2119"}` | `{"slot": ..., "name": ...}`; 400 `bad_value` for a name that isn't 0–24 printable ASCII characters |
+| `/api/payload/delete` | `{"slot": "payload2"}` | `{"slot": ..., "deleted": true}`; 409 `chosen` if it's the choice (D42: choose another one first) |
 
 ## POST /api/reboot
 

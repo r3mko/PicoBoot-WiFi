@@ -15,7 +15,7 @@
 #include "bootinfo.h"
 #include "hardware/structs/powman.h"
 #include "hardware/regs/addressmap.h"
-#include "pico/sha256.h"
+#include "sha.h"
 
 #ifndef PICOBOOT_WIFI_BOARD
 #error "PICOBOOT_WIFI_BOARD (PICO_BOARD) comes from CMakeLists.txt"
@@ -25,8 +25,6 @@ static uint8_t running;
 static update_env_t env = {PICOBOOT_WIFI_BOARD, LAYOUT_VERSION, 1};
 static bool can_update;
 static update_t writer;                 // One upload at a time (net.c makes sure)
-static pico_sha256_state_t sha;
-static bool sha_running;                // The hardware is claimed until finished or cleaned up
 
 void updater_init(uint8_t running_slot, uint32_t loader_version, bool from_loader) {
     running = running_slot;
@@ -53,34 +51,20 @@ static const uint8_t *io_read(void *ctx, uint32_t offset) {
     return (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + offset);
 }
 
-// The RP2350's SHA-256 hardware, without DMA. A hash an upload left unfinished (cut off, or a failed
-// boot control write) still holds the hardware: release it first, or the start would wait forever
-// inside the lwIP callback until the watchdog took it for a crash (phase 3 review).
-static void sha_release(void) {
-    if (sha_running) {
-        pico_sha256_cleanup(&sha);
-        sha_running = false;
-    }
-}
-
+// The RP2350's SHA-256 hardware (sha.c: an unfinished hash is released at the next start)
 static void io_sha_start(void *ctx) {
     (void)ctx;
-    sha_release();
-    pico_sha256_start_blocking(&sha, SHA256_BIG_ENDIAN, false);
-    sha_running = true;
+    sha_start();
 }
 
 static void io_sha_update(void *ctx, const uint8_t *data, size_t length) {
     (void)ctx;
-    pico_sha256_update_blocking(&sha, data, length);
+    sha_update(data, length);
 }
 
 static void io_sha_finish(void *ctx, uint8_t out[32]) {
     (void)ctx;
-    sha256_result_t result;
-    pico_sha256_finish(&sha, &result);
-    sha_running = false;
-    memcpy(out, result.bytes, 32);
+    sha_finish(out);
 }
 
 // Before the first erase: the slot stops being a firmware in boot control (D12)
@@ -134,8 +118,11 @@ static int answer_error(update_result_t r, char *out, size_t size, size_t *len) 
     return r == UPDATE_FLASH_WRITE ? 500 : 400;
 }
 
-static int begin(const char *path, uint32_t length, char *out, size_t size, size_t *len) {
+static int begin(const char *path, const char *headers, uint16_t headers_len, uint32_t length,
+                 char *out, size_t size, size_t *len) {
     (void)path;
+    (void)headers;
+    (void)headers_len;
     if (!can_update) {
         return answer_error(UPDATE_NEEDS_USB_INSTALL, out, size, len);
     }

@@ -9,6 +9,7 @@
 #include "payload.h"
 #include "endian.h"
 #include "records.h"
+#include "bootctl.h"
 
 size_t payload_check(const uint32_t *base, size_t region_bytes) {
     const uint32_t *p = base;
@@ -51,4 +52,8 @@ uint32_t payload_fingerprint(const uint32_t *base, size_t region_bytes) {
     uint32_t crc = record_crc32(0, base, head);
     crc = record_crc32(crc, &base[size / 4 - 1], 4);
     return crc ? crc : 1;
+}
+
+uint8_t payload_upload_target(uint8_t active_payload) {
+    return active_payload == BOOTCTL_PAYLOAD_2 ? BOOTCTL_PAYLOAD_1 : BOOTCTL_PAYLOAD_2;
 }

@@ -31,7 +31,7 @@ typedef enum {
 } wifi_led_t;
 
 // Starts the access point and the servers (net_start()); returns false on failure
-bool wifi_start(net_page_fn page, net_action_fn action, net_api_fn api, const net_upload_t *upload,
+bool wifi_start(net_page_fn page, net_action_fn action, net_api_fn api, const net_upload_t *const *uploads,
                 wifi_led_t led);
 
 // The Tx power the chip reports after the last change, in quarter dBm; -1 if unknown

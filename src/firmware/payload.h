@@ -22,3 +22,7 @@ size_t payload_check(const uint32_t *base, size_t region_bytes);
 // hold the header and the size, and of its footer. Quick enough to compare before the injection
 // (C1). 0 if the region holds no valid payload; never 0 otherwise.
 uint32_t payload_fingerprint(const uint32_t *base, size_t region_bytes);
+
+// Where an upload goes (D15, D42): the payload slot that isn't the choice (BOOTCTL_PAYLOAD_*), and
+// payload 2 while the built-in is the choice, so payload 1 keeps what a USB install put there
+uint8_t payload_upload_target(uint8_t active_payload);

@@ -8,6 +8,7 @@
 
 #include "payload.h"
 #include "endian.h"
+#include "records.h"
 
 size_t payload_check(const uint32_t *base, size_t region_bytes) {
     const uint32_t *p = base;
@@ -39,4 +40,15 @@ size_t payload_check(const uint32_t *base, size_t region_bytes) {
     }
 
     return word_count_aligned;
+}
+
+uint32_t payload_fingerprint(const uint32_t *base, size_t region_bytes) {
+    if (payload_check(base, region_bytes) == PAYLOAD_INVALID) {
+        return 0;
+    }
+    const uint32_t size = BigEndian32(base[2]);
+    const size_t head = size < 256 ? size : 256;
+    uint32_t crc = record_crc32(0, base, head);
+    crc = record_crc32(crc, &base[size / 4 - 1], 4);
+    return crc ? crc : 1;
 }

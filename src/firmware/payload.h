@@ -17,3 +17,8 @@
 // The payload is sent in whole 1K transfers, so the size rounded up to 1K must also fit.
 // Returns the number of words to send (a multiple of 256), or PAYLOAD_INVALID.
 size_t payload_check(const uint32_t *base, size_t region_bytes);
+
+// A short fingerprint of a payload in flash (design D17): a CRC-32 of its first 256 bytes, which
+// hold the header and the size, and of its footer. Quick enough to compare before the injection
+// (C1). 0 if the region holds no valid payload; never 0 otherwise.
+uint32_t payload_fingerprint(const uint32_t *base, size_t region_bytes);

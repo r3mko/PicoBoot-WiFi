@@ -109,6 +109,25 @@ def flatten_dol(data):
     # Return base address, entry point, and flattened image
     return dol_min, entry, img
 
+def dol_to_payload(dol):
+    """
+    The flash payload of a .dol, as PicoBoot payload UF2s carry it at 0x10080000 (design D16): a
+    32-byte header ("IPLBOOT ", the total size big-endian, zeros), the image scrambled from offset
+    0x720 as the bootrom descrambles it, and a "PICO" footer. Raises ValueError for a DOL that isn't
+    an IPL payload (entry point and base address).
+    """
+    load, entry, img = flatten_dol(bytearray(dol))
+    base = load & 0x017FFFFF
+    entry = (entry & 0x017FFFFF) | 0x80000000
+    if entry != EXPECTED_ENTRY or base != EXPECTED_BASE:
+        raise ValueError(f"Invalid entry point or base address: 0x{entry:08X} / 0x{base:08X}, "
+                         f"expected 0x{EXPECTED_ENTRY:08X} / 0x{EXPECTED_BASE:08X}")
+    img += bytearray(-len(img) % 4)             # Whole words: the size field counts them
+    scrambled = scramble(bytearray(0x720) + img)[0x720:]
+    size = 32 + len(scrambled) + 4
+    return b"IPLBOOT " + struct.pack(">I", size) + bytes(20) + bytes(scrambled) + b"PICO"
+
+
 def bytes_to_c_array(data):
     """
     Convert bytes into a list of formatted 32-bit big-endian hex literals

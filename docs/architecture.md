@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.5, 2026-11-10 |
+| **Status** | Approved v1.5; draft v1.6 (D42) for approval at the end of phase 4 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -19,6 +19,7 @@
 | v1.3 | 2026-11-08 | Approved by the owner at the end of phase 1. During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
 | v1.4 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
 | v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
+| v1.6 draft | 2026-11-10 | Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. |
 
 ## How to read the decisions
 
@@ -73,6 +74,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D39 | Boot log | Decision | Up to the last 32 boot reports in the loader region's upper 8K |
 | D40 | Settings | Decision | Their values and defaults: channel 6 (1–11), Tx power in named levels (medium), country worldwide |
 | D41 | Settings changes | Decision | At once; Wi-Fi changes restart the AP and stay on trial until a client joins; the password is write-only |
+| D42 | Payload uploads | Decision | Names you choose; into payload 2 while the built-in boots; the chosen payload can't be deleted; backups without the password; boot control format 2 with loader 3 |
 
 ## 1. Goal and scope
 
@@ -330,6 +332,14 @@ power on -> boot ROM -> loader (flash offset 0)
 - **Raw payload:** the `IPLBOOT` … `PICO` image as it sits in flash.
 - **Checks:** every upload is checked for header, footer, size (≤ 1.5 MB for payload 1; ≤ 1.5 MB − 4K for payload 2, D37) and 1 KB alignment before it can be chosen.
 - **`.dol` files:** converted to a payload in the browser (JavaScript port of `tools/process_ipl.py`) and in the CLI tool (the Python original). The device doesn't convert them: DOL sections need random access, which a streamed upload doesn't give.
+
+**D42 (Decision): payload uploads, names and backups** (phase 4, the owner's choices; details D15–D17, D22).
+- **Names:** each payload has a short name you choose, up to 24 printable characters. The payload page pre-fills it from the file name (`swiss_r2119.dol` → `Swiss r2119`); it can be changed at the upload and renamed later.
+  - **Why it costs a USB install:** the names live in boot control, which the loader reads. Boot control gets format 2, and the loader version 3.
+  - **From then on:** the loader, and the firmware, read only the fields they know of any newer boot control record. Later formats only add fields at the end, so they need no new loader.
+- **Where an upload goes:** into the payload slot that isn't the choice (D15); while the built-in gekkoboot is the choice, into payload 2, so that payload 1 keeps what a USB install put there (D17).
+- **Delete:** only a payload that isn't the choice; choose another one first.
+- **Backups:** plain downloads. The settings backup leaves the Wi-Fi password out, as the API never returns it (D41).
 
 **D17 (Decision): a payload installed over USB always boots next.**
 - **How it's detected:** boot control keeps a short fingerprint of payload 1 (header, size, footer and its first 256 bytes). It's quick enough to compare before the injection (C1).

@@ -245,7 +245,7 @@ Payload choices take effect at the next power-on; nothing reboots.
 
 ## POST /api/payload
 
-A payload upload (D15, D16, D42). The body is a payload UF2 (any family: the Pico takes one family's blocks in order from `0x10080000`) or a raw payload (`IPLBOOT ` … `PICO`), sent as `application/octet-stream`. A `.dol` is converted first, by the UI or the CLI. An optional header `X-Name` gives the payload's name: at most 24 printable ASCII characters.
+A payload upload (D15, D16, D42). The body is a payload UF2 (any family: the Pico takes one family's blocks in order from `0x10080000`) or a raw payload (`IPLBOOT ` … `PICO`), sent as `application/octet-stream`. A `.dol` is converted first, by the UI or the CLI. A raw payload may have padding after its own size, as a flash dump has: the UI and the CLI send only the payload's own bytes (the Pico would take the padding too, up to the slot's size, and payload 2's slot is 4 KB smaller than payload 1's). An optional header `X-Name` gives the payload's name: at most 24 printable ASCII characters; without it, or empty, the payload has no name. The UI and the CLI pre-fill it from the file name (D42): the name without its last extension, `_` as a space, printable ASCII only, spaces collapsed and trimmed, the first letter upper-case, at most 24 characters (`swiss_r2119.dol` → `Swiss r2119`).
 
 - **It goes into** the slot that isn't the choice (`upload_target`), and becomes the choice once it's verified. The payload that boots now is never touched.
 - **The answer:**

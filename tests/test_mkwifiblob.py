@@ -23,6 +23,16 @@ def sdk_header(fw_len, clm_len, data):
 class MkWifiBlobTest(unittest.TestCase):
     DATA = bytes(range(256)) * 2 + bytes([0xAA] * 100)      # 512 bytes of firmware, then 100 of CLM
 
+    def test_marker_goes_into_the_spare_bytes(self):
+        # A working blob that differs from the normal one (phase 3 update test); the firmware ignores it
+        plain = wb.build_image(10, 4, bytes(520))
+        marked = wb.build_image(10, 4, bytes(520), b"newblob")
+        self.assertEqual(marked[20:32], b"newblob" + bytes(5))
+        self.assertEqual(plain[:20], marked[:20])
+        self.assertEqual(plain[32:], marked[32:])
+        with self.assertRaises(ValueError):
+            wb.build_image(10, 4, bytes(520), b"x" * 13)
+
     def test_parses_the_sdk_header(self):
         fw_len, clm_len, data = wb.parse_sdk_header(sdk_header(500, 100, self.DATA))
         self.assertEqual((fw_len, clm_len, data), (500, 100, self.DATA))

@@ -51,6 +51,8 @@ button.btn { font:inherit; font-weight:600; padding:11px 18px; border-radius:8px
 button.btn.sec { background:none; color:var(--accent); }
 button.btn.danger { background:none; color:var(--bad-text); border-color:var(--bad-text); }
 button:disabled { opacity:.5; }
+.row .btn { margin:6px 0 0 8px; padding:6px 12px; }
+progress { width:100%; height:14px; margin-top:12px; }
 [hidden] { display:none !important; }
 </style>
 </head>
@@ -60,6 +62,7 @@ button:disabled { opacity:.5; }
 <nav role="tablist">
   <button role="tab" data-tab="status" aria-selected="true">Status</button>
   <button role="tab" data-tab="diag" aria-selected="false">Diagnostics</button>
+  <button role="tab" data-tab="fw" aria-selected="false">Firmware</button>
   <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
 </nav>
 
@@ -67,6 +70,8 @@ button:disabled { opacity:.5; }
 <div id="offline" class="banner bad" hidden>Can't reach PicoBoot. Retrying…</div>
 <div id="b-default" class="banner" hidden>The Wi-Fi password is still the default. Please
   <button class="linkbtn" data-goto="settings">change it in Settings</button>.</div>
+<div id="b-trial" class="banner" hidden>This firmware is on trial. It's kept by itself after the next console start
+  with a good injection, or keep it now. <button class="linkbtn" data-goto="fw">Firmware tab</button></div>
 <div id="b-reverted" class="banner" hidden>Your last Wi-Fi change was undone at this start: no device joined with it.</div>
 
 <section id="tab-status"><div class="card"><dl id="status-list"></dl></div></section>
@@ -74,6 +79,31 @@ button:disabled { opacity:.5; }
 <section id="tab-diag" hidden>
   <div id="diag-body"></div>
   <button class="btn sec" id="diag-refresh">Refresh</button>
+</section>
+
+<section id="tab-fw" hidden>
+  <div id="fw-trial" class="banner" hidden>
+    <b>This firmware is on trial.</b> It's kept by itself after the next console start with a good injection, or keep it now.
+    <div><button class="btn" id="fw-keep">Keep</button><button class="btn sec" id="fw-back"></button></div>
+  </div>
+  <div class="card"><dl id="fw-slots"></dl></div>
+  <div id="boot-ask" class="banner" hidden style="margin-top:12px">
+    <span id="boot-msg"></span>
+    <div><button class="btn" id="boot-yes">Yes, boot it</button><button class="btn sec" id="boot-no">Cancel</button></div>
+  </div>
+  <div id="fw-err" class="err"></div>
+  <h2>Install an update</h2>
+  <div class="hint" id="up-block"></div>
+  <div id="up-box">
+    <input type="file" id="up-file" accept=".bin">
+    <div class="err" id="up-err"></div>
+    <div id="up-info" class="banner" hidden></div>
+    <div id="up-ask" hidden>
+      <button class="btn" id="up-go">Install</button><button class="btn sec" id="up-cancel">Cancel</button>
+    </div>
+    <progress id="up-bar" max="1" value="0" hidden></progress>
+    <div class="hint" id="up-msg"></div>
+  </div>
 </section>
 
 <section id="tab-settings" hidden>
@@ -155,8 +185,8 @@ async function api(path, body, timeoutMs) {
 function show(name) {
   tab = name;
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", b.dataset.tab === name);
-  for (const t of ["status", "diag", "settings"]) $("tab-" + t).hidden = t !== name;
-  if (name === "status") loadStatus();
+  for (const t of ["status", "diag", "fw", "settings"]) $("tab-" + t).hidden = t !== name;
+  if (name === "status" || name === "fw") loadStatus();
   else if (name === "diag") loadDiag();
   else { loadStatus(); loadSettings(); }
 }
@@ -165,8 +195,12 @@ document.addEventListener("click", e => {
   if (t) show(t.dataset.tab || t.dataset.goto);
 });
 
+const onTrial = () => !!lastStatus && lastStatus.firmware.pending === lastStatus.firmware.slot;
+const otherSlot = s => s === "A" ? "B" : "A";
+
 function banners() {
   $("b-default").hidden = !(lastStatus && lastStatus.wifi.password_is_default);
+  $("b-trial").hidden = !onTrial();
   $("b-reverted").hidden = !(lastStatus && lastStatus.wifi.reverted);
 }
 
@@ -182,12 +216,15 @@ async function loadStatus() {
   if (tab === "status") {
     $("status-list").innerHTML =
       row("Firmware", esc(s.firmware.version) + ", slot " + esc(s.firmware.slot)) +
+      row("Other slot " + esc(otherSlot(s.firmware.slot)), esc(s.firmware.versions[otherSlot(s.firmware.slot)] || "none"),
+        esc(s.firmware.states[otherSlot(s.firmware.slot)])) +
       row("Chip", "RP2350 A" + esc(s.chip.stepping) + ", boot ROM v" + esc(s.chip.rom)) +
       row("Uptime", hms(s.uptime_s)) +
       row("Temperature", s.temperature_c.toFixed(1) + " °C", "Reads low when the 3.3 V rail is low") +
       row("Wi-Fi name", esc(s.wifi.ssid)) +
       row("Wi-Fi clients", esc(s.wifi.clients));
   }
+  if (tab === "fw") renderFw();
   return true;
 }
 // Refresh every 5 s while the Status tab and the page are visible
@@ -197,6 +234,149 @@ setInterval(() => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && tab === "status" && !restarting) loadStatus();
 });
+
+// ---- Firmware ----
+const STATES = {
+  installed: "installed over USB", empty: "empty: being written, or an upload failed",
+  trial: "on trial: not kept yet", kept: "kept: confirmed good",
+  failed: "failed: its trial crashed and PicoBoot went back",
+};
+let bootTarget = null;   // the slot the inline confirmation is about
+let upFile = null;       // the chosen update file, once its header checked out
+let uploading = false;
+
+function renderFw() {
+  const f = lastStatus.firmware, trial = onTrial(), o = otherSlot(f.slot);
+  let h = "";
+  for (const k of ["A", "B"]) {
+    const st = f.states[k], v = f.versions[k];
+    const tags = [k === f.slot ? "running" : "", k === f.pending ? "pending (on trial)" : ""].filter(Boolean).join(", ");
+    h += `<div class="row"><dt>Slot ${k}${tags ? `<span class="note">${tags}</span>` : ""}</dt><dd>${v ? esc(v) : "no firmware"}` +
+      `<span class="note">${esc(STATES[st] || st)}</span>` +
+      (k !== f.slot && st !== "empty" && v ? `<button class="btn sec" data-boot="${k}">Boot slot ${k}</button>` : "") + `</dd></div>`;
+  }
+  $("fw-slots").innerHTML = h;
+  $("fw-trial").hidden = !trial;
+  $("fw-back").textContent = "Go back to slot " + o;
+  $("fw-back").dataset.boot = o;
+  $("fw-back").hidden = f.states[o] === "empty";
+  $("up-block").textContent = trial ?
+    "An update can't be installed while this firmware is on trial: the other slot is what PicoBoot falls back to. Keep this firmware first, or go back to slot " + o + "." : "";
+  $("up-box").hidden = trial;
+}
+
+function bootAsk(k) {
+  if (restarting || uploading) return;
+  const st = lastStatus.firmware.states[k];
+  bootTarget = k;
+  $("boot-msg").textContent = "Boot slot " + k + "? A warm reboot doesn't touch a running game." +
+    (st === "failed" || st === "trial" ? " Slot " + k + " goes on trial: it's kept by itself after the next console start with a good injection, or when you press Keep." : "");
+  $("boot-ask").hidden = false;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-boot]");
+  if (b) bootAsk(b.dataset.boot);
+});
+$("boot-no").onclick = () => { $("boot-ask").hidden = true; };
+$("boot-yes").onclick = async () => {
+  $("boot-ask").hidden = true;
+  if (restarting || uploading || !bootTarget) return;
+  $("fw-err").textContent = "";
+  const r = await api("/api/boot", { slot: bootTarget });
+  if (!r || !r.ok) { $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Nothing changed."; return; }
+  if (r.data && r.data.rebooting) { $("fw-err").textContent = "Rebooting into slot " + bootTarget + ". Waiting for PicoBoot…"; await pollUntilBack(2000); }
+  else await loadStatus();
+  $("fw-err").textContent = "";
+};
+$("fw-keep").onclick = async () => {
+  if (restarting || uploading) return;
+  $("fw-err").textContent = "";
+  const r = await api("/api/boot", { keep: true });
+  if (!r || !r.ok) $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Not kept.";
+  await loadStatus();
+};
+
+// "X.Y.Z[-pre][+build]": compare numerically, a pre-release before its release, the build ignored
+function semver(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([^+]*))?/.exec(v || "");
+  return m && { n: [+m[1], +m[2], +m[3]], pre: m[4] === undefined ? null : m[4] };
+}
+function cmpVer(a, b) {   // -1: a older than b, 0: same, 1: newer; null if either isn't semver
+  a = semver(a); b = semver(b);
+  if (!a || !b) return null;
+  for (let i = 0; i < 3; i++) if (a.n[i] !== b.n[i]) return a.n[i] < b.n[i] ? -1 : 1;
+  if (a.pre === b.pre) return 0;
+  return a.pre === null ? 1 : b.pre === null ? -1 : a.pre < b.pre ? -1 : 1;
+}
+const mb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+
+function upReset() {
+  upFile = null;
+  $("up-info").hidden = $("up-ask").hidden = $("up-bar").hidden = true;
+  $("up-err").textContent = $("up-msg").textContent = "";
+}
+$("up-cancel").onclick = () => { upReset(); $("up-file").value = ""; };
+
+$("up-file").onchange = async () => {
+  upReset();
+  const f = $("up-file").files[0];
+  if (!f) return;
+  const bad = m => { $("up-err").textContent = m; };
+  let head;
+  try { head = await f.slice(0, 256).arrayBuffer(); } catch (e) { return bad("Can't read this file."); }
+  const dv = new DataView(head);
+  const str = (o, n) => { let t = ""; for (let i = o; i < o + n && i < head.byteLength && dv.getUint8(i); i++) t += String.fromCharCode(dv.getUint8(i)); return t; };
+  if (str(0, 4) === "UF2\n") return bad("This is the USB install file, not an update. Install it over USB; it can't be uploaded here.");
+  if (head.byteLength < 256 || str(0, 4) !== "PBWU") return bad("This isn't a PicoBoot-WiFi update file.");
+  const board = str(32, 16), ver = str(48, 32), img = dv.getUint32(20, true), blob = dv.getUint32(24, true);
+  if (board !== "pico2_w") return bad("This update is for another board (" + board + "), not the Pico 2 W.");
+  if (f.size !== 256 + img + blob) return bad("The file is damaged or incomplete: its size doesn't match its header.");
+  upFile = f;
+  const c = cmpVer(ver, lastStatus && lastStatus.firmware.version);
+  const warn = c === 0 ? "This version is already running; install it again?" :
+    c === -1 ? "This is an older version than the one running; install it anyway?" : "";
+  $("up-info").className = warn ? "banner" : "banner ok";
+  $("up-info").innerHTML = `Version <b>${esc(ver)}</b>, ${mb(f.size)}.` + (warn ? `<br><b>${warn}</b>` : "") +
+    ` It goes into slot ${esc(otherSlot(lastStatus.firmware.slot))} and starts on trial.`;
+  $("up-info").hidden = $("up-ask").hidden = false;
+};
+
+$("up-go").onclick = () => {
+  if (!upFile || restarting || uploading) return;
+  const f = upFile, slotNote = otherSlot(lastStatus.firmware.slot);
+  uploading = restarting = true;
+  $("up-ask").hidden = true; $("up-file").disabled = true;
+  $("up-err").textContent = "";
+  $("up-bar").hidden = false; $("up-bar").value = 0;
+  $("up-msg").textContent = "Uploading…";
+  const done = msg => {
+    uploading = restarting = false; $("up-file").disabled = false; $("up-file").value = ""; upFile = null;
+    $("up-err").textContent = msg; $("up-msg").textContent = ""; $("up-bar").hidden = $("up-info").hidden = true;
+  };
+  const x = new XMLHttpRequest();
+  x.open("POST", "/api/firmware");
+  x.setRequestHeader("Content-Type", "application/octet-stream");
+  x.timeout = 60000;
+  x.upload.onprogress = e => { if (e.lengthComputable) $("up-bar").value = e.loaded / e.total; };
+  x.upload.onload = () => { $("up-bar").value = 1; $("up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot writes and checks the flash. Please wait…"; };
+  x.onerror = x.ontimeout = () => done("No answer from PicoBoot, so the update may or may not be installed. Check the slots above.");
+  x.onload = async () => {
+    let d = null;
+    try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+    if (x.status !== 200 || !d || !d.installed) { restarting = false; done((d && d.message) || "Error " + x.status); return loadStatus(); }
+    $("up-bar").hidden = $("up-info").hidden = true;
+    $("up-msg").textContent = "Installed into slot " + (d.slot || slotNote) + "; PicoBoot restarts into it on trial…";
+    await pollUntilBack(2000);
+    uploading = false; $("up-file").disabled = false; $("up-file").value = ""; upFile = null;
+    // Check that the new firmware came up: if it crashed, the loader went back (D12)
+    const f = lastStatus && lastStatus.firmware;
+    $("up-msg").textContent = f && f.slot === d.slot && f.pending === d.slot ?
+      "PicoBoot is back, running the new firmware on trial." :
+      "The new firmware didn't come up: PicoBoot went back to slot " + (f ? f.slot : "?") +
+      ", and slot " + d.slot + " is marked failed.";
+  };
+  x.send(f);
+};
 
 // ---- Diagnostics ----
 const RESETS = { POR: "power-on reset", BOR: "brown-out reset", RUN: "RUN pin reset", WDOG: "watchdog reset", other: "other reset" };

@@ -29,6 +29,11 @@ static bool record_valid(const record_header_t *rec, uint32_t magic, uint16_t ve
            length <= RECORD_MAX_PAYLOAD && rec->crc == record_crc(rec, record_payload(rec));
 }
 
+// Intact as a record of `magic`, whatever its version: the CRC covers the version and length it states
+static bool record_intact(const record_header_t *rec, uint32_t magic) {
+    return rec->magic == magic && rec->length <= RECORD_MAX_PAYLOAD && rec->crc == record_crc(rec, record_payload(rec));
+}
+
 static const record_header_t *sector(const uint8_t *area, int i) {
     return (const record_header_t *)(area + (size_t)i * RECORD_SECTOR_SIZE);
 }
@@ -42,6 +47,26 @@ static int newest(const uint8_t *area, uint32_t magic, uint16_t version, uint16_
         return (int32_t)(sector(area, 1)->seq - sector(area, 0)->seq) > 0 ? 1 : 0;
     }
     return v0 ? 0 : (v1 ? 1 : -1);
+}
+
+// The sector a new record goes to (phase 2 review: firmwares of two versions, one per slot, D12):
+// - one without an intact record of this magic;
+// - else the one with the older record of this version;
+// - else the older record of another version.
+// A record of another version so survives as long as this version has a sector of its own. Only
+// then does a write replace this version's record in place, without the power-cut safety of D23.
+static int target_sector(const uint8_t *area, uint32_t magic, uint16_t version, uint16_t length) {
+    const bool any0 = record_intact(sector(area, 0), magic), any1 = record_intact(sector(area, 1), magic);
+    if (!any0 || !any1) {
+        return any0 ? 1 : 0;
+    }
+    const bool own0 = record_valid(sector(area, 0), magic, version, length);
+    const bool own1 = record_valid(sector(area, 1), magic, version, length);
+    const int older = (int32_t)(sector(area, 1)->seq - sector(area, 0)->seq) > 0 ? 0 : 1;
+    if (own0 != own1) {
+        return own0 ? 0 : 1;
+    }
+    return older;
 }
 
 const record_header_t *record_find(const uint8_t *area, uint32_t magic, uint16_t version, uint16_t length,
@@ -61,8 +86,8 @@ bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t mag
     if (length > RECORD_MAX_PAYLOAD) {
         return false;
     }
-    int current = newest(area, magic, version, length);
-    int target = (current == 0) ? 1 : 0;
+    const int target = target_sector(area, magic, version, length);
+    const int other = 1 - target;
 
     // The new record, padded with 0xFF to whole pages (programming 0xFF leaves flash erased)
     static uint8_t image[RECORD_SECTOR_SIZE];
@@ -74,7 +99,8 @@ bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t mag
         .magic = magic,
         .version = version,
         .length = length,
-        .seq = current < 0 ? 1 : sector(area, current)->seq + 1,
+        // Ahead of whatever the other sector holds, of any version
+        .seq = record_intact(sector(area, other), magic) ? sector(area, other)->seq + 1 : 1,
     };
     rec.crc = record_crc(&rec, payload);
     memcpy(image, &rec, sizeof(rec));

@@ -40,11 +40,28 @@ jobs:
           PICOBOOT_BUILD_DIR: build
         run: python3 -m unittest discover -s tests -v
 
+      # Test builds that crash on purpose, for the trial and crash-loop tests (plan step 3.7), and one
+      # with a different Wi-Fi blob (step 3.8)
+      - name: Build the crash test builds
+        run: >
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
+          sh -c 'for c in startup after5s; do
+          cmake -S . -B build-crash-$c -DCMAKE_BUILD_TYPE=Release -DPICOBOOT_WIFI_TEST_CRASH=$c &&
+          cmake --build build-crash-$c --parallel --target update_bin &&
+          cp build-crash-$c/picoboot-wifi-update.bin build/test-update-crash-$c.bin || exit 1; done &&
+          cmake -S . -B build-newblob -DCMAKE_BUILD_TYPE=Release -DPICOBOOT_WIFI_BLOB=marked &&
+          cmake --build build-newblob --parallel --target update_bin &&
+          cp build-newblob/picoboot-wifi-update.bin build/test-update-newblob.bin'
+
       - name: Upload the build
         uses: actions/upload-artifact@v7
         with:
           name: picoboot-wifi-${{ github.sha }}
           path: |
             build/picoboot-wifi-install.uf2
+            build/picoboot-wifi-update.bin
+            build/test-update-crash-startup.bin
+            build/test-update-crash-after5s.bin
+            build/test-update-newblob.bin
             build/src/loader/loader.elf
             build/src/firmware/firmware.elf

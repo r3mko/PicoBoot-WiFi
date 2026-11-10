@@ -35,6 +35,7 @@ void json_array_end(json_out_t *j);
 void json_string(json_out_t *j, const char *key, const char *value);
 void json_int(json_out_t *j, const char *key, long value);
 void json_bool(json_out_t *j, const char *key, bool value);
+void json_null(json_out_t *j, const char *key);
 void json_tenths(json_out_t *j, const char *key, long tenths);    // 384 is written as 38.4
 
 // The length written (without the NUL), or 0 if it didn't fit or the nesting is off

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-// Host tests for the loader's decision (src/common/bootdecide.c, design D7, D8).
+// Host tests for the loader's decision (src/common/bootdecide.c, design D7, D8, D12).
 // Built and run by tests/test_host.py.
 
 #include <stdio.h>
@@ -27,13 +27,15 @@ static void test_power_on_rule(void) {
     CHECK(!decide(false, true, NULL).power_on);
 }
 
-static void test_no_boot_control_means_slot_a_then_b(void) {
+static void test_no_boot_control_means_slot_a_only(void) {
+    // After a USB install slot B may hold anything: it isn't started until an update wrote it
     boot_decision_t d = decide(true, false, NULL);
-    CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_SLOT_B && d.bootctl_default);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_NONE && d.bootctl_default);
 }
 
 static void test_active_slot_first_then_the_other(void) {
     bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
     b.active_slot = BOOTCTL_SLOT_B;
     boot_decision_t d = decide(false, true, &b);
     CHECK(d.slots[0] == BOOTCTL_SLOT_B && d.slots[1] == BOOTCTL_SLOT_A && !d.bootctl_default);
@@ -44,9 +46,176 @@ static void test_active_slot_first_then_the_other(void) {
 
 static void test_garbage_active_slot_means_slot_a(void) {
     bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
     b.active_slot = 7;
     boot_decision_t d = decide(true, false, &b);
     CHECK(d.slots[0] == BOOTCTL_SLOT_A && d.slots[1] == BOOTCTL_SLOT_B);
+}
+
+// --- D12: trial, fallback and crash loop, as sequences of boots ----------------------------------
+
+typedef struct {
+    bootctl_t b;
+    uint32_t session;           // POWMAN scratch as the loader left it
+    boot_decision_t d;
+} console_t;
+
+static void power_on(console_t *c) {
+    c->session = 0;             // POWMAN scratch is cleared
+    boot_inputs_t in = {.had_por = true, .marker_set = false, .bootctl = &c->b, .session = c->session};
+    c->d = boot_decide(&in);
+    c->session = c->d.session[0];
+}
+
+// The firmware started last rebooted on purpose (clean) or crashed; the first choice holds an image
+static void reboot(console_t *c, bool clean) {
+    boot_inputs_t in = {.had_por = true, .marker_set = true, .bootctl = &c->b, .session = c->session,
+                        .clean_reboot = clean};
+    c->d = boot_decide(&in);
+    c->session = c->d.session[0];
+}
+
+static console_t updated_to_b(void) {
+    console_t c = {.b = BOOTCTL_DEFAULT};
+    c.b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;     // What the updater leaves (step 3.3)
+    c.b.pending_slot = BOOTCTL_SLOT_B;
+    power_on(&c);               // Running A when the update came
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == BOOTINFO_TRIAL);
+    return c;
+}
+
+static void test_trial_starts_after_the_update_and_survives_clean_reboots(void) {
+    console_t c = updated_to_b();
+    reboot(&c, true);           // The UI's reboot during the trial
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == BOOTINFO_TRIAL);
+    CHECK(c.d.slots[1] == BOOTCTL_SLOT_A && c.d.flags[1] == BOOTINFO_TRIAL_FAILED);
+    power_on(&c);               // The console's next start: still on trial (keep comes from the firmware)
+    CHECK(c.d.power_on && c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == BOOTINFO_TRIAL);
+}
+
+static void test_a_crash_ends_the_trial(void) {
+    console_t c = updated_to_b();
+    reboot(&c, false);          // Watchdog or fault while on trial
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == BOOTINFO_TRIAL_FAILED);
+    CHECK(c.d.slots[1] == BOOTCTL_NONE);                       // Never the slot on trial as a fallback
+    reboot(&c, true);           // Until A records it, A keeps hearing about it this session
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == BOOTINFO_TRIAL_FAILED);
+    c.b.pending_slot = BOOTCTL_NONE;                           // A recorded it
+    c.b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_FAILED;
+    reboot(&c, true);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == 0 && c.d.slots[1] == BOOTCTL_NONE);
+    power_on(&c);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == 0);
+}
+
+static void test_a_trial_slot_without_an_image_fails_too(void) {
+    console_t c = updated_to_b();
+    // rom_chain_image() returned for B: the loader starts the second choice with its session word
+    CHECK(c.d.session[1] & BOOTINFO_SESSION_FAILED_B);
+    c.session = c.d.session[1];
+    reboot(&c, true);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == BOOTINFO_TRIAL_FAILED);
+}
+
+static void test_a_crash_on_the_trials_power_on_is_seen_at_the_reboot(void) {
+    console_t c = updated_to_b();
+    power_on(&c);               // Console on: B on trial injects... and crashes
+    CHECK(c.d.power_on && c.d.slots[0] == BOOTCTL_SLOT_B);
+    reboot(&c, false);          // The watchdog: a warm boot, so no injection (that console start
+    CHECK(!c.d.power_on && c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == BOOTINFO_TRIAL_FAILED);
+}                               // runs the original IPL, D12)
+
+static console_t running_b_kept(uint8_t state_a) {
+    console_t c = {.b = BOOTCTL_DEFAULT};
+    c.b.active_slot = BOOTCTL_SLOT_B;
+    c.b.slot_state[BOOTCTL_SLOT_A] = state_a;
+    c.b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    power_on(&c);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == 0);
+    return c;
+}
+
+static void test_three_crashes_switch_to_the_other_kept_slot(void) {
+    console_t c = running_b_kept(BOOTCTL_STATE_KEPT);
+    reboot(&c, false);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B);                     // 1 crash
+    reboot(&c, false);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B);                     // 2
+    reboot(&c, false);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_A && c.d.flags[0] == BOOTINFO_CRASH_FALLBACK);   // 3: the owner's choice
+    CHECK(c.d.slots[1] == BOOTCTL_SLOT_B);
+}
+
+static void test_no_crash_fallback_without_a_kept_slot(void) {
+    const uint8_t states[] = {BOOTCTL_STATE_INSTALLED, BOOTCTL_STATE_EMPTY, BOOTCTL_STATE_FAILED, BOOTCTL_STATE_TRIAL};
+    for (unsigned i = 0; i < sizeof(states); i++) {
+        console_t c = running_b_kept(states[i]);
+        for (int n = 0; n < 5; n++) {
+            reboot(&c, false);
+            CHECK(c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == 0);
+        }
+    }
+}
+
+static void test_clean_reboots_reset_the_crash_count(void) {
+    console_t c = running_b_kept(BOOTCTL_STATE_KEPT);
+    reboot(&c, false);
+    reboot(&c, false);
+    reboot(&c, true);           // A reboot from the UI in between
+    reboot(&c, false);
+    reboot(&c, false);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B && c.d.flags[0] == 0);
+    power_on(&c);               // ...and so does a power-on
+    reboot(&c, false);
+    reboot(&c, false);
+    CHECK(c.d.slots[0] == BOOTCTL_SLOT_B);
+}
+
+static void test_the_second_choice_is_never_empty_failed_or_on_trial(void) {
+    const struct { uint8_t state; bool used; } cases[] = {
+        {BOOTCTL_STATE_INSTALLED, true}, {BOOTCTL_STATE_KEPT, true}, {BOOTCTL_STATE_EMPTY, false},
+        {BOOTCTL_STATE_FAILED, false},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        bootctl_t b = BOOTCTL_DEFAULT;
+        b.slot_state[BOOTCTL_SLOT_B] = cases[i].state;
+        boot_decision_t d = decide(true, false, &b);
+        CHECK(d.slots[0] == BOOTCTL_SLOT_A && (d.slots[1] == BOOTCTL_SLOT_B) == cases[i].used);
+    }
+    // A slot on trial that has failed this session isn't a fallback either
+    console_t c = updated_to_b();
+    reboot(&c, false);
+    CHECK(c.d.slots[1] == BOOTCTL_NONE);
+}
+
+// Phase 3 review: an empty slot is never started; an empty active slot gives way to the other one
+static void test_an_empty_slot_is_never_started(void) {
+    bootctl_t b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_A] = BOOTCTL_STATE_EMPTY;         // An update into it was cut off
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_KEPT;
+    boot_decision_t d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && (d.flags[0] & BOOTINFO_FALLBACK) && d.slots[1] == BOOTCTL_NONE);
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_FAILED;        // Nothing to start: BOOTSEL
+    d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_NONE && d.slots[1] == BOOTCTL_NONE);
+    // A trial of B with an empty active A: no second choice
+    b = BOOTCTL_DEFAULT;
+    b.slot_state[BOOTCTL_SLOT_A] = BOOTCTL_STATE_EMPTY;
+    b.slot_state[BOOTCTL_SLOT_B] = BOOTCTL_STATE_TRIAL;
+    b.pending_slot = BOOTCTL_SLOT_B;
+    d = decide(false, true, &b);
+    CHECK(d.slots[0] == BOOTCTL_SLOT_B && (d.flags[0] & BOOTINFO_TRIAL) && d.slots[1] == BOOTCTL_NONE);
+}
+
+static void test_session_word(void) {
+    // A garbage word is a new session; crash counts saturate
+    boot_inputs_t in = {.had_por = true, .marker_set = true, .session = 0x12345678u};
+    boot_decision_t d = boot_decide(&in);
+    CHECK((d.session[0] & BOOTINFO_SESSION_CRASHES) == 0);
+    in.session = BOOTINFO_SESSION_MAGIC | BOOTINFO_SESSION_STARTED | BOOTINFO_SESSION_CRASHES;
+    d = boot_decide(&in);
+    CHECK((d.session[0] & BOOTINFO_SESSION_CRASHES) == BOOTINFO_SESSION_CRASHES);
+    CHECK((d.session[0] & BOOTINFO_SESSION_MAGIC_MASK) == BOOTINFO_SESSION_MAGIC);
 }
 
 static void test_bootinfo_check_byte(void) {
@@ -57,10 +226,20 @@ static void test_bootinfo_check_byte(void) {
 
 int main(void) {
     test_power_on_rule();
-    test_no_boot_control_means_slot_a_then_b();
+    test_no_boot_control_means_slot_a_only();
     test_active_slot_first_then_the_other();
     test_garbage_active_slot_means_slot_a();
     test_bootinfo_check_byte();
+    test_trial_starts_after_the_update_and_survives_clean_reboots();
+    test_a_crash_ends_the_trial();
+    test_a_trial_slot_without_an_image_fails_too();
+    test_a_crash_on_the_trials_power_on_is_seen_at_the_reboot();
+    test_three_crashes_switch_to_the_other_kept_slot();
+    test_no_crash_fallback_without_a_kept_slot();
+    test_clean_reboots_reset_the_crash_count();
+    test_the_second_choice_is_never_empty_failed_or_on_trial();
+    test_session_word();
+    test_an_empty_slot_is_never_started();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

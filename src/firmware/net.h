@@ -20,6 +20,17 @@ typedef bool (*net_action_fn)(const char *path);
 typedef int (*net_api_fn)(bool post, const char *path, const char *body, size_t body_len,
                           char *out, size_t out_size, size_t *out_len);
 
+// An upload under /api/ with Content-Type: application/octet-stream (D18), streamed as it arrives.
+// begin() returns 200 to take it, or an HTTP status with the JSON answer in out; data() gets the
+// body's bytes in order; end() writes the JSON answer (complete: all of Content-Length arrived) and
+// returns its status. One upload at a time.
+typedef struct {
+    bool (*handles)(const char *path);
+    int (*begin)(const char *path, uint32_t length, char *out, size_t out_size, size_t *out_len);
+    void (*data)(const uint8_t *bytes, size_t length);
+    int (*end)(bool complete, char *out, size_t out_size, size_t *out_len);
+} net_upload_t;
+
 // The access point's settings (design D30, D40)
 typedef struct {
     const char *ssid;
@@ -30,8 +41,9 @@ typedef struct {
 
 // Starts the access point, the DHCP and DNS servers (every name answers with 192.168.4.1, so phones
 // open the page by themselves) and the HTTP server. cyw43_arch_init_with_country() must have
-// succeeded first. Returns false on failure.
-bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api);
+// succeeded first. Returns false if the chip doesn't report the access point up.
+bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api,
+               const net_upload_t *upload);
 
 // Restarts the access point with other settings (design D41); every client drops off. The HTTP
 // server keeps running. Call from the main loop, not from an lwIP callback. Returns false if the
@@ -43,6 +55,9 @@ void net_poll(void);
 
 // Requests the HTTP server has taken, of any kind (D41: a client came through)
 uint32_t net_requests(void);
+
+// An upload is streaming in: the API refuses changes that would reboot or restart the AP meanwhile
+bool net_upload_running(void);
 
 // A warm reboot half a second from now, after the answer is out
 void net_reboot_soon(bool through_rom);

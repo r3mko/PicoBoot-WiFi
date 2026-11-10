@@ -18,6 +18,13 @@
 #define BOOTCTL_SLOT_B          1
 #define BOOTCTL_NONE            0xFF
 
+// slot_state (D12, D13). 0 is what a USB install leaves: the slot holds whatever it holds.
+#define BOOTCTL_STATE_INSTALLED 0       // Not written over the air (slot A after a USB install)
+#define BOOTCTL_STATE_EMPTY     1       // Being written, or its upload failed: never to be started
+#define BOOTCTL_STATE_TRIAL     2       // A new firmware on trial: pending_slot names it
+#define BOOTCTL_STATE_KEPT      3       // Proved itself, or kept by the user (D12)
+#define BOOTCTL_STATE_FAILED    4       // Its trial failed
+
 #define BOOTCTL_PAYLOAD_1       0
 #define BOOTCTL_PAYLOAD_2       1
 #define BOOTCTL_PAYLOAD_BUILTIN 2
@@ -30,16 +37,19 @@
 typedef struct {
     uint8_t active_slot;        // BOOTCTL_SLOT_A or _B
     uint8_t pending_slot;       // Phase 3: the slot on trial (D12), or BOOTCTL_NONE
-    uint8_t slot_state[2];      // Phase 3: empty / kept / trial / failed, per slot
+    uint8_t slot_state[2];      // BOOTCTL_STATE_*, per slot (phase 3)
     uint8_t active_payload;     // Phase 4: BOOTCTL_PAYLOAD_* (D15)
     uint8_t flags;              // BOOTCTL_FLAG_*
     uint8_t reserved[2];
     uint32_t payload1_fingerprint;  // Phase 4: detects USB payload installs (D17)
 } bootctl_t;
 
-// What boot control means when the area holds no valid record: the state right after a USB install
+// What boot control means when the area holds no valid record: the state right after a USB install.
+// Slot B counts as empty: the install doesn't touch it, so it may hold anything (an old or a test
+// build), and is never started until an update has written it (phase 3 review).
 static const bootctl_t BOOTCTL_DEFAULT = {
     .active_slot = BOOTCTL_SLOT_A,
     .pending_slot = BOOTCTL_NONE,
+    .slot_state = {BOOTCTL_STATE_INSTALLED, BOOTCTL_STATE_EMPTY},
     .active_payload = BOOTCTL_PAYLOAD_1,
 };

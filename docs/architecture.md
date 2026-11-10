@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.4, 2026-11-09 |
+| **Status** | Approved v1.5, 2026-11-10 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -18,6 +18,7 @@
 | v1.2 | 2026-11-08 | Approved by the owner. Phase 0 results ([phase0-results.md](research/phase0-results.md)). The owner decided three changes: guard the 224 skipped CS pulses against glitches with a CS pull-up and a clock-qualified count (D36), after 2 blue screens in 56 cold boots were traced to a false CS edge at the console's power-up; keep the last flash sector free, because USB installs write picotool's RP2350-E10 block there (D37, changes D6); and recommend 5 V wiring, because the console's 3.3 V at the Pico is 3.15–3.21 V (D38). Also noted: HAD_POR survives warm reboots, so D8's marker is required (confirmed); the boot margin is about 166 ms (D10); the risks table is updated. |
 | v1.3 | 2026-11-08 | Approved by the owner at the end of phase 1. During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
 | v1.4 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
+| v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
 
 ## How to read the decisions
 
@@ -276,6 +277,10 @@ power on -> boot ROM -> loader (flash offset 0)
   - only then does it mark the slot as pending and reboot.
 - **USB-only images:** a file that's meant only for USB (the install UF2) is refused.
 - **No signing:** the Wi-Fi password is the gate (D19). The owner's own test builds install without extra steps. Signing (a private key in CI, about 10 KB of code) can come in a later release.
+- **The format** is in [update-format.md](update-format.md) (phase 3). The owner chose:
+  - the Wi-Fi blob always in the release file, written only when the paired area holds another one;
+  - downgrades allowed, with a warning in the UI.
+- **Compatibility:** the header names the flash layout and the lowest loader version the firmware needs. The loader changes only with a USB install (D24), so the Pico refuses an update its layout or loader doesn't fit, and says a USB install is needed.
 
 **D12 (Decision): a new firmware is on trial until it has proven itself.**
 - **Trial:** after an update the new slot is pending, and the old slot is still the fallback.
@@ -285,15 +290,29 @@ power on -> boot ROM -> loader (flash offset 0)
   - the user pressing *Keep* on the firmware page.
 - **A crash during the trial's first power-on boot:** that one console start goes to the original IPL. The firmware can't fall back and still inject in time (C1, C2). The next power-on uses the old firmware.
 - **Crash loop:** a crash loop in the active firmware (N crashes in one power-on session) makes the loader try the other slot, if it holds a firmware that was kept before.
+- **As built in phase 3** (step 3.4), with the owner's choices:
+  - **N is 3** crashes in a row, and the fallback is **for good**: the firmware it falls back to becomes the active one, and the crashing slot is marked failed (D13 can switch back by hand).
+  - **The loader remembers the session in POWMAN scratch,** since it never writes flash: the slot it started last, whether on trial, its crashes in a row, and which trials failed. Scratch survives warm reboots and is cleared at power-on, so every console session starts afresh.
+  - **A crash is any reset the firmware didn't mean.** Before each reboot it means (the UI, an update), the firmware writes a clean-reboot word into scratch. A watchdog reset (8 s, fed in the injection's waits and the main loop) or a fault (the fault handler reboots at once) lacks it.
+  - **The firmware records the news:** a failed trial (the slot becomes failed, nothing is pending), or the takeover after a crash loop. On keeping, the slot it replaces becomes kept as well, as a firmware that ran, so a later crash loop can fall back to it.
+  - **Never a fallback:** a slot that's empty (perhaps half written), failed, or on trial isn't started in place of a slot without a valid image.
+  - **No update while on trial:** the running firmware refuses one (`on_trial`), since the other slot holds the firmware to fall back to.
+  - **The loader reports its version (2)** in boot info; the phase 3 firmware needs it, so it comes with one USB install (D11).
+  - **After the phase 3 review:**
+    - **Keeping is checked:** after a complete power-on injection, the firmware asks the Wi-Fi chip whether the access point is up (the owner's choice). A firmware on trial whose Wi-Fi doesn't come up reboots as a crash, so the loader goes back.
+    - **Updates only from the active firmware,** into the other slot: never into the active slot, which would skip the trial. A firmware started in place of an active slot without an image becomes the active one.
+    - **An empty slot is never started.** After a USB install, slot B counts as empty: the install doesn't touch it, so it may hold anything.
+    - **An update writes the image's first sector last,** once the image's hash is right: that sector holds the block the boot ROM looks for, so a cut-off or damaged upload never leaves a slot the ROM would start.
 
 **D13 (Decision): switch freely between two good slots.**
 - The firmware page shows both slots: version, build, state (active / pending / failed / empty).
 - *Boot slot X* writes boot control and reboots. Nothing is erased.
+- **As built in phase 3:** a kept slot becomes the active one at once; any other slot with a firmware (from a USB install, unkept or failed) goes on trial first (D12). Going back to the active slot from a trial abandons the trial.
 
 **D14 (Decision): the Wi-Fi blob outside the slots, one copy per slot, at fixed addresses.**
 - **Pairing:** slot A uses Wi-Fi A and slot B uses Wi-Fi B. An update can then bring a new blob without touching the one the fallback firmware needs.
 - **Hash:** each update file names the SHA-256 of the blob it needs.
-  - If the paired Wi-Fi area holds a different blob, the device copies it from the other area (when the hash matches there) or takes it from the update file.
+  - If the paired Wi-Fi area holds a different blob, the device takes it from the update file, which always carries it (D11). Phase 3 dropped copying it from the other area.
   - Normally the blob doesn't change, and an update is only the ~170–200 KB slot image.
 - **Loading:** the CYW43 driver reads the blob through the untranslated XIP window (`0x1c000000` + offset). This replaces the SDK's partition-table lookup, a hook of a few lines ([sizes.md](research/sizes.md)).
 - **Which blob:** Wi-Fi only (225 KB), since Bluetooth is a non-goal.

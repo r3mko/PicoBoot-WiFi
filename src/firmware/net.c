@@ -14,6 +14,7 @@
 //   GET  anything else      302 to http://192.168.4.1/: phones probing for a captive portal
 //                           (Apple, Android, Windows) get it and open the page by themselves
 //   POST /api/...           the JSON API, with a JSON body
+//   POST uploads            the paths net_upload_t handles, streamed (application/octet-stream)
 //
 // With a test page (test builds, net_page_fn given):
 //   GET  /test              the test page
@@ -34,6 +35,8 @@
 #include "pico/bootrom.h"
 #include "boot/picoboot_constants.h"
 #include "hardware/watchdog.h"
+#include "hardware/structs/powman.h"
+#include "bootinfo.h"
 
 #define PAGE_MAX        10240       // Rendered test page (with the boot log table)
 #define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
@@ -48,6 +51,8 @@ static dns_server_t dns_server;
 static net_page_fn render_page;
 static net_action_fn page_action;
 static net_api_fn api_handler;
+static const net_upload_t *uploader;
+static void *upload_connection;     // The upload in progress, or NULL
 static uint32_t requests;
 static int client_count;
 static uint64_t next_client_check_us;
@@ -70,6 +75,7 @@ static const char *status_text(int status) {
         case 403: return "403 Forbidden";
         case 404: return "404 Not Found";
         case 405: return "405 Method Not Allowed";
+        case 409: return "409 Conflict";
         case 413: return "413 Payload Too Large";
         case 415: return "415 Unsupported Media Type";
         case 503: return "503 Service Unavailable";
@@ -208,6 +214,7 @@ static struct {
     void *connection;
     char uri[POST_URI_MAX];
     bool api;
+    bool upload;                    // Streamed to the uploader, not collected in body
     int expected;                   // Content-Length
     size_t len;
     char body[API_BODY_MAX];
@@ -258,11 +265,11 @@ static bool value_is(const char *v, const char *end, const char *word, const cha
     return after >= end || *after == '\0' || *after == '\r' || strchr(stops, *after);
 }
 
-// Content-Type: application/json (docs/api.md: a page on another site can't send it without a
-// CORS preflight)
-static bool json_content_type(const char *headers, u16_t len) {
+// Content-Type: application/json or application/octet-stream (docs/api.md: a page on another site
+// can't send either without a CORS preflight)
+static bool content_type_is(const char *headers, u16_t len, const char *type) {
     const char *end, *v = header_value(headers, len, "content-type:", &end);
-    return v && value_is(v, end, "application/json", "; ");
+    return v && value_is(v, end, type, "; ");
 }
 
 // Host: 192.168.4.1 (docs/api.md). A page elsewhere that points its own name at the Pico (DNS
@@ -287,8 +294,22 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
         }
         return ERR_VAL;
     }
-    if (api) {
-        if (!json_content_type(http_request, http_request_len)) {
+    const bool upload = api && uploader && strlen(uri) < POST_URI_MAX && uploader->handles(uri);
+    if (upload) {
+        if (!content_type_is(http_request, http_request_len, "application/octet-stream")) {
+            api_error(415, "unsupported_type", "send the file as Content-Type: application/octet-stream");
+            return ERR_VAL;
+        }
+        if (upload_connection) {
+            api_error(503, "busy", "another upload is in progress");
+            return ERR_VAL;
+        }
+        if (pending_reboot != REBOOT_NONE) {
+            api_error(503, "busy", "PicoBoot is about to reboot");
+            return ERR_VAL;
+        }
+    } else if (api) {
+        if (!content_type_is(http_request, http_request_len, "application/json")) {
             api_error(415, "unsupported_type", "send the body as Content-Type: application/json");
             return ERR_VAL;
         }
@@ -305,9 +326,18 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
     }
     for (int i = 0; i < POSTS_MAX; i++) {
         if (!posts[i].connection) {
+            if (upload) {
+                api_answer.status = uploader->begin(uri, (uint32_t)content_len, api_answer.json,
+                                                    sizeof(api_answer.json), &api_answer.len);
+                if (api_answer.status != 200) {
+                    return ERR_VAL;         // Refused before any of the body came: the answer is ready
+                }
+                upload_connection = connection;
+            }
             posts[i].connection = connection;
             strcpy(posts[i].uri, uri);
             posts[i].api = api;
+            posts[i].upload = upload;
             posts[i].expected = content_len;
             posts[i].len = 0;
             return ERR_OK;
@@ -319,6 +349,15 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
 
 err_t httpd_post_receive_data(void *connection, struct pbuf *p) {
     for (int i = 0; i < POSTS_MAX; i++) {
+        if (posts[i].connection == connection && posts[i].upload) {
+            // Straight to the uploader, which may erase and write flash here (poll mode: nothing
+            // else runs meanwhile; TCP holds the rest back until this returns)
+            for (const struct pbuf *q = p; q; q = q->next) {
+                uploader->data(q->payload, q->len);
+                posts[i].len += q->len;
+            }
+            break;
+        }
         if (posts[i].connection == connection) {
             const size_t room = sizeof(posts[i].body) - posts[i].len;
             const size_t n = p->tot_len < room ? p->tot_len : room;
@@ -340,7 +379,11 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
         }
         const char *uri = posts[i].uri;
         const bool complete = posts[i].len == (size_t)posts[i].expected;
-        if (posts[i].api) {
+        if (posts[i].upload) {
+            result = "/.api";
+            api_answer.status = uploader->end(complete, api_answer.json, sizeof(api_answer.json), &api_answer.len);
+            upload_connection = NULL;
+        } else if (posts[i].api) {
             result = "/.api";
             if (!complete) {
                 api_error(400, "bad_json", "the body didn't all arrive");
@@ -364,6 +407,8 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
 
 // --- Start, restart and main loop ---------------------------------------------------------------
 
+static bool ap_bss_up(void);
+
 static void ap_up(const net_ap_t *ap) {
     // As cyw43_arch_enable_ap_mode(), with the country of the settings instead of the one given to
     // cyw43_arch_init_with_country(): the driver sends it to the chip each time the AP comes up
@@ -380,13 +425,21 @@ static void ap_up(const net_ap_t *ap) {
     dns_server_init(&dns_server, &cyw43_state.netif[CYW43_ITF_AP], &gw);
 }
 
-bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api) {
+bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api,
+               const net_upload_t *upload) {
     render_page = page;
     page_action = action;
     api_handler = api;
+    uploader = upload;
     ap_up(ap);
     httpd_init();
-    return true;
+    // The driver doesn't say whether the chip came up (cyw43_wifi_set_up() returns nothing): ask it
+    // whether the AP's BSS is up (phase 3 review: a trial is kept only with Wi-Fi really up, D12)
+    return ap_bss_up();
+}
+
+bool net_upload_running(void) {
+    return upload_connection != NULL;
 }
 
 // Whether the chip still has the AP's BSS up ("bss" iovar for the AP's bsscfg; an error means down,
@@ -444,6 +497,8 @@ void net_poll(void) {
     }
 
     if (pending_reboot != REBOOT_NONE && time_us_64() >= reboot_at_us) {
+        // Meant, not a crash: the loader doesn't count it (D12)
+        powman_hw->scratch[BOOTINFO_SCRATCH_REBOOT] = BOOTINFO_CLEAN_REBOOT;
         if (pending_reboot == REBOOT_WATCHDOG) {
             watchdog_reboot(0, 0, 0);
         } else {

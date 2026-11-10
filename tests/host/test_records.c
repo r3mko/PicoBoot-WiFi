@@ -155,6 +155,24 @@ static void test_sequence_numbers_wrap_around(void) {
     CHECK(find_bootctl(&seq) && seq == 0 && find_bootctl(NULL)->active_slot == BOOTCTL_SLOT_A);
 }
 
+// Phase 2 review: a firmware of another record version in the other slot (D12) mustn't erase the
+// newer firmware's record by writing its own twice
+static void test_a_record_of_another_version_survives(void) {
+    reset_flash();
+    struct { uint32_t x[5]; } newer = {{1, 2, 3, 4, 5}};
+    CHECK(record_write(area, &flash, BOOTCTL_MAGIC, BOOTCTL_VERSION + 1, &newer, sizeof(newer)));
+    for (uint8_t i = 0; i < 4; i++) {
+        CHECK(write_bootctl(i % 2 ? BOOTCTL_SLOT_A : BOOTCTL_SLOT_B));
+        CHECK(find_bootctl(NULL) && find_bootctl(NULL)->active_slot == (i % 2 ? BOOTCTL_SLOT_A : BOOTCTL_SLOT_B));
+        const record_header_t *other = record_find(area, BOOTCTL_MAGIC, BOOTCTL_VERSION + 1, sizeof(newer), NULL);
+        CHECK(other && memcmp(record_payload(other), &newer, sizeof(newer)) == 0);
+    }
+    // ...and the newer firmware writing again keeps the older one's record too
+    newer.x[0] = 9;
+    CHECK(record_write(area, &flash, BOOTCTL_MAGIC, BOOTCTL_VERSION + 1, &newer, sizeof(newer)));
+    CHECK(find_bootctl(NULL) && find_bootctl(NULL)->active_slot == BOOTCTL_SLOT_A);
+}
+
 static void test_payload_that_is_too_long_is_refused(void) {
     reset_flash();
     static uint8_t big[RECORD_SECTOR_SIZE];
@@ -171,6 +189,7 @@ int main(void) {
     test_other_magic_version_or_length_is_ignored();
     test_sequence_numbers_wrap_around();
     test_payload_that_is_too_long_is_refused();
+    test_a_record_of_another_version_survives();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

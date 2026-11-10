@@ -10,6 +10,7 @@
 #include "page.h"
 #include "net.h"
 #include "bootctl.h"
+#include "bootinfo.h"
 #include "storage.h"
 #include "settings.h"
 #include "wifi.h"
@@ -218,8 +219,12 @@ size_t page_render(char *buf, size_t size) {
 
     put(&o, "THIS BOOT\n");
     if (r->from_loader) {
-        put(&o, "  Started by         : the loader, slot %c%s; boot control %s\n", r->slot == BOOTCTL_SLOT_B ? 'B' : 'A',
+        put(&o, "  Started by         : the loader (version %u), slot %c%s%s%s%s; boot control %s\n", r->loader_version,
+            r->slot == BOOTCTL_SLOT_B ? 'B' : 'A',
             r->fallback ? " (fallback: the first choice held no image)" : "",
+            (r->loader_flags & BOOTINFO_TRIAL) ? ", ON TRIAL (D12)" : "",
+            (r->loader_flags & BOOTINFO_TRIAL_FAILED) ? ", the other slot's TRIAL FAILED" : "",
+            (r->loader_flags & BOOTINFO_CRASH_FALLBACK) ? ", TOOK OVER: the other slot crashed 3 times" : "",
             r->bootctl_default ? "empty (defaults)" : "record");
     } else {
         put(&o, "  Started by         : no loader (firmware installed on its own)\n");
@@ -247,8 +252,8 @@ size_t page_render(char *buf, size_t size) {
         put(&o, "  Wi-Fi              : blob from Wi-Fi %c, AP up %lu ms after the injection\n",
             info.wifi_area == BOOTCTL_SLOT_B ? 'B' : 'A', (unsigned long)info.wifi_up_ms);
     }
-    put(&o, "  Wi-Fi start        : CYW43 init %lu ms, AP start %lu ms\n",
-        (unsigned long)info.cyw43_init_ms, (unsigned long)info.ap_start_ms);
+    put(&o, "  Wi-Fi start        : CYW43 init %lu ms, AP start %lu ms; the chip reports the AP %s\n",
+        (unsigned long)info.cyw43_init_ms, (unsigned long)info.ap_start_ms, info.ap_confirmed ? "up" : "NOT UP");
     {
         // QMI M0 read: command byte, widths (0 = x1, 1 = x2, 2 = x4), dummy bits, clock divider
         const uint32_t rfmt = info.qmi_rfmt, div = info.qmi_timing & 0xFFu;
@@ -268,6 +273,11 @@ size_t page_render(char *buf, size_t size) {
 
     bootctl_t b;
     const bool stored = storage_bootctl_load(&b);
+    static const char *const states[] = {"installed", "empty", "TRIAL", "kept", "FAILED"};
+    put(&o, "  Slots              : A %s, B %s%s; running %c\n",
+        b.slot_state[0] < 5 ? states[b.slot_state[0]] : "?", b.slot_state[1] < 5 ? states[b.slot_state[1]] : "?",
+        b.pending_slot == BOOTCTL_SLOT_A ? " (A pending)" : b.pending_slot == BOOTCTL_SLOT_B ? " (B pending)" : "",
+        r->slot == BOOTCTL_SLOT_B ? 'B' : 'A');
     put(&o, "  Next power-on      : %s; CS %s%s\n",
         b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in gekkoboot" :
         b.active_payload == BOOTCTL_PAYLOAD_2 ? "payload 2 (built-in if not valid)" : "payload 1 (built-in if not valid)",

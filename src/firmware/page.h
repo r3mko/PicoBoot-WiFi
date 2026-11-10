@@ -17,6 +17,7 @@ typedef struct {
     uint32_t wifi_up_ms;        // From the end of the injection (or start-up) to the AP being up
     uint32_t cyw43_init_ms;     // ...of which cyw43_arch_init() (loads the blob from flash)
     uint32_t ap_start_ms;       // ...and net_start()
+    bool ap_confirmed;          // The CYW43 reported the AP's BSS up after the start (D12 keep rule)
     // Flash read path of the injection (the untranslated, uncached XIP window), measured at start-up
     uint32_t qmi_rcmd, qmi_rfmt, qmi_timing;
     uint32_t sys_khz;

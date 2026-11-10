@@ -15,6 +15,10 @@ set(FIRMWARE_SOURCES
     json.c
     wifi.c
     api.c
+    update.c
+    updater.c
+    slots.c
+    bininfo.c
     ${CMAKE_SOURCE_DIR}/src/common/records.c
     ${CMAKE_SOURCE_DIR}/src/common/ringlog.c
 )
@@ -79,6 +83,7 @@ target_link_libraries(firmware PRIVATE
     hardware_adc
     pico_cyw43_arch_lwip_poll
     pico_lwip_http
+    pico_sha256
 )
 
 # The CYW43 blob isn't compiled in: the driver reads it from Wi-Fi area A or B (design D14),
@@ -93,11 +98,18 @@ pico_configure_ip4_address(firmware PRIVATE
 )
 
 # The Wi-Fi area image: the SDK's Wi-Fi-only CYW43439 blob behind our header (tools/mkwifiblob.py)
+# PICOBOOT_WIFI_BLOB=marked: the same blob with a marker in its spare header bytes, a blob that works
+# but differs, the stand-in for an update that brings a new blob (plan step 3.8)
 set(WIFI_BLOB_H ${PICO_CYW43_DRIVER_PATH}/firmware/w43439A0_7_95_49_00_combined.h)
+set(WIFI_BLOB_MARKER_ARGS "")
+if(PICOBOOT_WIFI_BLOB STREQUAL "marked")
+    set(WIFI_BLOB_MARKER_ARGS --marker newblob)
+endif()
 set(WIFI_BLOB_BIN ${CMAKE_BINARY_DIR}/wifi-blob.bin)
 add_custom_command(
     OUTPUT ${WIFI_BLOB_BIN}
     COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${WIFI_BLOB_BIN}
+            ${WIFI_BLOB_MARKER_ARGS}
     DEPENDS ${CMAKE_SOURCE_DIR}/tools/mkwifiblob.py ${WIFI_BLOB_H} ${CMAKE_SOURCE_DIR}/src/common/layout.h
     COMMENT "Building the Wi-Fi area image"
 )
@@ -114,6 +126,9 @@ target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=${PI
 pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_BOARD="${PICO_BOARD}")   # Update files name it (D11)
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_TEST_CRASH=${PICOBOOT_WIFI_TEST_CRASH_CODE})
+
 
 if(PICOBOOT_WIFI_USB_TRACE)
     pico_enable_stdio_usb(firmware 1)
@@ -140,3 +155,19 @@ add_custom_command(
     COMMENT "Building picoboot-wifi-install.uf2"
 )
 add_custom_target(install_uf2 ALL DEPENDS ${INSTALL_UF2})
+
+# The over-the-air update file (design D11): header, slot image and Wi-Fi blob (tools/mkupdate.py)
+set(UPDATE_BIN ${CMAKE_BINARY_DIR}/picoboot-wifi-update.bin)
+add_custom_command(
+    OUTPUT ${UPDATE_BIN}
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/mkupdate.py
+        --firmware $<TARGET_FILE_DIR:firmware>/firmware.bin
+        --blob ${WIFI_BLOB_BIN}
+        --version ${PICOBOOT_WIFI_BUILD}
+        --board ${PICO_BOARD}
+        --output ${UPDATE_BIN}
+    DEPENDS firmware ${WIFI_BLOB_BIN} ${CMAKE_SOURCE_DIR}/tools/mkupdate.py
+        ${CMAKE_SOURCE_DIR}/src/common/layout.h ${CMAKE_SOURCE_DIR}/src/common/bootinfo.h
+    COMMENT "Building picoboot-wifi-update.bin"
+)
+add_custom_target(update_bin ALL DEPENDS ${UPDATE_BIN})

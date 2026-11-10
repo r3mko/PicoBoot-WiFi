@@ -24,6 +24,7 @@ static void test_writer(void) {
     json_string(&j, "s", "a\"b\\c\n\x01");
     json_bool(&j, "t", true);
     json_bool(&j, "f", false);
+    json_null(&j, "n");
     json_tenths(&j, "temp", 384);
     json_tenths(&j, "neg", -5);
     json_tenths(&j, "zero", 0);
@@ -38,7 +39,7 @@ static void test_writer(void) {
     json_object_end(&j);
     json_object_end(&j);
     const size_t n = json_finish(&j);
-    const char *want = "{\"api\":1,\"s\":\"a\\\"b\\\\c\\u000a\\u0001\",\"t\":true,\"f\":false,\"temp\":38.4,"
+    const char *want = "{\"api\":1,\"s\":\"a\\\"b\\\\c\\u000a\\u0001\",\"t\":true,\"f\":false,\"n\":null,\"temp\":38.4,"
                        "\"neg\":-0.5,\"zero\":0.0,\"min\":-42,\"list\":[1,\"x\",{}],\"empty\":{}}";
     CHECK(n == strlen(want));
     CHECK(strcmp(buf, want) == 0);

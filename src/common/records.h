@@ -49,7 +49,8 @@ static inline const void *record_payload(const record_header_t *rec) {
 }
 
 // Writes a new record into the sector that doesn't hold the newest valid one, then reads it back.
-// Returns true if the new record is now the newest valid record.
+// Returns true if the new record is now the newest valid record. While the other sector holds a
+// record of another version (another firmware's), it's left alone (see target_sector()).
 bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
                   const void *payload, uint16_t length);
 

@@ -13,6 +13,12 @@
 #include "storage.h"
 #include "wifi.h"
 #include "bootctl.h"
+#include "bootinfo.h"
+#include "bininfo.h"
+#include "layout.h"
+#include "slots.h"
+#include "hardware/regs/addressmap.h"
+#include "hardware/structs/powman.h"
 #include "hardware/structs/powman.h"
 #include "pico/time.h"
 
@@ -26,6 +32,17 @@ void api_init(const page_info_t *i) {
 
 static const char *slot_name(uint8_t slot) {
     return slot == BOOTCTL_SLOT_B ? "B" : "A";
+}
+
+static const char *state_name(uint8_t state) {
+    switch (state) {
+        case BOOTCTL_STATE_INSTALLED: return "installed";
+        case BOOTCTL_STATE_EMPTY: return "empty";
+        case BOOTCTL_STATE_TRIAL: return "trial";
+        case BOOTCTL_STATE_KEPT: return "kept";
+        case BOOTCTL_STATE_FAILED: return "failed";
+        default: return "unknown";
+    }
 }
 
 static const char *reset_name(uint32_t chip_reset) {
@@ -100,6 +117,36 @@ static int get_status(char *out, size_t size, size_t *len) {
     json_object_begin(&j, "firmware");
     json_string(&j, "version", PICOBOOT_WIFI_BUILD);
     json_string(&j, "slot", slot_name(r->slot));
+    json_int(&j, "loader", r->loader_version);
+    {
+        // Both slots and the trial (D12, D13)
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        if (b.pending_slot == BOOTCTL_SLOT_A || b.pending_slot == BOOTCTL_SLOT_B) {
+            json_string(&j, "pending", slot_name(b.pending_slot));
+        } else {
+            json_null(&j, "pending");
+        }
+        json_object_begin(&j, "states");
+        json_string(&j, "A", state_name(b.slot_state[BOOTCTL_SLOT_A]));
+        json_string(&j, "B", state_name(b.slot_state[BOOTCTL_SLOT_B]));
+        json_object_end(&j);
+        // The firmware in each slot (D13): this one's own build, the other's from its binary info
+        json_object_begin(&j, "versions");
+        for (uint8_t s = BOOTCTL_SLOT_A; s <= BOOTCTL_SLOT_B; s++) {
+            char v[32];
+            const uint8_t *image = (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE +
+                                                     (s == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET));
+            if (s == r->slot) {
+                json_string(&j, slot_name(s), PICOBOOT_WIFI_BUILD);
+            } else if (b.slot_state[s] != BOOTCTL_STATE_EMPTY && bininfo_version(image, LAYOUT_SLOT_SIZE, v, sizeof(v))) {
+                json_string(&j, slot_name(s), v);
+            } else {
+                json_null(&j, slot_name(s));
+            }
+        }
+        json_object_end(&j);
+    }
     json_object_end(&j);
     json_object_begin(&j, "chip");
     json_int(&j, "stepping", r->chip_version);
@@ -183,6 +230,10 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "cs_pulldown_test", r->cs_pulldown_test);
     json_int(j, "chip_stepping", r->chip_version);
     json_int(j, "rom", r->rom_version);
+    json_int(j, "loader", r->loader_version);
+    json_bool(j, "trial", r->loader_flags & BOOTINFO_TRIAL);
+    json_bool(j, "trial_failed", r->loader_flags & BOOTINFO_TRIAL_FAILED);
+    json_bool(j, "crash_fallback", r->loader_flags & BOOTINFO_CRASH_FALLBACK);
     json_object_end(j);
 }
 
@@ -259,6 +310,90 @@ static bool no_member(void *ctx, const char *key, const json_value_t *v) {
     return false;
 }
 
+// --- POST /api/boot (D12, D13): {"keep": true} or {"slot": "A" | "B"} -------------------------------
+
+typedef struct {
+    int fields;
+    bool keep;
+    int slot;                           // BOOTCTL_SLOT_A / _B, or -1
+    bool bad;
+    char field[JSON_KEY_MAX + 1];
+} boot_body_t;
+
+static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
+    boot_body_t *bb = ctx;
+    bb->fields++;
+    strcpy(bb->field, key);
+    if (strcmp(key, "keep") == 0) {
+        bb->keep = v->type == JSON_BOOL && v->boolean;
+        bb->bad = !bb->keep;
+    } else if (strcmp(key, "slot") == 0) {
+        bb->bad = v->type != JSON_STRING || (strcmp(v->string, "A") != 0 && strcmp(v->string, "B") != 0);
+        bb->slot = bb->bad ? -1 : (v->string[0] == 'B' ? BOOTCTL_SLOT_B : BOOTCTL_SLOT_A);
+    } else {
+        return false;                   // Unknown field
+    }
+    return !bb->bad;
+}
+
+static int post_boot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
+    boot_body_t bb = {.slot = -1};
+    switch (json_parse_object(body, body_len, on_boot_member, &bb)) {
+        case JSON_SYNTAX:
+            return error(out, size, len, 400, "bad_json", "the body must be a flat JSON object", NULL);
+        case JSON_STOPPED:
+            return bb.bad ? error(out, size, len, 400, "bad_value", "keep must be true; slot must be \"A\" or \"B\"", bb.field)
+                          : error(out, size, len, 400, "unknown_field", "boot takes keep or slot", bb.field);
+        case JSON_OK:
+            break;
+    }
+    if (bb.fields != 1) {
+        return error(out, size, len, 400, "bad_json", "send exactly one of keep and slot", NULL);
+    }
+    const uint8_t running = info->report->slot;
+    bootctl_t b;
+    storage_bootctl_load(&b);
+    json_out_t j;
+    json_init(&j, out, size);
+    json_object_begin(&j, NULL);
+    if (bb.keep) {
+        if (!slots_keep(&b, running)) {
+            return error(out, size, len, 409, "not_on_trial", "this firmware isn't on trial: there's nothing to keep", NULL);
+        }
+        if (!storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        json_bool(&j, "kept", true);
+    } else {
+        // Only into a slot that holds a PicoBoot-WiFi firmware: after a USB install the other slot
+        // may hold anything (phase 3 review)
+        char v[32];
+        const uint8_t *image = (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE +
+                                                 (bb.slot == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET));
+        if (bb.slot != running && !bininfo_version(image, LAYOUT_SLOT_SIZE, v, sizeof(v))) {
+            return error(out, size, len, 409, "not_bootable", "that slot holds no PicoBoot-WiFi firmware", "slot");
+        }
+        const slots_switch_t r = slots_switch(&b, running, (uint8_t)bb.slot);
+        if (r == SLOTS_NOT_BOOTABLE) {
+            return error(out, size, len, 409, "not_bootable", "that slot is empty: upload a firmware into it first", "slot");
+        }
+        if (r == SLOTS_SWITCHED && !storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        if (r == SLOTS_SWITCHED && b.pending_slot == bb.slot) {
+            // On trial again: the loader tries it even if its last trial failed this session
+            powman_hw->scratch[BOOTINFO_SCRATCH_SESSION] =
+                slots_session_new_trial(powman_hw->scratch[BOOTINFO_SCRATCH_SESSION], (uint8_t)bb.slot);
+        }
+        json_bool(&j, "rebooting", r == SLOTS_SWITCHED);
+        if (r == SLOTS_SWITCHED) {
+            net_reboot_soon(false);     // Warm: a game keeps running (D8)
+        }
+    }
+    json_object_end(&j);
+    return finish(&j, out, size, len);
+}
+
 static int post_reboot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
     char field[JSON_KEY_MAX + 1];
     switch (json_parse_object(body, body_len, no_member, field)) {
@@ -282,6 +417,10 @@ static int post_reboot(const char *body, size_t body_len, char *out, size_t size
 
 int api_handle(bool post, const char *path, const char *body, size_t body_len,
                char *out, size_t out_size, size_t *out_len) {
+    if (post && net_upload_running()) {
+        // A reboot or an AP restart would cut the upload off (phase 3 review)
+        return error(out, out_size, out_len, 503, "busy", "an upload is in progress: try again when it's done", NULL);
+    }
     if (strcmp(path, "/api/status") == 0 || strcmp(path, "/api/diagnostics") == 0) {
         if (post) {
             return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);
@@ -290,6 +429,12 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
     }
     if (strcmp(path, "/api/settings") == 0) {
         return post ? post_settings(body, body_len, out, out_size, out_len) : get_settings(out, out_size, out_len);
+    }
+    if (strcmp(path, "/api/boot") == 0) {
+        if (!post) {
+            return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);
+        }
+        return post_boot(body, body_len, out, out_size, out_len);
     }
     if (strcmp(path, "/api/reboot") == 0) {
         if (!post) {

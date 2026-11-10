@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Approved with phase 2, 2026-11-09 |
+| **Status** | Approved with phase 2, 2026-11-09; the phase 3 additions with phase 3, 2026-11-10 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
-The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot. The other endpoints of D18 come with their phases: firmware upload (phase 3), and payloads, boot choices and backups (phase 4).
+The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload and the slot choices. The other endpoints of D18 come with phase 4: payloads, the payload and IPL choices, and backups.
 
 ## Common rules
 
@@ -16,6 +16,7 @@ The web UI and the CLI tool use this API. Phase 2 defines status, settings, diag
 - **POSTs must be addressed to `Host: 192.168.4.1`** (or `192.168.4.1:80`); anything else gets 403.
   - **Why:** the Pico's DNS answers every name with its own address. A page opened elsewhere could otherwise point its own name at the Pico and send same-origin requests, which need no preflight (DNS rebinding).
 - **Body size:** at most 1024 bytes for the endpoints here; more gets 413.
+- **While an upload streams in,** other POSTs get 503 `busy`: a reboot or an access-point restart would cut it off.
 - **Compatibility:**
   - Later phases add fields; clients ignore fields they don't know.
   - `api` in the status counts up only when a field changes meaning or goes away.
@@ -50,7 +51,9 @@ What the status page shows (D22).
 ```json
 {
   "api": 1,
-  "firmware": {"version": "0.2.0-dev+a75e9b7", "slot": "A"},
+  "firmware": {"version": "0.3.0-dev+1a2b3c4", "slot": "A", "loader": 2, "pending": null,
+               "states": {"A": "kept", "B": "failed"},
+               "versions": {"A": "0.3.0-dev+1a2b3c4", "B": "0.3.0-dev+9f8e7d6-crash-5s"}},
   "chip": {"stepping": 2, "rom": 2},
   "uptime_s": 34,
   "temperature_c": 38.4,
@@ -67,6 +70,10 @@ What the status page shows (D22).
 |---|---|
 | `firmware.version` | Semver plus the git hash for test builds (D24) |
 | `firmware.slot` | `"A"` or `"B"`: the slot this firmware runs from |
+| `firmware.loader` | The installed loader's version (1 for loaders that don't report one); an update needing a newer one is refused (D11) |
+| `firmware.pending` | The slot with a new firmware on trial (D12), or `null`. When it equals `firmware.slot`, the running firmware is the one on trial |
+| `firmware.states` | Per slot: `installed` (from a USB install), `empty` (being written, or an upload failed), `trial`, `kept`, `failed` |
+| `firmware.versions` | Per slot: the firmware's version, read from its image; `null` if the slot is empty or holds no PicoBoot-WiFi image |
 | `chip.stepping` | RP2350 stepping: 2 is A2, 3 is A3, 4 is A4 |
 | `chip.rom` | Boot ROM version |
 | `temperature_c` | RP2350 sensor; it reads low on a low 3.3 V rail |
@@ -168,8 +175,47 @@ The last boot and the boot log (D22, D39).
 | `cs_high_at_ready` | CS level at "PIO ready" |
 | `cs_pulldown_test` | The boot ran in the CS pull-down test mode |
 | `chip_stepping`, `rom` | As in the status |
+| `loader` | The loader's version |
+| `trial` | The loader started this slot on trial (D12) |
+| `trial_failed` | The other slot's trial failed in this session: it crashed, or held no image |
+| `crash_fallback` | The other slot crashed 3 times in a row in this session, so this one took over for good |
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
+
+## POST /api/firmware
+
+An over-the-air update (D11). The body is an update file ([update-format.md](update-format.md)), sent with `Content-Type: application/octet-stream`; the Host rule applies as for every POST. The 1024-byte body limit doesn't apply.
+
+- **The Pico** streams it into the slot that isn't running, erasing and writing flash as it goes, then reads it back. An upload takes a few seconds (4 s on the bench in phase 3), most of it erasing flash.
+- **The answer:**
+
+```json
+{"installed": true, "slot": "B", "version": "0.3.0-dev+1a2b3c4", "blob_written": false, "rebooting": true}
+```
+
+  - `slot` now holds the new firmware, on trial (D12); `blob_written` says whether its Wi-Fi area needed the file's blob (D14).
+  - Half a second later the Pico reboots into the trial (D11). The reboot is warm: a running game keeps running (D8). The UI waits for the Pico to come back.
+- **Refusals** answer 400 with the codes of [update-format.md](update-format.md): `not_an_update`, `unsupported_format`, `bad_header`, `wrong_board`, `needs_usb_install`, `bad_size`, `needs_blob`, `bad_image`, `bad_blob`, `incomplete`. A refusal that comes from the header arrives before any flash is touched; the rest leave the other slot empty, never half a firmware.
+- **When the answer comes:** a refusal from the file itself (the header or a hash) comes after the whole body, which the Pico reads and drops. One from the request alone (the type, the Host, `busy`, `on_trial`, `needs_usb_install` without a loader) comes at once, and the Pico may close the connection while the client is still sending: a client should then still read the answer.
+- **Also:**
+  - 409 `on_trial` while the running firmware is itself on trial: the other slot holds the one to fall back to, so it isn't overwritten. Keep the new firmware first, or switch back to the other slot (a reboot alone continues the trial);
+  - 409 `not_active` while the running firmware isn't the active one (it started in place of it, or a switch is under way): the update would go into the active slot without a trial;
+  - 503 `busy` while the Pico is about to reboot;
+  - 415 without the octet-stream type, 503 `busy` while another upload runs, 500 `flash_write` if boot control can't be written.
+
+## POST /api/boot
+
+The firmware page's choices (D12, D13). The body holds exactly one of:
+
+| Body | What it does | Answer |
+|---|---|---|
+| `{"keep": true}` | Keeps the running firmware, which is on trial: it becomes the active one (D12) | `{"kept": true}`; 409 `not_on_trial` if it isn't on trial |
+| `{"slot": "A"}` or `"B"` | Boots that slot (D13) | `{"rebooting": true}`, then a warm reboot half a second later; `{"rebooting": false}` if it's the running slot already; 409 `not_bootable` if it's empty or holds no PicoBoot-WiFi firmware |
+
+- **Back to the active slot from a firmware on trial:** the trial is abandoned. That slot stays unkept and is never a fallback.
+- **To a kept slot:** it becomes the active one. A running firmware from a USB install counts as kept from then on.
+- **To any other slot with a firmware** (from a USB install, on trial, unkept or failed): it goes on trial (D12). After a USB install the other slot may hold anything, so it's never made active straight away.
+- Phase 4 adds the payload and "original IPL once" choices to this endpoint.
 
 ## POST /api/reboot
 

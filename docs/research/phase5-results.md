@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 5, run by the owner on the `phase-5-release` builds.
 
-**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed.
+**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test on the release build, `1.0.0` (`9b8a107`).
 
 **Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. In step 5.1 payload 1 holds Swiss r2119; the acceptance erases the flash first.
 
@@ -71,3 +71,25 @@ Build `1.0.0` (`df962b8`, with both fixes). Boot numbers are the boot log's, whi
 - A release build zeroes 2 KB less `.bss` (18.2 KB), about 0.3 ms.
 
 The `0.4.0-dev` build also read 164.8 ms in this session (boot 6), against 162.7 ms in phase 4, so the rest is most likely the console's spread from one session to the next.
+
+## Re-test after the code review (2026-11-11)
+
+Build `1.0.0` (`9b8a107`: finding 2 of the code review, see the implementation plan), installed over Wi-Fi from the third run's build. The CLI from `a5cb225` (finding 1).
+
+| Check | Boots | Result |
+|---|---|---|
+| The update over Wi-Fi into slot B (the file `67b9da9d…`), the same version already running | 14–15 | **Passed:** the update's restart (14), then on trial, complete, kept (15) |
+| An upload cut off at 43 % (Ctrl-C), then `GET /.api` | | **Passed:** `302 Found`, not the upload's "incomplete" answer (finding 2) |
+| The same upload to the end | | **Passed:** into payload 1 as "Swiss r2119", SHA-256 `1dc3e8e6…`, now the choice |
+| `ipl-once`, then `ipl-once --off` | | **Passed:** both answers |
+| Power-ons with Swiss from payload 1 | 16–20 | **Passed:** all complete |
+
+**Injection:** complete on every power-on, CS 1544/1544. Wi-Fi was up 785 ms after the start (boot 20).
+
+| Build | Boots | Margin (ms) | Mean (ms) |
+|---|---|---|---|
+| **`1.0.0` (`9b8a107`)** | **15–20 (6 power-ons)** | **163.2–165.5** | **164.9** |
+| `1.0.0` (`df962b8`, third run) | 3, 4, 8–13 | 164.7–165.4 | 165.2 |
+| PicoBoot-DX (phase 0) | | | 165.5 |
+
+**Result:** passed; 0.6 ms below PicoBoot-DX. With Swiss in payload 1 again, "main() to PIO ready" is back to 0.6 ms (boots 16–20), against 0.4 ms with payload 1 empty (boot 15). That's the fingerprint of the third run's note.

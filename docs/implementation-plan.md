@@ -399,7 +399,7 @@ docs/                       design, plan, research, API, update-file format
 
 **Code review of phase 5** (a fresh Opus 5.5 reviewer, 2026-11-11):
 - **Overall:** no high findings; one medium and one low, both fixed. Nothing else was found in the flash writes, httpd's POST paths, the DHCP changes, memory or the release workflow.
-- **Re-test before the merge:** in the console, in [phase5-results.md](research/phase5-results.md).
+- **Re-test before the merge:** in the console, build `1.0.0` (`9b8a107`): passed, in [phase5-results.md](research/phase5-results.md). This is the release build.
 
 | # | Finding | Where it's handled |
 |---|---|---|

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.5, 2026-11-11 |
+| **Status** | Approved v1.5, 2026-11-11; draft v1.6 (phase 5) for approval at the end of phase 5 |
 | **Design** | [architecture.md](architecture.md), Approved v1.6 |
 | **Owner** | Remko Kleinjan |
 
@@ -17,6 +17,7 @@
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 | v1.4 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
 | v1.5 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4 as built (see its "As built" note), with the owner's choices made during the phase (design D42, D43), its code review, and the `.bss` budget for phase 5. |
+| v1.6 draft | 2026-11-11 | Phase 5: the security review of step 5.1, its fixes and their re-test in the console. For approval at the end of phase 5. |
 
 ## How this plan works
 
@@ -370,6 +371,7 @@ docs/                       design, plan, research, API, update-file format
 
 **Security review** (step 5.1, Fable 5.2, 2026-11-11):
 - **Overall:** no critical, high or medium findings; seven low and five informational. The upload parsers, the flash writers, the header and JSON parsers, the records and the DNS and DHCP servers were fuzzed on the host (about 20 million inputs, with AddressSanitizer and UndefinedBehaviorSanitizer). The fixes are in `360d8dd`.
+- **Re-test:** in the console, build `0.5.0-dev+3806ed3`: passed, in [phase5-results.md](research/phase5-results.md).
 
 | # | Finding | Where it's handled |
 |---|---|---|

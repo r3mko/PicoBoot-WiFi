@@ -78,7 +78,9 @@ static void test_built_firmware(void) {
     CHECK(got > 0);
     char v[32];
     CHECK(bininfo_version(slot, sizeof(slot), v, sizeof(v)));
-    CHECK(strncmp(v, "0.", 2) == 0 && strchr(v, '+') != NULL);     // As PICOBOOT_WIFI_BUILD
+    // As PICOBOOT_WIFI_BUILD: a test build's 0.N.0-dev plus the git hash, or a release's plain X.Y.Z
+    CHECK((strncmp(v, "0.", 2) == 0 && strstr(v, "-dev+") != NULL) ||
+          (v[0] != '\0' && strspn(v, "0123456789.") == strlen(v)));
     printf("built firmware: %s\n", v);
 }
 

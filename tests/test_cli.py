@@ -759,6 +759,30 @@ class PayloadCommandsTest(CliTestCase):
             self.assertEqual(f.read(), PAYLOAD)
         self.assertIn(PAYLOAD_SHA, out)
 
+    def test_convert_to_a_uf2(self):
+        # The same blocks tools/mkuf2.py makes for payload 1, and the payload the Pico takes from them
+        path = self.write(synthetic_dol(), "gekkoboot.dol")
+        code, out, err = run(free_port_host(), "payload", "convert", path, "--uf2")
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(self.tmp.name, "gekkoboot.uf2"), "rb") as f:
+            uf2 = f.read()
+        self.assertEqual(uf2, mkuf2.build_uf2([("payload 1", 0x80000, PAYLOAD, 0x180000)]))
+        self.assertEqual(cli.raw_payload(cli.uf2_payload(uf2, "x"), "x"), PAYLOAD)
+        self.assertIn(PAYLOAD_SHA, out)
+
+    def test_convert_refuses_a_uf2_larger_than_payload_1(self):
+        # Over USB, blocks past payload 1 would land on firmware slot A at 0x10200000 (phase 5 review)
+        path = self.write(synthetic_dol(text=bytes(0x180000)), "big.dol")
+        code, _, err = self.cli("payload", "convert", path, "--uf2")
+        self.assertEqual(code, 1)
+        self.assertIn("more than payload 1 holds", err)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "big.uf2")))
+        # The largest that fits ends right below slot A
+        uf2 = cli.payload_uf2(b"\xaa" * 0x180000)
+        self.assertEqual(struct.unpack_from("<I", uf2, len(uf2) - 512 + 12)[0], 0x10200000 - 256)
+        # A raw payload goes over Wi-Fi, where the Pico checks its size
+        self.assertEqual(self.cli("payload", "convert", path)[0], 0)
+
     def test_convert_does_not_overwrite(self):
         path = self.write(synthetic_dol(), "a.dol")
         target = self.write(b"mine", "a.bin")
@@ -806,15 +830,17 @@ class BackupTest(CliTestCase):
         self.assertIn(PAYLOAD_SHA, out)
         self.assertEqual(self.pico.requests[-1]["headers"]["Host"], self.pico.host)
 
-    def test_only_the_base_name_of_the_header_is_used(self):
+    def test_only_a_plain_name_of_the_header_is_used(self):
+        # A path, a dotfile, a script or another extension gets the default name (phase 5 security review)
         self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "x"))))
-        for evil in ("../../evil.bin", "/tmp/evil.bin", "..\\..\\evil.bin"):
+        for evil in ("../../evil.bin", "/tmp/evil.bin", "..\\..\\evil.bin", ".zshenv", ".evil.bin",
+                     "sitecustomize.py", "C:evil.bat", "evil.sh", "a\x07b.bin"):
             with self.subTest(evil=evil):
                 self.pico.route("GET", "/api/backup/payload1", (200, PAYLOAD, self.disposition(evil)))
                 code, out, err = self.cli("backup", "payload1", "--force")
                 self.assertEqual(code, 0, err)
-                self.assertEqual(self.read("evil.bin"), PAYLOAD)
-        self.assertEqual(os.listdir(self.tmp.name), ["evil.bin"])
+                self.assertEqual(self.read("payload1.bin"), PAYLOAD)
+        self.assertEqual(os.listdir(self.tmp.name), ["payload1.bin"])
 
     def test_output_overrides_the_name(self):
         self.pico.route("GET", "/api/status", (200, payload_status(p1=slot_of(PAYLOAD, "x"))))
@@ -937,6 +963,13 @@ class RestoreSettingsTest(CliTestCase):
         code, out, err = self.cli("restore-settings", self.write(b'{"led": false}', "s.json"))
         self.assertEqual(code, 0, err)
         self.assertNotIn("restarts", out)
+
+    def test_a_file_with_a_password_is_refused(self):
+        # A backup never holds the password; a file that sets one isn't restored (phase 5 security review)
+        code, _, err = self.cli("restore-settings", self.write(b'{"ssid": "x", "password": "attackers"}', "s.json"))
+        self.assertEqual(code, 1)
+        self.assertIn("sets a password", err)
+        self.assertEqual(self.pico.requests, [])
 
     def test_refused_and_bad_files(self):
         self.pico.route("POST", "/api/settings", (400, {"error": "bad_value", "message": "channel must be 1 to 11"}))

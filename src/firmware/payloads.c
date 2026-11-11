@@ -158,8 +158,11 @@ bool payloads_file(uint8_t slot, net_file_t *file) {
 // Makes a slot's payload invalid at once, before boot control says so: its first page programmed to
 // zeros (flash clears bits without an erase). A power cut in the erase that follows can then leave no
 // old header behind, which the USB rule would take for a new payload 1 (D17; phase 4 review).
+// The zeros are in RAM: a const array is in flash, which can't be read while it's being programmed,
+// so the Pico hung there until the watchdog reset it (phase 5 acceptance).
 static void invalidate(uint8_t slot) {
-    static const uint8_t zeros[256];
+    static uint8_t __uninitialized_ram(zeros)[256];
+    memset(zeros, 0, sizeof(zeros));
     storage_flash_program(slot_offset[slot], zeros, sizeof(zeros));
     cache[slot].known = false;
 }

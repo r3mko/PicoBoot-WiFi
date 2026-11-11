@@ -289,16 +289,29 @@ static bool slot_b_first_sector_erased(void) {
     return true;
 }
 
+static bool wifi_b_first_sector_erased(void) {
+    for (uint32_t i = 0; i < LAYOUT_SECTOR_SIZE; i++) if (flash[LAYOUT_WIFI_B_OFFSET + i] != 0xFF) return false;
+    return true;
+}
+
 static void test_first_sector_last(void) {
     file_t f = make_file(true, NULL);
     // Cut off anywhere after the first erase: the slot's first sector is erased, so the boot ROM
-    // won't start what's there (the old image or half of the new one)
-    const size_t cuts[] = {256 + 4096, 256 + 4097, 256 + 70000, 256 + sizeof(image) - 1, 256 + sizeof(image) + 5000};
+    // won't start what's there (the old image or half of the new one). In the blob too: the image
+    // waits for it, and the Wi-Fi area's first sector, with its header, is written last as well
+    // (phase 5 security review)
+    const size_t cuts[] = {256 + 4096, 256 + 4097, 256 + 70000, 256 + sizeof(image) - 1, 256 + sizeof(image) + 5000,
+                           256 + sizeof(image) + sizeof(blob) - 1};
     for (unsigned i = 0; i < sizeof(cuts) / sizeof(cuts[0]); i++) {
         reset_flash();
         CHECK(upload(&f, 0, cuts[i]) == UPDATE_INCOMPLETE);
-        CHECK(i == 4 ? !slot_b_first_sector_erased() : slot_b_first_sector_erased());   // Past the image: written
+        CHECK(slot_b_first_sector_erased());
+        CHECK(i < 4 || wifi_b_first_sector_erased());
     }
+    reset_flash();                                                      // A damaged blob
+    f.data[256 + sizeof(image) + 9000] ^= 1;
+    CHECK(upload(&f, 0, 0) == UPDATE_BAD_BLOB && slot_b_first_sector_erased() && wifi_b_first_sector_erased());
+    f.data[256 + sizeof(image) + 9000] ^= 1;
     reset_flash();                                                      // A damaged image
     f.data[256 + 9000] ^= 1;
     CHECK(upload(&f, 0, 0) == UPDATE_BAD_IMAGE && slot_b_first_sector_erased());

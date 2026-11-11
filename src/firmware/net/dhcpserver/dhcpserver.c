@@ -63,7 +63,9 @@
 #define PORT_DHCP_SERVER (67)
 #define PORT_DHCP_CLIENT (68)
 
-#define DEFAULT_LEASE_TIME_S (24 * 60 * 60) // in seconds
+// Short, so that leases come free soon: 8 addresses, and made-up MAC addresses could hold them all
+// for a day otherwise (phase 5 security review)
+#define DEFAULT_LEASE_TIME_S (10 * 60) // in seconds
 
 #define MAC_LEN (6)
 #define MAKE_IP4(a, b, c, d) ((a) << 24 | (b) << 16 | (c) << 8 | (d))
@@ -143,15 +145,16 @@ static int dhcp_socket_sendto(struct udp_pcb **udp, struct netif *nif, const voi
     return len;
 }
 
-// `opt` is the 308 option bytes after the magic cookie. Only an option whose length byte and data
-// lie inside them is returned, so callers can read all of it.
-static uint8_t *opt_find(uint8_t *opt, uint8_t cmd) {
-    for (int i = 0; i + 1 < 308 && opt[i] != DHCP_OPT_END;) {
-        if (i + 2 + opt[i + 1] > 308) {
+// `opt` is the option bytes after the magic cookie, `size` of them as received (at most 308). Only an
+// option with at least `min_len` data bytes, its length byte and data inside them, is returned, so
+// callers can read min_len bytes of it (phase 5 security review).
+static uint8_t *opt_find(uint8_t *opt, int size, uint8_t cmd, uint8_t min_len) {
+    for (int i = 0; i + 1 < size && opt[i] != DHCP_OPT_END;) {
+        if (i + 2 + opt[i + 1] > size) {
             break;
         }
         if (opt[i] == cmd) {
-            return &opt[i];
+            return opt[i + 1] >= min_len ? &opt[i] : NULL;
         }
         i += 2 + opt[i + 1];
     }
@@ -209,8 +212,13 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
 
     uint8_t *opt = (uint8_t *)&dhcp_msg.options;
     opt += 4; // assume magic cookie: 99, 130, 83, 99
+    // The option bytes received: the search stays inside them, not in what the stack held before
+    const int opt_size = (int)len - (int)(opt - (uint8_t *)&dhcp_msg);
 
-    uint8_t *msgtype = opt_find(opt, DHCP_OPT_MSG_TYPE);
+    // The reply is broadcast, but to a client that has its address (renewing), it goes there
+    uint32_t reply_to = 0xffffffff;
+
+    uint8_t *msgtype = opt_find(opt, opt_size, DHCP_OPT_MSG_TYPE, 1);
     if (msgtype == NULL) {
         // A DHCP package without MSG_TYPE?
         goto ignore_request;
@@ -231,7 +239,7 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
                         // IP available
                         yi = i;
                     }
-                    uint32_t expiry = d->lease[i].expiry << 16 | 0xffff;
+                    uint32_t expiry = (uint32_t)d->lease[i].expiry << 16 | 0xffff;
                     if ((int32_t)(expiry - cyw43_hal_ticks_ms()) < 0) {
                         // IP expired, reuse it
                         memset(d->lease[i].mac, 0, MAC_LEN);
@@ -249,24 +257,34 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
         }
 
         case DHCPREQUEST: {
-            uint8_t *o = opt_find(opt, DHCP_OPT_REQUESTED_IP);
-            if (o == NULL) {
+            // The address asked for: option 50 when taking an offer or rejoining, ciaddr when renewing
+            // or rebinding (RFC 2131 4.3.2). With 10-minute leases a client renews while it's joined:
+            // ignored, it lost its address when the lease ran out (phase 5 acceptance)
+            const uint8_t *req;
+            uint8_t *o = opt_find(opt, opt_size, DHCP_OPT_REQUESTED_IP, 4);
+            if (o != NULL) {
+                req = o + 2;
+            } else if (memcmp(dhcp_msg.ciaddr, "\x00\x00\x00\x00", 4) != 0) {
+                req = dhcp_msg.ciaddr;
+                reply_to = (uint32_t)req[0] << 24 | (uint32_t)req[1] << 16 | (uint32_t)req[2] << 8 | req[3];
+            } else {
                 // Should be NACK
                 goto ignore_request;
             }
-            if (memcmp(o + 2, &ip4_addr_get_u32(ip_2_ip4(&d->ip)), 3) != 0) {
+            if (memcmp(req, &ip4_addr_get_u32(ip_2_ip4(&d->ip)), 3) != 0) {
                 // Should be NACK
                 goto ignore_request;
             }
-            uint8_t yi = o[5] - DHCPS_BASE_IP;
+            uint8_t yi = req[3] - DHCPS_BASE_IP;
             if (yi >= DHCPS_MAX_IP) {
                 // Should be NACK
                 goto ignore_request;
             }
             if (memcmp(d->lease[yi].mac, dhcp_msg.chaddr, MAC_LEN) == 0) {
                 // MAC match, ok to use this IP address
-            } else if (memcmp(d->lease[yi].mac, "\x00\x00\x00\x00\x00\x00", MAC_LEN) == 0) {
-                // IP unused, ok to use this IP address
+            } else if (memcmp(d->lease[yi].mac, "\x00\x00\x00\x00\x00\x00", MAC_LEN) == 0 ||
+                       (int32_t)(((uint32_t)d->lease[yi].expiry << 16 | 0xffff) - cyw43_hal_ticks_ms()) < 0) {
+                // IP unused, or its lease expired: ok to use this IP address
                 memcpy(d->lease[yi].mac, dhcp_msg.chaddr, MAC_LEN);
             } else {
                 // IP already in use
@@ -281,7 +299,7 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
             // build the reply. It is optional and client-controlled, so it can
             // be absent (some phones omit it or send a randomised name).
             char hostname[32] = "";
-            uint8_t *hn = opt_find(opt, DHCP_OPT_HOST_NAME);
+            uint8_t *hn = opt_find(opt, opt_size, DHCP_OPT_HOST_NAME, 0);
             if (hn != NULL) {
                 uint8_t hn_len = hn[1];
                 if (hn_len > sizeof(hostname) - 1) {
@@ -310,7 +328,7 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
     opt_write_u32(&opt, DHCP_OPT_IP_LEASE_TIME, DEFAULT_LEASE_TIME_S);
     *opt++ = DHCP_OPT_END;
     struct netif *nif = ip_current_input_netif();
-    dhcp_socket_sendto(&d->udp, nif, &dhcp_msg, opt - (uint8_t *)&dhcp_msg, 0xffffffff, PORT_DHCP_CLIENT);
+    dhcp_socket_sendto(&d->udp, nif, &dhcp_msg, opt - (uint8_t *)&dhcp_msg, reply_to, PORT_DHCP_CLIENT);
 
 ignore_request:
     pbuf_free(p);

@@ -44,6 +44,9 @@ def http_response(name, body):
         "Content-Encoding: gzip\r\n"
         f"Content-Length: {len(zipped)}\r\n"
         "Cache-Control: no-store\r\n"
+        # Not in another site's frame, which could trick a click (phase 5 security review)
+        "X-Frame-Options: DENY\r\n"
+        "Content-Security-Policy: frame-ancestors 'none'\r\n"
         "Connection: close\r\n"
         "\r\n"
     )

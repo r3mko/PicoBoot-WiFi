@@ -33,7 +33,7 @@ set(PICOBOOT_WIFI_INJECTION_KHZ 250000 CACHE STRING "CPU clock during the inject
 set(PICOBOOT_WIFI_FLASH_CLKDIV 3 CACHE STRING "Flash clock divider, from clk_sys (design D27)")
 
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
-set(PICOBOOT_WIFI_VERSION "0.4.0-dev")
+set(PICOBOOT_WIFI_VERSION "1.0.0")
 execute_process(
     COMMAND git -c safe.directory=* rev-parse --short HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -42,7 +42,12 @@ execute_process(
 if(NOT PICOBOOT_WIFI_GIT_HASH)
     set(PICOBOOT_WIFI_GIT_HASH "unknown")
 endif()
-set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}+${PICOBOOT_WIFI_GIT_HASH}")
+# A release is its plain version (the tag, .github/workflows/release.yml); a test build adds the hash
+if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")
+    set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}+${PICOBOOT_WIFI_GIT_HASH}")
+else()
+    set(PICOBOOT_WIFI_BUILD "${PICOBOOT_WIFI_VERSION}")
+endif()
 # Test builds that crash on purpose, for the trial and crash-loop tests (plan step 3.7): "startup"
 # faults at once, "after5s" hangs 5 s after Wi-Fi is up so the watchdog resets
 set(PICOBOOT_WIFI_TEST_CRASH "" CACHE STRING "Crash on purpose: empty, startup or after5s (plan step 3.7)")

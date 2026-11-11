@@ -219,9 +219,12 @@ static void flush_sector(update_t *u) {
     const uint32_t pages = (u->sector_fill + PAGE - 1) / PAGE;
     memset(u->sector + u->sector_fill, 0xFF, pages * PAGE - u->sector_fill);
     u->io->erase_sector(u->io->ctx, u->area_offset + u->written);
-    if (u->stage == UPDATE_STAGE_IMAGE && u->written == 0) {
-        memcpy(u->first, u->sector, pages * PAGE);  // Programmed last, by end_part()
+    if (u->written == 0 && u->stage == UPDATE_STAGE_IMAGE) {
+        memcpy(u->first, u->sector, pages * PAGE);  // Programmed last of all, by end_part()
         u->first_bytes = pages * PAGE;
+    } else if (u->written == 0) {
+        memcpy(u->blob_first, u->sector, pages * PAGE);
+        u->blob_first_bytes = pages * PAGE;
     } else {
         u->io->program(u->io->ctx, u->area_offset + u->written, u->sector, pages * PAGE);
     }
@@ -241,16 +244,18 @@ static void end_part(update_t *u) {
     const bool image = u->stage == UPDATE_STAGE_IMAGE;
     if (memcmp(sha, image ? u->header.image_sha256 : u->header.blob_sha256, 32) != 0) {
         u->result = image ? UPDATE_BAD_IMAGE : UPDATE_BAD_BLOB;
-        return;                         // An image's first sector stays erased
-    }
-    if (image) {
-        u->io->program(u->io->ctx, u->area_offset, u->first, u->first_bytes);
+        return;                         // The first sectors stay erased
     }
     if (image && u->header.blob_size) {
-        start_part(u, UPDATE_STAGE_BLOB);
-    } else {
-        u->stage = UPDATE_STAGE_DONE;
+        start_part(u, UPDATE_STAGE_BLOB);   // The image's first sector waits for the blob
+        return;
     }
+    // Both parts are right: the Wi-Fi area's first sector, then the image's, last of all
+    if (u->write_blob && u->blob_first_bytes) {
+        u->io->program(u->io->ctx, wifi_offset(u->slot), u->blob_first, u->blob_first_bytes);
+    }
+    u->io->program(u->io->ctx, slot_offset(u->slot), u->first, u->first_bytes);
+    u->stage = UPDATE_STAGE_DONE;
 }
 
 static void end_header(update_t *u) {

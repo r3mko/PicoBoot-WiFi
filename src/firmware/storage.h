@@ -26,7 +26,8 @@ bool storage_settings_load(settings_record_t *out);
 bool storage_settings_store(const settings_record_t *r);
 
 // Erases one sector, and programs whole pages, at an offset from the start of flash (interrupts off,
-// as above). For the update writer; the areas above have their own functions.
+// as above). For the update writer; the areas above have their own functions. `data` must be in RAM:
+// flash can't be read while it's being programmed.
 void storage_flash_erase(uint32_t offset);
 void storage_flash_program(uint32_t offset, const uint8_t *data, size_t length);
 

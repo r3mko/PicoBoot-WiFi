@@ -68,7 +68,17 @@ bool storage_bootctl_load(bootctl_t *out) {
     return true;
 }
 
+// A store that changes nothing writes nothing: an API client can't wear the record sectors out by
+// sending the same choice again and again (phase 5 security review)
+static bool unchanged(const record_header_t *rec, uint16_t version, const void *data, size_t length) {
+    return rec && rec->version == version && rec->length == length && memcmp(record_payload(rec), data, length) == 0;
+}
+
 bool storage_bootctl_store(const bootctl_t *b) {
+    if (unchanged(record_find_any(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), BOOTCTL_MAGIC, 1, BOOTCTL_LOADER_BYTES),
+                  BOOTCTL_VERSION, b, sizeof(*b))) {
+        return true;
+    }
     return record_write_any(FLASH_AREA(LAYOUT_BOOTCTL_OFFSET), &bootctl_flash, BOOTCTL_MAGIC, BOOTCTL_VERSION,
                             b, sizeof(*b));
 }
@@ -86,6 +96,10 @@ bool storage_settings_store(const settings_record_t *r) {
     settings_record_t check = *r;
     if (!settings_record_sanitize(&check)) {
         return false;
+    }
+    if (unchanged(record_find(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), SETTINGS_MAGIC, SETTINGS_VERSION,
+                              sizeof(settings_record_t), NULL), SETTINGS_VERSION, r, sizeof(*r))) {
+        return true;
     }
     return record_write(FLASH_AREA(LAYOUT_SETTINGS_OFFSET), &settings_flash, SETTINGS_MAGIC, SETTINGS_VERSION,
                         r, sizeof(*r));

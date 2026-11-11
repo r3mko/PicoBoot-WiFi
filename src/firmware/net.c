@@ -109,7 +109,8 @@ static int respond_out_of_memory(struct fs_file *file) {
 static int respond_as(struct fs_file *file, int status, const char *type, const char *extra_headers,
                       const char *body, size_t body_len) {
     static const char fmt[] = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %u\r\n"
-                              "%sCache-Control: no-store\r\nConnection: close\r\n\r\n";
+                              "%sCache-Control: no-store\r\nX-Frame-Options: DENY\r\n"
+                              "Connection: close\r\n\r\n";
     const size_t cap = sizeof(fmt) + 96 + strlen(extra_headers) + body_len;
     char *out = malloc(cap);
     if (!out) {
@@ -169,7 +170,7 @@ static int respond_download(struct fs_file *file, const char *path) {
     size_t len = 0;
     const char *busy = download.file ? "another download is in progress: try again when it's done" :
                        upload_connection ? "an upload is in progress: try again when it's done" :
-                       pending_reboot != REBOOT_NONE ? "PicoBoot is about to reboot" : NULL;
+                       pending_reboot != REBOOT_NONE ? "PicoBoot-WiFi is about to reboot" : NULL;
     if (busy) {
         const int n = snprintf(out, sizeof(out), "{\"error\":\"busy\",\"message\":\"%s\"}", busy);
         return respond_json(file, 503, out, (size_t)n);
@@ -232,6 +233,11 @@ int fs_read_custom(struct fs_file *file, char *buffer, int count) {
     return n;
 }
 
+// Set when a POST has just named its answer file ("/.api", "/.done", ...): httpd opens it right after.
+// Otherwise those names are unknown, so a plain GET can't read the last POST's answer (phase 5
+// security review).
+static bool post_answer_due;
+
 // The answer to the POST that just ended. httpd opens its response file ("/.api") within the same
 // call as httpd_post_finished() or a refusing httpd_post_begin(), so one answer at a time is enough.
 static struct {
@@ -266,11 +272,17 @@ int fs_open_custom(struct fs_file *file, const char *name) {
         // Every unknown path, which includes the phones' captive-portal probes
         return respond(file, 302, "Location: http://192.168.4.1/\r\n", "", 0);
     }
+    if (name[1] == '.') {
+        if (!post_answer_due) {
+            return 0;                   // The 302 of every unknown path
+        }
+        post_answer_due = false;
+    }
     if (strcmp(name, "/.api") == 0) {
         return respond_json(file, api_answer.status, api_answer.json, api_answer.len);
     }
     if (strcmp(name, "/.forbidden") == 0) {
-        static const char body[] = "<!doctype html><pre>Open PicoBoot at http://192.168.4.1/</pre>";
+        static const char body[] = "<!doctype html><pre>Open PicoBoot-WiFi at http://192.168.4.1/</pre>";
         return respond(file, 403, "", body, sizeof(body) - 1);
     }
     if (strcmp(name, "/.done") == 0) {
@@ -372,6 +384,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
     requests++;
     const bool api = strncmp(uri, "/api/", 5) == 0 && api_handler;
     snprintf(response_uri, response_uri_len, api ? "/.api" : "/.done");    // If refused
+    post_answer_due = true;
     if (!host_is_pico(http_request, http_request_len)) {
         if (api) {
             api_error(403, "forbidden", "send requests to http://192.168.4.1/");
@@ -402,7 +415,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
             return ERR_VAL;
         }
         if (pending_reboot != REBOOT_NONE) {
-            api_error(503, "busy", "PicoBoot is about to reboot");
+            api_error(503, "busy", "PicoBoot-WiFi is about to reboot");
             return ERR_VAL;
         }
     } else if (api) {
@@ -438,6 +451,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
             posts[i].upload = upload;
             posts[i].expected = content_len;
             posts[i].len = 0;
+            post_answer_due = false;        // Taken: its answer comes from httpd_post_finished()
             return ERR_OK;
         }
     }
@@ -471,12 +485,14 @@ err_t httpd_post_receive_data(void *connection, struct pbuf *p) {
 // Also called when a connection closes before its body has all come: then nothing is done
 void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len) {
     const char *result = "/.done";
+    bool cut_short = false;
     for (int i = 0; i < POSTS_MAX; i++) {
         if (posts[i].connection != connection) {
             continue;
         }
         const char *uri = posts[i].uri;
         const bool complete = posts[i].len == (size_t)posts[i].expected;
+        cut_short = posts[i].len < (size_t)posts[i].expected;
         if (posts[i].upload) {
             result = "/.api";
             api_answer.status = uploader->end(complete, api_answer.json, sizeof(api_answer.json), &api_answer.len);
@@ -501,6 +517,10 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
         break;
     }
     snprintf(response_uri, response_uri_len, "%s", result);
+    // httpd opens the answer right after a POST whose body all came. A POST cut short ends here from the
+    // connection's close, and nothing opens it: then it isn't offered, or the next GET of "/.api" would
+    // get it (phase 5 review)
+    post_answer_due = !cut_short;
 }
 
 // --- Start, restart and main loop ---------------------------------------------------------------

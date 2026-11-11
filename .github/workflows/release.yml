@@ -1,0 +1,72 @@
+name: Release PicoBoot-WiFi
+
+# On a tag vX.Y.Z (design D24, D35): builds and tests as build.yml does, then makes a draft release
+# with the USB install, the update file, the CLI and their checksums. The owner checks the draft and
+# publishes it. The tag must be the version in CMakeLists.txt, without a suffix (no pre-releases),
+# and docs/releases/X.Y.Z.md holds the release notes.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Check the tag against the version and the release notes
+        run: |
+          version=$(sed -n 's/^set(PICOBOOT_WIFI_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME, but CMakeLists.txt says $version"; exit 1
+          fi
+          case "$version" in *-*) echo "A release is a plain X.Y.Z (D35)"; exit 1;; esac
+          test -f "docs/releases/$version.md" || { echo "docs/releases/$version.md is missing"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The same image as local builds and build.yml: SDK 2.3.1, picotool 2.3.1, GCC 14.2
+      - name: Build the build image
+        run: docker build -t picoboot-wifi-build docker/
+
+      - name: Build
+        run: >
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
+          sh -c 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel'
+
+      - name: Check the layout
+        run: >
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
+          python3 tests/check_layout.py --loader build/src/loader/loader.elf --firmware build/src/firmware/firmware.elf
+
+      - name: Run all tests against the build
+        env:
+          PICOBOOT_BUILD_DIR: build
+        run: python3 -m unittest discover -s tests -v
+
+      # The update file's header names the version the Pico and the page show: it must be the tag's
+      - name: Check the built version
+        run: |
+          built=$(python3 -c 'import sys; print(open("build/picoboot-wifi-update.bin", "rb").read()[48:80].rstrip(b"\0").decode())')
+          if [ "$built" != "$VERSION" ]; then echo "The build says $built, the tag $VERSION"; exit 1; fi
+
+      - name: Collect the assets
+        run: |
+          mkdir dist
+          cp build/picoboot-wifi-install.uf2 "dist/picoboot-wifi-$VERSION.uf2"
+          cp build/picoboot-wifi-update.bin "dist/picoboot-wifi-$VERSION-update.bin"
+          cp tools/picoboot-wifi.py dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Make the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --draft --title "PicoBoot-WiFi $VERSION" --notes-file "docs/releases/$VERSION.md"

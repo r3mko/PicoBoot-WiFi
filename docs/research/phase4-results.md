@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 4, run by the owner on the `phase-4-payload-ota` builds.
 
-**Status:** in progress (steps 4.1 to 4.7 checked on the bench and on phones; the console tests of 4.8 to come).
+**Status:** in progress (steps 4.1 to 4.7 checked on the bench and on phones; 4.8 console tests run once, the margin to re-measure).
 
 **Setup:** the Pico 2 W from phases 0 to 3 (SSID suffix C2C4, RP2350 A2); `curl` and `tools/picoboot-wifi.py` from a Mac joined to the access point. The payloads are the release files Swiss r2119 (`PicoBoot/swiss_r2119.uf2`, RP2040 and RP2350 blocks) and gekkoboot r9.4 (`gekkoboot_pico.uf2`, RP2040 blocks only).
 
@@ -55,3 +55,30 @@ Build `e1a2ad5`, installed over Wi-Fi with the CLI and kept (slot B). The web UI
 | CLI `restore-settings` | **Passed:** saved, no Wi-Fi restart |
 
 **Finding:** the CLI named slots as the API does in two places ("payload1 chosen"); it now says "payload 1", like the rest of its output.
+
+## 4.8 Console tests, first run (2026-11-11)
+
+**Setup:** the DOL-001 with the Pico on 3V3; build `e74bc99` over Wi-Fi into slot A on trial; the CLI and the page from the Mac. Boot numbers are the boot log's.
+
+| Part | Boots | Result |
+|---|---|---|
+| 1: the new firmware on trial; Swiss from its UF2 (payload 1) | 13–15 | **Passed:** Swiss on B (13), the update's warm reboot into A (14), Swiss on A on trial, complete, kept by that power-on (15) |
+| 2: gekkoboot from its RP2040-only UF2 (payload 2) | 16 | **Passed** |
+| 3: the built-in gekkoboot | 17 | **Passed** |
+| 4: gekkoboot as a `.dol`, converted and uploaded by the page (into payload 2, D42) | 18 | **Passed.** The page showed "NaN KB" for its size: fixed in `aa512e1` |
+| 5: original IPL once | 19–20 | **Passed:** the console's own IPL (19, `skipped`), Wi-Fi up; payload 2 at the next power-on (20) |
+| 6: the USB rule: an RP2350 UF2 of gekkoboot dragged onto the Pico, then the console's power-on | 21–23 | **Passed:** the drag's reboot on USB power (21, no console, notice); the console's power-on booted payload 1 and showed the notice (22, the `e74bc99` change); none at the next (23) |
+| 7: a choice over Wi-Fi after a USB install (Swiss dragged), before the console's power-on | 24–26 | **Passed:** two starts on USB power (24, 25), the choice of payload 2, then payload 2 at the console's power-on, no notice (26) |
+| 8: power cut at 53 % of a UF2 upload into payload 1 | 27 | **Passed:** payload 2 booted, no false USB switch; payload 1 empty |
+| 9: payload 1 restored from the raw backup of step 4.4 | 28 | **Passed:** Swiss, complete; SHA-256 `1dc3e8e6…` |
+
+**Swiss has no IPL `.dol`:** its release ships the IPL payload only in the PicoBoot UF2 (its `DOL/swiss_r2119.dol` is the regular build, refused by the converter). So Swiss was tested as a UF2 and as a raw payload, gekkoboot as a UF2 and as a `.dol`.
+
+**Injection:** every console power-on complete; CS 1544/1544 for Swiss (406.8 ms), 285/285 for gekkoboot (19.4 ms).
+
+| Boots | Margin (ms) |
+|---|---|
+| 13, 15, 16, 17, 18, 20 | 154.1, 157.0, 157.1, 155.3, 155.3, 156.3 |
+| 22, 23, 26, 27, 28 | 158.0, 158.3, 158.2, 154.2, 157.3 |
+
+**Finding: the margin.** 154.1–158.3 ms, mean 156.5 ms, against 158.5–161.6 ms (mean 159.4) in phase 3: 9.0 ms below PicoBoot-DX's 165.5 ms, close to D10's 10 ms. The Pico's own start-up to PIO ready ("main() to PIO ready") is 0.38–0.48 ms; what isn't measured is before `main()`: the SDK's start-up zeroes `.bss` on the clock the boot ROM left running (the loader keeps it), and phase 4's payload writer had added 8.8 KB to its 67 KB. The console was cold (the RP2350 read 10–15 °C), which phase 3 also saw lower margins with. `aa512e1` keeps the two upload writers and lwIP's pools out of `.bss` (77 KB → 20 KB); to be measured.

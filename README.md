@@ -1,3 +1,5 @@
+<img src="assets/images/PicoBoot-DX.png" alt="PicoBoot-DX logo" align="left" height="250"/>
+
 # PicoBoot-WiFi
 
 PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a GameCube IPL-injection modchip: at power-on it boots the homebrew of your choice (Swiss, gekkoboot, …). Once the console has started, it runs a Wi-Fi access point. There a phone or computer can update its payloads and its own firmware, change settings and make backups, without opening the console.

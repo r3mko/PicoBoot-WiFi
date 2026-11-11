@@ -321,6 +321,40 @@ docs/                       design, plan, research, API, update-file format
 | 4.8 | **Console tests**:<br>• Swiss and gekkoboot as UF2 and as `.dol`;<br>• choosing each;<br>• the USB rule;<br>• "original IPL once";<br>• power cut during a payload upload;<br>• backup | Owner | Recorded |
 | 4.9 | **End of phase**: fresh Opus review, fixes, docs, merge | Opus, owner | Merged |
 
+**As built (2026-11-11):** results in [phase4-results.md](research/phase4-results.md); test builds are `0.4.0-dev`.
+
+| Step | What was built | The owner's choices |
+|---|---|---|
+| 4.1 | Boot control format 2 (the names) and loader version 3, one USB install; records of any format, written to alternate sectors (phase 3 review, finding 6). `payloadup.c` (pure, host tested with the real Swiss and gekkoboot UF2s) and `payloads.c`: `POST /api/payload`, choose, rename, delete, the status. `sha.c` shares the SHA-256 hardware | D42: names you choose; uploads into payload 2 while the built-in boots; the chosen payload can't be deleted |
+| 4.2 | The USB rule: a fingerprint of payload 1, recorded after a complete injection, so the console's power-on shows the switch; a choice, rename or upload over Wi-Fi settles it. Pure functions in `payload.c`, host tested | |
+| 4.3 | Original IPL once: no injection, then Wi-Fi 1.5 s later | |
+| 4.4 | `GET /api/backup/…`: a payload as it sits in flash, the running firmware as an update file (its header made on the Pico, byte-identical to `mkupdate.py`'s), the settings without the password; streamed through httpd's dynamic read, one transfer at a time | D42: plain downloads; payloads raw; only the running firmware |
+| 4.5 | `src/web/dol.js` (Sonnet, reviewed): byte-identical to `process_ipl.py`, by a Node test that includes a round trip through the release payloads | |
+| 4.6 | The Payloads tab, and the backup and restore links (Sonnet, reviewed); the UI is 12.6 KB gzipped | |
+| 4.7 | The CLI's payload, IPL-once, backup and restore commands (Sonnet, reviewed), with its own copy of the converter, pinned to `process_ipl.py` by a test | |
+| 4.8 | Console tests all passed, with two fixes. The USB rule had recorded the install at the drag-and-drop's reboot on USB power, so the console's power-on didn't show it. The margin had fallen to 156.5 ms: `.bss`, zeroed on the boot ROM's clock before the injection, had grown to 77 KB. With the upload writers and lwIP's pools in `.uninitialized_data` (20 KB) it's 163.9 ms, 1.6 ms below PicoBoot-DX, and the layout check keeps `.bss` under 24 KB | D43: a loader stub for ordinary `.dol` files, later |
+
+**Code review of phase 4** (a fresh Opus 5.5 reviewer, 2026-11-11):
+- **Overall:** no high findings; one medium and ten low, mostly power-cut timing and wrong states that the console tests didn't reach. All fixed in `721d396`.
+- **Re-test before the merge:** bench and console, in [phase4-results.md](research/phase4-results.md).
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Medium:** an update to a phase 3 firmware was accepted. It reads only boot control format 1, so it ran on the defaults: payload 1 whatever the choice, and its trial never kept | Fixed: an update file whose loader requirement is below 3 is refused (`needs_usb_install`). Host test |
+| 2 | **Low:** a power cut in the erase of a delete, or of an upload into payload 1, could leave the old header, which the USB rule took for a new payload | Fixed: the first page is zeroed before boot control records the change |
+| 3 | **Low:** the fingerprint was in effect the size: builds of a payload share their first 256 bytes | Fixed: also 64 words spread over the payload and its last 256 bytes. Host test |
+| 4 | **Low:** the CLI took a lost answer for a success when the target held the same payload already | Fixed: the target must be the choice too. CLI test |
+| 5 | **Low:** an over-long `X-Name` was dropped instead of refused | Fixed: 400 `bad_value` |
+| 6 | **Low:** the test page didn't escape the payload names | Fixed |
+| 7 | **Low:** wrong states: a USB-install notice after a firmware USB install, "now the choice" after another choice, the notice on an IPL-once boot, a payload named for a skipped boot, downloads during an upload | Fixed |
+| 8 | **Low:** `docs/api.md` out of step in places | Fixed |
+| 9 | **Low:** on an IPL-once boot, Wi-Fi started during the console's own IPL read (D9) | Fixed: Wi-Fi waits 1.5 s |
+| 10 | **Low:** lwIP's pools in uninitialised memory rely on lwIP setting what it reads | `MEMP_MEM_INIT`: lwIP zeroes them in `lwip_init()`, after the injection |
+| 11 | **Low:** the USB rule had no host tests | Fixed: two pure functions, host tests of its sequences |
+
+**For phase 5:**
+- **`.bss`** costs about 0.13 ms of the margin per KB; the layout check fails it over 24 KB in the firmware.
+
 ## Phase 5: release 1.0
 
 **Branch:** `phase-5-release`. **Done when (D28):** the owner's hardware test passes on a fresh install and on an upgrade from PicoBoot-DX.

@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 5, run by the owner on the `phase-5-release` builds.
 
-**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test on the release build, `1.0.0` (`9b8a107`).
+**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test (`9b8a107`), and so did the release build, `1.0.0` (`c468ee9`), with the device's new name on the page.
 
 **Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. In step 5.1 payload 1 holds Swiss r2119; the acceptance erases the flash first.
 
@@ -93,3 +93,21 @@ Build `1.0.0` (`9b8a107`: finding 2 of the code review, see the implementation p
 | PicoBoot-DX (phase 0) | | | 165.5 |
 
 **Result:** passed; 0.6 ms below PicoBoot-DX. With Swiss in payload 1 again, "main() to PIO ready" is back to 0.6 ms (boots 16–20), against 0.4 ms with payload 1 empty (boot 15). That's the fingerprint of the third run's note.
+
+## Re-test after the rename (2026-11-11)
+
+Build `1.0.0` (`c468ee9`): the page, the firmware's messages and the README call the device PicoBoot-WiFi (the owner's choice in step 5.2). It was installed over Wi-Fi into slot A from the previous build.
+
+| Check | Result |
+|---|---|
+| The update over Wi-Fi into slot A, kept | **Passed** |
+| The page's title and heading say PicoBoot-WiFi | **Passed** |
+| A reboot | **Passed** |
+
+**Result:** passed. This is the release build:
+
+| File | SHA-256 |
+|---|---|
+| `picoboot-wifi-1.0.0.uf2` | `b7b5cfb8219ed8834f54213a2a6302cfa6ed7538b68694ebc1afeca818c976e0` |
+| `picoboot-wifi-1.0.0-update.bin` | `51a5f9f3794fb251387d0b397f830138b6cd5488bb1ce79f01ee33a658368156` |
+| `picoboot-wifi.py` | `592ad48f7a9061a4b80cc939c1a20930feb26348334366ed75960413cfd28851` |

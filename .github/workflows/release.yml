@@ -32,7 +32,9 @@ jobs:
 
       # The same image as local builds and build.yml: SDK 2.3.1, picotool 2.3.1, GCC 14.2
       - name: Build the build image
-        run: docker build -t picoboot-wifi-build docker/
+        # On the host's network: in the first CI run, the image build's own network couldn't resolve
+        # archive.ubuntu.com, so apt found no packages
+        run: docker build --network host -t picoboot-wifi-build docker/
 
       - name: Build
         run: >

@@ -485,12 +485,14 @@ err_t httpd_post_receive_data(void *connection, struct pbuf *p) {
 // Also called when a connection closes before its body has all come: then nothing is done
 void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len) {
     const char *result = "/.done";
+    bool cut_short = false;
     for (int i = 0; i < POSTS_MAX; i++) {
         if (posts[i].connection != connection) {
             continue;
         }
         const char *uri = posts[i].uri;
         const bool complete = posts[i].len == (size_t)posts[i].expected;
+        cut_short = posts[i].len < (size_t)posts[i].expected;
         if (posts[i].upload) {
             result = "/.api";
             api_answer.status = uploader->end(complete, api_answer.json, sizeof(api_answer.json), &api_answer.len);
@@ -515,7 +517,10 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
         break;
     }
     snprintf(response_uri, response_uri_len, "%s", result);
-    post_answer_due = true;
+    // httpd opens the answer right after a POST whose body all came. A POST cut short ends here from the
+    // connection's close, and nothing opens it: then it isn't offered, or the next GET of "/.api" would
+    // get it (phase 5 review)
+    post_answer_due = !cut_short;
 }
 
 // --- Start, restart and main loop ---------------------------------------------------------------

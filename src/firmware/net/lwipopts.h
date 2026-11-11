@@ -16,6 +16,10 @@
 #define LWIP_SOCKET                 0
 #define LWIP_NETCONN                0
 #define MEM_LIBC_MALLOC             1       // Fine in poll mode
+// lwIP's pools (about 38 KB) aren't zeroed at start-up, which runs on the boot ROM's slow clock before
+// the injection (D10): memp_init() links them, and lwIP sets up what it takes from them
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
+    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".uninitialized_data.lwip")))
 #define MEM_ALIGNMENT               4
 #define MEM_SIZE                    4000
 #define MEMP_NUM_TCP_SEG            32

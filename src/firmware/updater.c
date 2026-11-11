@@ -27,7 +27,9 @@ extern char __flash_binary_start[], __flash_binary_end[];   // This image, from 
 static uint8_t running;
 static update_env_t env = {PICOBOOT_WIFI_BOARD, LAYOUT_VERSION, 1};
 static bool can_update;
-static update_t writer;                 // One upload at a time (net.c makes sure)
+// One upload at a time (net.c makes sure). Not zeroed at start-up, which runs on the boot ROM's slow
+// clock before the injection (D10): update_begin() clears it
+static update_t __uninitialized_ram(writer);
 
 void updater_init(uint8_t running_slot, uint32_t loader_version, bool from_loader) {
     running = running_slot;

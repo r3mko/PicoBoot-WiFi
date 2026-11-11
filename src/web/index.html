@@ -530,7 +530,7 @@ $("pl-file").onchange = async () => {
       blob = f.slice(0, size);
     } else if (dv.getUint32(0, true) !== 0x0A324655) {
       if (!window.PicoBootDol) return bad("The .dol converter isn't loaded yet. Try again in a moment.");
-      try { blob = PicoBootDol.dolToPayload(new Uint8Array(await f.arrayBuffer())); } catch (e) { return bad(e.message); }
+      try { blob = new Blob([PicoBootDol.dolToPayload(new Uint8Array(await f.arrayBuffer()))]); } catch (e) { return bad(e.message); }
     }
   } catch (e) { return bad("Can't read this file."); }
   await loadStatus();

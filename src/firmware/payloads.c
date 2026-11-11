@@ -185,7 +185,9 @@ int payloads_delete(uint8_t slot, const char **code, const char **message) {
 
 // --- The upload (POST /api/payload) ---------------------------------------------------------------
 
-static payloadup_t writer;              // One upload at a time (net.c makes sure)
+// One upload at a time (net.c makes sure). Not zeroed at start-up, which runs on the boot ROM's slow
+// clock before the injection (D10): payloadup_begin() clears it
+static payloadup_t __uninitialized_ram(writer);
 static uint8_t target;
 static char upload_name[BOOTCTL_NAME_MAX + 1];
 

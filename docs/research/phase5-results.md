@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 5, run by the owner on the `phase-5-release` builds.
 
-**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test (`9b8a107`), and so did the release build, `1.0.0` (`c468ee9`), with the device's new name on the page.
+**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test (`9b8a107`), and so did step 5.2's page changes (`c468ee9`, `527823a`); the release build is `527823a`'s.
 
 **Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. In step 5.1 payload 1 holds Swiss r2119; the acceptance erases the flash first.
 
@@ -104,10 +104,21 @@ Build `1.0.0` (`c468ee9`): the page, the firmware's messages and the README call
 | The page's title and heading say PicoBoot-WiFi | **Passed** |
 | A reboot | **Passed** |
 
+**Result:** passed.
+
+## Re-test after the selects' arrow (2026-11-11)
+
+Build `1.0.0` (`527823a`): the Settings tab's selects draw their arrow 15 px in from the edge, where the browser drew it against the border (the owner's remark in step 5.2). It was installed over Wi-Fi into slot B.
+
+| Check | Result |
+|---|---|
+| The update over Wi-Fi into slot B, kept | **Passed** |
+| The Settings tab on the Mac and a phone: the arrows, a choice in a select, Save | **Passed** |
+
 **Result:** passed. This is the release build:
 
 | File | SHA-256 |
 |---|---|
-| `picoboot-wifi-1.0.0.uf2` | `b7b5cfb8219ed8834f54213a2a6302cfa6ed7538b68694ebc1afeca818c976e0` |
-| `picoboot-wifi-1.0.0-update.bin` | `51a5f9f3794fb251387d0b397f830138b6cd5488bb1ce79f01ee33a658368156` |
+| `picoboot-wifi-1.0.0.uf2` | `b4cf2f0eed82c9e9b01986189e1230b3e879e4ebde5191b0688b944de71f984b` |
+| `picoboot-wifi-1.0.0-update.bin` | `0aa7d7441a606be041524fb70a4e282291a969300a692dfb51da0e2718c5aa2d` |
 | `picoboot-wifi.py` | `592ad48f7a9061a4b80cc939c1a20930feb26348334366ed75960413cfd28851` |

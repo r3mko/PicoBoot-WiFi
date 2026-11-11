@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.5, 2026-11-10 |
+| **Status** | Approved v1.6, 2026-11-11 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -19,6 +19,7 @@
 | v1.3 | 2026-11-08 | Approved by the owner at the end of phase 1. During phase 1, for step 1.10's many console boots, the owner chose a boot log in the loader region (D39): the loader region shrinks to 8K (the loader is 2.7K), and the freed 8K keep up to the last 32 boot reports. Step 1.11 sets two values from the phase 1 console tests ([phase1-results.md](research/phase1-results.md)), as the owner chose: the boot path may add at most 10 ms over PicoBoot-DX (D10; the loader costs 3–5 ms), and the injection keeps 250 MHz with flash divider 3 (D27; 87 console boots, cold and warm, without a fault). The 225th-transfer edge check was proven on hardware (2 power-up glitches survived); the phase 1 code review found one theoretical gap, which the owner chose to accept as a known limit rather than change the proven programs (D36). For approval at the end of phase 1. |
 | v1.4 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
 | v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
+| v1.6 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. D17: a USB install is recorded after a complete injection (or a choice, rename or upload over Wi-Fi), so the console's power-on shows it. D43: a loader stub for ordinary `.dol` files, for a later release. The phase 4 review: a wider fingerprint, no update to a firmware from before boot control format 2, Wi-Fi 1.5 s later on an "original IPL once" boot. |
 
 ## How to read the decisions
 
@@ -73,6 +74,8 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D39 | Boot log | Decision | Up to the last 32 boot reports in the loader region's upper 8K |
 | D40 | Settings | Decision | Their values and defaults: channel 6 (1–11), Tx power in named levels (medium), country worldwide |
 | D41 | Settings changes | Decision | At once; Wi-Fi changes restart the AP and stay on trial until a client joins; the password is write-only |
+| D42 | Payload uploads | Decision | Names you choose; into payload 2 while the built-in boots; the chosen payload can't be deleted; backups without the password; boot control format 2 with loader 3 |
+| D43 | Ordinary `.dol` files | Decision | Not in the first release: a loader stub in the payload, so that `.dol` files not built for the IPL's address boot too; an option for later releases |
 
 ## 1. Goal and scope
 
@@ -200,6 +203,7 @@ These follow from the research and bind every decision below.
   - its current surge would land in the middle of the console's IPL read.
 - **What it costs:** the W LED (on the CYW43) stays dark during the injection (D26). PicoBoot-DX starts the chip during the injection to blink the LED; the owner chose not to.
 - **Warm reboots:** without an injection, Wi-Fi starts right away.
+- **"Original IPL once" (D22):** no injection either, but the console reads its own IPL then, so Wi-Fi waits 1.5 s (phase 4 review).
 
 **D10 (Decision): a boot-time budget, measured before anything is built on it.**
 - **How:** the Pico measures the margin from "PIO ready" to the console's first CS itself (D31). There is no scope.
@@ -331,11 +335,27 @@ power on -> boot ROM -> loader (flash offset 0)
 - **Checks:** every upload is checked for header, footer, size (≤ 1.5 MB for payload 1; ≤ 1.5 MB − 4K for payload 2, D37) and 1 KB alignment before it can be chosen.
 - **`.dol` files:** converted to a payload in the browser (JavaScript port of `tools/process_ipl.py`) and in the CLI tool (the Python original). The device doesn't convert them: DOL sections need random access, which a streamed upload doesn't give.
 
+**D43 (Decision): no loader for ordinary `.dol` files in the first release** (the owner's choice, phase 4).
+- **Today:** the converter (D16) takes only a `.dol` built as an IPL replacement: loaded at, and started from, `0x81300000`, where the boot ROM puts the IPL and jumps to it (gekkoboot, iplboot, Swiss's IPL build). Others are refused, e.g. Swiss's regular `swiss_r2119.dol`, which starts at `0x80397940`.
+- **What it would be:** a small loader stub built for `0x81300000`, with the `.dol` appended. The stub copies the sections to their own addresses, clears the BSS and jumps to the entry point, as Swiss's PicoBoot build does in effect. The converter in the browser and the CLI would put the two together.
+- **Status:** an option for later releases. It needs a GameCube toolchain (devkitPPC) for the stub, and console tests with a range of `.dol` files.
+
+**D42 (Decision): payload uploads, names and backups** (phase 4, the owner's choices; details D15–D17, D22).
+- **Names:** each payload has a short name you choose, up to 24 printable characters. The payload page pre-fills it from the file name (`swiss_r2119.dol` → `Swiss r2119`); it can be changed at the upload and renamed later.
+  - **Why it costs a USB install:** the names live in boot control, which the loader reads. Boot control gets format 2, and the loader version 3.
+  - **From then on:** the loader, and the firmware, read only the fields they know of any newer boot control record. Later formats only add fields at the end, so they need no new loader.
+- **Where an upload goes:** into the payload slot that isn't the choice (D15); while the built-in gekkoboot is the choice, into payload 2, so that payload 1 keeps what a USB install put there (D17).
+- **Delete:** only a payload that isn't the choice; choose another one first.
+- **Backups:** plain downloads. The settings backup leaves the Wi-Fi password out, as the API never returns it (D41).
+
 **D17 (Decision): a payload installed over USB always boots next.**
-- **How it's detected:** boot control keeps a short fingerprint of payload 1 (header, size, footer and its first 256 bytes). It's quick enough to compare before the injection (C1).
+- **How it's detected:** boot control keeps a short fingerprint of payload 1: a CRC-32 of its header (with the size), of 64 words spread over it, and of its last 256 bytes (with the footer). It's quick enough to compare before the injection (C1). Builds of a payload share much of their start, so the samples tell another build of the same size apart (phase 4 review); a payload written again unchanged can't be told apart.
+- **Blank boot control** (after a USB install of the firmware): payload 1 is the choice anyway; its fingerprint is recorded without a USB-install notice.
+- **A delete or an upload** zeroes the payload's first page before boot control records it, so a power cut in the erase leaves no old header that would look like a USB install.
 - **What happens:**
   - if the fingerprint differs, payload 1 was written over USB and is booted, whatever was chosen before;
-  - after the injection, the firmware records the new fingerprint and SHA-256;
+  - after a complete injection, the firmware records the new fingerprint. Until then every power-on counts as the first one after the USB install, so the page says so at the console's power-on, not only at the Pico's own reboot on USB power after the drag-and-drop;
+  - a choice, a rename or an upload over Wi-Fi records it too, so the user's choice holds;
   - the web page shows that it switched.
 
 ## 7. Wi-Fi and web

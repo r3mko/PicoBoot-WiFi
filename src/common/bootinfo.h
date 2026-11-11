@@ -24,8 +24,9 @@
 // info or boot control changes in a way older loaders don't handle; loaders that don't report one
 // are version 1. An update file names the lowest loader version its firmware works with, and the
 // Pico refuses it if the installed loader is older: the loader only changes with a USB install.
-#define BOOTINFO_LOADER_VERSION     2           // This loader (2: trial, fallback and crash loop, D12)
-#define BOOTINFO_LOADER_NEEDED      2           // The lowest loader this firmware works with
+#define BOOTINFO_LOADER_VERSION     3           // This loader (2: trial, fallback and crash loop, D12;
+                                                // 3: reads boot control of any format from 2, D42)
+#define BOOTINFO_LOADER_NEEDED      3           // The lowest loader this firmware works with
 
 // Written by the firmware just before every reboot it means (the UI, an update). A reset without it
 // is a crash of the slot started last: the watchdog, or the fault handler (D12).

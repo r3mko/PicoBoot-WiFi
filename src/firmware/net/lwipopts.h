@@ -16,6 +16,12 @@
 #define LWIP_SOCKET                 0
 #define LWIP_NETCONN                0
 #define MEM_LIBC_MALLOC             1       // Fine in poll mode
+// lwIP's pools (about 38 KB) aren't zeroed at start-up, which runs on the boot ROM's slow clock before
+// the injection (D10): lwIP's own option for pools in uninitialised memory zeroes them in lwip_init(),
+// after the injection (phase 4 review)
+#define MEMP_MEM_INIT               1
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
+    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".uninitialized_data.lwip")))
 #define MEM_ALIGNMENT               4
 #define MEM_SIZE                    4000
 #define MEMP_NUM_TCP_SEG            32
@@ -57,6 +63,7 @@
 #define LWIP_HTTPD_DYNAMIC_HEADERS  0
 #define HTTPD_USE_CUSTOM_FSDATA     1       // net/fsdata_custom.c
 #define HTTPD_LIMIT_SENDING_TO_2MSS 0       // Fill the send buffer, for throughput
+#define LWIP_HTTPD_DYNAMIC_FILE_READ 1      // Downloads: httpd reads them through fs_read_custom()
 // Copy response data into the TCP segments: net.c frees a response when httpd closes it, which
 // can be before the client has acknowledged (and before a retransmission of) the last segment
 #define HTTP_IS_DATA_VOLATILE(hs)   TCP_WRITE_FLAG_COPY

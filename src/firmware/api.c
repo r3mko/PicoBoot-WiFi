@@ -17,6 +17,9 @@
 #include "bininfo.h"
 #include "layout.h"
 #include "slots.h"
+#include "payloads.h"
+#include "updater.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
 #include "hardware/structs/powman.h"
@@ -76,6 +79,7 @@ static const char *chosen_name(uint8_t chosen) {
 
 static const char *result_name(injection_result_t r) {
     switch (r) {
+        case INJECTION_SKIPPED: return "skipped";
         case INJECTION_NO_CS: return "no_cs";
         case INJECTION_COMPLETE: return "complete";
         case INJECTION_STALLED: return "stalled";
@@ -161,6 +165,7 @@ static int get_status(char *out, size_t size, size_t *len) {
     json_bool(&j, "password_is_default", settings_default_password(wifi_settings()));
     json_bool(&j, "reverted", wifi_reverted());
     json_object_end(&j);
+    payloads_status(&j, r->payload_usb_install && r->result != INJECTION_SKIPPED);   // It booted payload 1
     json_object_end(&j);
     return finish(&j, out, size, len);
 }
@@ -217,6 +222,7 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "bootctl_default", r->bootctl_default);
     json_string(j, "payload", payload_name(r->payload));
     json_string(j, "payload_chosen", chosen_name(r->payload_chosen));
+    json_bool(j, "payload_usb_install", r->payload_usb_install);
     json_int(j, "payload_words", (long)r->payload_words);
     json_int(j, "words_delivered", (long)r->words_delivered);
     json_string(j, "result", result_name(r->result));
@@ -316,6 +322,8 @@ typedef struct {
     int fields;
     bool keep;
     int slot;                           // BOOTCTL_SLOT_A / _B, or -1
+    int payload;                        // BOOTCTL_PAYLOAD_*, or -1
+    bool ipl_once;
     bool bad;
     char field[JSON_KEY_MAX + 1];
 } boot_body_t;
@@ -330,6 +338,13 @@ static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
     } else if (strcmp(key, "slot") == 0) {
         bb->bad = v->type != JSON_STRING || (strcmp(v->string, "A") != 0 && strcmp(v->string, "B") != 0);
         bb->slot = bb->bad ? -1 : (v->string[0] == 'B' ? BOOTCTL_SLOT_B : BOOTCTL_SLOT_A);
+    } else if (strcmp(key, "payload") == 0) {
+        bb->payload = v->type == JSON_STRING ? payloads_slot(v->string) : -1;
+        bb->bad = bb->payload < 0;
+    } else if (strcmp(key, "original_ipl_once") == 0) {
+        bb->ipl_once = v->type == JSON_BOOL;
+        bb->bad = !bb->ipl_once;
+        bb->ipl_once = bb->ipl_once && v->boolean;
     } else {
         return false;                   // Unknown field
     }
@@ -337,18 +352,49 @@ static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
 }
 
 static int post_boot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
-    boot_body_t bb = {.slot = -1};
+    boot_body_t bb = {.slot = -1, .payload = -1};
     switch (json_parse_object(body, body_len, on_boot_member, &bb)) {
         case JSON_SYNTAX:
             return error(out, size, len, 400, "bad_json", "the body must be a flat JSON object", NULL);
         case JSON_STOPPED:
-            return bb.bad ? error(out, size, len, 400, "bad_value", "keep must be true; slot must be \"A\" or \"B\"", bb.field)
-                          : error(out, size, len, 400, "unknown_field", "boot takes keep or slot", bb.field);
+            return bb.bad ? error(out, size, len, 400, "bad_value", "keep must be true; slot \"A\" or \"B\"; payload "
+                                  "\"payload1\", \"payload2\" or \"builtin\"; original_ipl_once true or false", bb.field)
+                          : error(out, size, len, 400, "unknown_field", "boot takes keep, slot, payload or original_ipl_once", bb.field);
         case JSON_OK:
             break;
     }
     if (bb.fields != 1) {
-        return error(out, size, len, 400, "bad_json", "send exactly one of keep and slot", NULL);
+        return error(out, size, len, 400, "bad_json", "send exactly one of keep, slot, payload and original_ipl_once", NULL);
+    }
+    if (bb.payload >= 0) {
+        // The payload for the next power-ons (D15)
+        const char *code = NULL, *message = NULL;
+        const int status = payloads_choose((uint8_t)bb.payload, &code, &message);
+        if (status != 200) {
+            return error(out, size, len, status, code, message, "payload");
+        }
+        json_out_t j;
+        json_init(&j, out, size);
+        json_object_begin(&j, NULL);
+        json_string(&j, "payload", payloads_name((uint8_t)bb.payload));
+        json_object_end(&j);
+        return finish(&j, out, size, len);
+    }
+    if (strcmp(bb.field, "original_ipl_once") == 0) {
+        // The next power-on boots the console's own IPL, once (D22)
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        b.flags = bb.ipl_once ? (uint8_t)(b.flags | BOOTCTL_FLAG_ORIGINAL_IPL_ONCE)
+                              : (uint8_t)(b.flags & ~BOOTCTL_FLAG_ORIGINAL_IPL_ONCE);
+        if (!storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        json_out_t j;
+        json_init(&j, out, size);
+        json_object_begin(&j, NULL);
+        json_bool(&j, "original_ipl_once", bb.ipl_once);
+        json_object_end(&j);
+        return finish(&j, out, size, len);
     }
     const uint8_t running = info->report->slot;
     bootctl_t b;
@@ -394,6 +440,67 @@ static int post_boot(const char *body, size_t body_len, char *out, size_t size, 
     return finish(&j, out, size, len);
 }
 
+// --- POST /api/payload/name {"slot": ..., "name": ...} and /delete {"slot": ...} (D42) -----------------
+
+typedef struct {
+    int slot;                           // BOOTCTL_PAYLOAD_1 / _2, or -1
+    bool has_name;
+    char name[JSON_STRING_MAX + 1];
+    bool bad;
+    char field[JSON_KEY_MAX + 1];
+} payload_body_t;
+
+static bool on_payload_member(void *ctx, const char *key, const json_value_t *v) {
+    payload_body_t *pb = ctx;
+    strcpy(pb->field, key);
+    if (strcmp(key, "slot") == 0) {
+        pb->slot = v->type == JSON_STRING ? payloads_slot(v->string) : -1;
+        pb->bad = pb->slot != BOOTCTL_PAYLOAD_1 && pb->slot != BOOTCTL_PAYLOAD_2;
+    } else if (strcmp(key, "name") == 0) {
+        pb->bad = v->type != JSON_STRING || v->too_long;
+        pb->has_name = !pb->bad;
+        strcpy(pb->name, v->string);
+    } else {
+        return false;
+    }
+    return !pb->bad;
+}
+
+static int post_payload(bool rename, const char *body, size_t body_len, char *out, size_t size, size_t *len) {
+    payload_body_t pb = {.slot = -1};
+    switch (json_parse_object(body, body_len, on_payload_member, &pb)) {
+        case JSON_SYNTAX:
+            return error(out, size, len, 400, "bad_json", "the body must be a flat JSON object", NULL);
+        case JSON_STOPPED:
+            return pb.bad ? error(out, size, len, 400, "bad_value", "slot must be \"payload1\" or \"payload2\"; name a string", pb.field)
+                          : error(out, size, len, 400, "unknown_field", "takes slot (and name)", pb.field);
+        case JSON_OK:
+            break;
+    }
+    if (pb.slot < 0 || (rename && !pb.has_name)) {
+        return error(out, size, len, 400, "bad_json", rename ? "send slot and name" : "send slot", NULL);
+    }
+    const char *code = NULL, *message = NULL;
+    const int status = rename ? payloads_rename((uint8_t)pb.slot, pb.name, &code, &message)
+                              : payloads_delete((uint8_t)pb.slot, &code, &message);
+    if (status != 200) {
+        // The field only when it's the cause: the name (400) or the slot (409 chosen), not busy or flash
+        return error(out, size, len, status, code, message,
+                     status == 400 || status == 409 ? (rename ? "name" : "slot") : NULL);
+    }
+    json_out_t j;
+    json_init(&j, out, size);
+    json_object_begin(&j, NULL);
+    json_string(&j, "slot", payloads_name((uint8_t)pb.slot));
+    if (rename) {
+        json_string(&j, "name", pb.name);
+    } else {
+        json_bool(&j, "deleted", true);
+    }
+    json_object_end(&j);
+    return finish(&j, out, size, len);
+}
+
 static int post_reboot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
     char field[JSON_KEY_MAX + 1];
     switch (json_parse_object(body, body_len, no_member, field)) {
@@ -412,6 +519,52 @@ static int post_reboot(const char *body, size_t body_len, char *out, size_t size
     json_object_end(&j);
     return finish(&j, out, size, len);
 }
+
+// --- GET /api/backup/... (D42): downloads, which net.c streams ---------------------------------------
+
+static bool backup_handles(const char *path) {
+    return strncmp(path, "/api/backup/", 12) == 0;
+}
+
+static int backup_open(const char *path, net_file_t *file, char *out, size_t size, size_t *len) {
+    const char *what = path + 12;
+    const int slot = payloads_slot(what);
+    if (slot == BOOTCTL_PAYLOAD_1 || slot == BOOTCTL_PAYLOAD_2) {
+        return payloads_file((uint8_t)slot, file) ? 200
+             : error(out, size, len, 409, "not_valid", "that slot holds no valid payload", NULL);
+    }
+    if (strcmp(what, "firmware") == 0) {
+        return updater_backup(info->wifi_area, file) ? 200
+             : error(out, size, len, 500, "internal", "the Wi-Fi blob this firmware runs with isn't there", NULL);
+    }
+    if (strcmp(what, "settings") == 0) {
+        // The settings as POST /api/settings takes them, without the password (D41, D42)
+        static char json[320];                      // Sent from here until the download ends
+        const settings_t *s = wifi_settings();
+        json_out_t j;
+        json_init(&j, json, sizeof(json));
+        json_object_begin(&j, NULL);
+        json_string(&j, "ssid", s->ssid);
+        json_string(&j, "country", s->country);
+        json_int(&j, "channel", s->channel);
+        json_string(&j, "tx_power", SETTINGS_TX_NAMES[s->tx_power]);
+        json_int(&j, "auto_off_minutes", s->auto_off_minutes);
+        json_bool(&j, "led", s->led);
+        json_object_end(&j);
+        const size_t n = json_finish(&j);
+        if (!n) {
+            return error(out, size, len, 500, "internal", "the settings didn't fit", NULL);
+        }
+        file->type = "application/json";
+        strcpy(file->filename, "picoboot-wifi-settings.json");
+        file->parts[0].data = (const uint8_t *)json;
+        file->parts[0].length = (uint32_t)n;
+        return 200;
+    }
+    return error(out, size, len, 404, "not_found", "the backups are payload1, payload2, firmware and settings", NULL);
+}
+
+const net_download_t API_DOWNLOAD = {backup_handles, backup_open};
 
 // --- Routing --------------------------------------------------------------------------------------
 
@@ -435,6 +588,15 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
             return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);
         }
         return post_boot(body, body_len, out, out_size, out_len);
+    }
+    if (strcmp(path, "/api/payload/name") == 0 || strcmp(path, "/api/payload/delete") == 0) {
+        if (!post) {
+            return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);
+        }
+        return post_payload(path[13] == 'n', body, body_len, out, out_size, out_len);
+    }
+    if (backup_handles(path)) {
+        return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // GETs are downloads
     }
     if (strcmp(path, "/api/reboot") == 0) {
         if (!post) {

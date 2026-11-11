@@ -12,6 +12,7 @@
 // It stays small and quick: no clock setup, no flash writes, no Wi-Fi. Every decision is in
 // boot_decide() (src/common/bootdecide.c), which the host tests cover.
 
+#include <string.h>
 #include "pico/bootrom.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/ticks.h"
@@ -31,13 +32,18 @@ int main(void) {
     const uint32_t chip_reset = powman_hw->chip_reset;
     const bool marker_set = powman_hw->scratch[BOOTINFO_SCRATCH_MARKER] == BOOTINFO_SESSION_MARKER;
 
-    // Boot control, read straight from flash (the loader runs untranslated at offset 0)
-    const record_header_t *rec = record_find((const uint8_t *)(XIP_BASE + LAYOUT_BOOTCTL_OFFSET),
-                                             BOOTCTL_MAGIC, BOOTCTL_VERSION, sizeof(bootctl_t), NULL);
+    // Boot control, read straight from flash (the loader runs untranslated at offset 0): only the
+    // fields it knows, from a record of any format (D42)
+    const record_header_t *rec = record_find_any((const uint8_t *)(XIP_BASE + LAYOUT_BOOTCTL_OFFSET),
+                                                 BOOTCTL_MAGIC, 1, BOOTCTL_LOADER_BYTES);
+    static bootctl_t bootctl;
+    if (rec) {
+        memcpy(&bootctl, record_payload(rec), BOOTCTL_LOADER_BYTES);
+    }
     const boot_inputs_t inputs = {
         .had_por = (chip_reset & POWMAN_CHIP_RESET_HAD_POR_BITS) != 0,
         .marker_set = marker_set,
-        .bootctl = rec ? record_payload(rec) : NULL,
+        .bootctl = rec ? &bootctl : NULL,
         .session = powman_hw->scratch[BOOTINFO_SCRATCH_SESSION],
         .clean_reboot = powman_hw->scratch[BOOTINFO_SCRATCH_REBOOT] == BOOTINFO_CLEAN_REBOOT,
     };

@@ -18,6 +18,11 @@
 #define UPDATE_FLAG_BLOB        (1u << 0)       // The Wi-Fi blob is included
 #define UPDATE_BOARD_MAX        15u             // Characters; the field is 16 bytes, zero-padded
 #define UPDATE_VERSION_MAX      31u             // Characters; the field is 32 bytes, zero-padded
+#define UPDATE_HEADER_HASHED    224u            // The header's SHA-256 covers bytes 0 to 223, and follows them
+// The oldest firmware an update may bring, by its loader requirement: loader 3 came with boot control
+// format 2 (D42), and a firmware built for an older loader reads only format 1, so it would run on
+// the defaults (phase 4 review). Later formats only add fields, so this stays 3.
+#define UPDATE_LOADER_FLOOR     3u
 
 // The outcome, as docs/update-format.md names them
 typedef enum {
@@ -77,6 +82,13 @@ typedef struct {
 // `upload_length` is the whole upload's length (Content-Length).
 update_result_t update_check_header(const uint8_t *raw, const update_env_t *env, uint32_t upload_length,
                                     const update_io_t *io, update_header_t *out);
+
+// Writes the header for `h`, as tools/mkupdate.py does (the firmware backup, D42): bytes 0 to
+// UPDATE_HEADER_HASHED - 1, and zeros after them, where the caller puts their SHA-256
+void update_build_header(const update_header_t *h, uint8_t raw[UPDATE_HEADER_SIZE]);
+
+// The length of the Wi-Fi area image at `area` (its "W43B" header and the data), or 0 if none
+uint32_t update_wifi_image_size(const uint8_t *area);
 
 // The writer: begin, feed the upload's bytes as they come (any chunk sizes), then finish
 typedef enum { UPDATE_STAGE_HEADER, UPDATE_STAGE_IMAGE, UPDATE_STAGE_BLOB, UPDATE_STAGE_DONE } update_stage_t;

@@ -13,6 +13,13 @@
 #include "bootinfo.h"
 #include "storage.h"
 #include "settings.h"
+#include "payload.h"
+#include "layout.h"
+#include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
+#include "hardware/regs/addressmap.h"
+
+#define PAYLOAD_BASE(i) ((const uint32_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + \
+                         ((i) ? LAYOUT_PAYLOAD2_OFFSET : LAYOUT_PAYLOAD1_OFFSET)))
 #include "wifi.h"
 #include "hardware/adc.h"
 #include "hardware/structs/powman.h"
@@ -52,6 +59,8 @@ void page_init(const page_info_t *i) {
     adc_set_temp_sensor_enabled(true);
 }
 
+_Static_assert(!PICO_RP2350A || NUM_ADC_CHANNELS == 5, "platform_defs.h came before the board header");
+
 float page_temperature_c(void) {
     adc_select_input(NUM_ADC_CHANNELS - 1);     // The temperature sensor is the last ADC input
     float volts = adc_read() * 3.3f / 4096.0f;
@@ -83,6 +92,7 @@ static const char *result_name(injection_result_t r) {
         case INJECTION_COMPLETE: return "complete";
         case INJECTION_STALLED: return "STALLED";
         case INJECTION_NO_CS: return "no CS seen (no console?)";
+        case INJECTION_SKIPPED: return "skipped: original IPL once";
         default: return "not run: a warm boot (design D8)";
     }
 }
@@ -91,6 +101,7 @@ static const char *short_result(const boot_report_t *r) {
     const uint32_t expected = SKIPPED_TRANSFERS + r->payload_words / WORDS_PER_TRANSFER;
     switch (r->result) {
         case INJECTION_NOT_RUN: return "warm (not run)";
+        case INJECTION_SKIPPED: return "IPL once";
         case INJECTION_NO_CS: return "no CS";
         case INJECTION_STALLED: return "STALLED";
         default: break;
@@ -108,21 +119,25 @@ static void put_log(out_t *o) {
     for (unsigned i = 0; i < n; i++) {
         const boot_report_t *r = &log_rows[i];
         const bool ran = r->result == INJECTION_COMPLETE || r->result == INJECTION_STALLED;
-        char counts[24] = "-", margin[12] = "-", cs[16] = "-";
+        const bool skipped = r->result == INJECTION_SKIPPED;   // Original IPL once: nothing was sent
+        char counts[24] = "-", margin[12] = "-", cs[16] = "-", xfers[12] = "-";
         if (ran) {
             snprintf(counts, sizeof(counts), "%lu/%lu", (unsigned long)r->cs_raw, (unsigned long)r->cs_clocked);
             // The real margin: to the first clocked transfer, which a glitch doesn't move
             snprintf(margin, sizeof(margin), "%ld",
                      (long)(r->margin_clocked_us >= 0 ? r->margin_clocked_us : r->margin_raw_us));
         }
-        if (r->result != INJECTION_NOT_RUN) {
+        if (!skipped) {
+            snprintf(xfers, sizeof(xfers), "%lu", (unsigned long)(r->payload_words / WORDS_PER_TRANSFER));
+        }
+        if (r->result != INJECTION_NOT_RUN && !skipped) {
             snprintf(cs, sizeof(cs), "%s%s", r->cs_high_at_ready ? "high" : "low", r->cs_pulldown_test ? " (pd)" : "");
         }
-        put(o, "  %4lu  %c   %-5s %-9s %5lu  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
+        put(o, "  %4lu  %c   %-5s %-9s %5s  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
             r->slot == BOOTCTL_SLOT_B ? 'B' : 'A', r->power_on ? reset_reason(r->chip_reset) : "warm",
-            r->result == INJECTION_NOT_RUN ? "-" : (r->payload == PAYLOAD_SOURCE_BUILTIN ? "built-in" :
+            r->result == INJECTION_NOT_RUN || skipped ? "-" : (r->payload == PAYLOAD_SOURCE_BUILTIN ? "built-in" :
                                                     r->payload == PAYLOAD_SOURCE_PAYLOAD2 ? "payload 2" : "payload 1"),
-            (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), margin, counts, cs, short_result(r));
+            xfers, margin, counts, cs, short_result(r));
     }
 }
 
@@ -233,7 +248,7 @@ size_t page_render(char *buf, size_t size) {
         (unsigned long)r->chip_reset, r->power_on ? "yes" : "no (warm)");
     put(&o, "  RP2350             : stepping A%u, boot ROM version %u\n", r->chip_version, r->rom_version);
     put(&o, "  Injection          : %s\n", result_name(r->result));
-    if (r->result != INJECTION_NOT_RUN) {
+    if (r->result != INJECTION_NOT_RUN && r->result != INJECTION_SKIPPED) {
         put(&o, "  Payload            : %s, %lu transfers (%lu bytes), %lu words delivered\n", payload_name(r->payload),
             (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), (unsigned long)(r->payload_words * 4),
             (unsigned long)r->words_delivered);
@@ -273,6 +288,15 @@ size_t page_render(char *buf, size_t size) {
 
     bootctl_t b;
     const bool stored = storage_bootctl_load(&b);
+    char name_html[2][6 * BOOTCTL_NAME_MAX + 8];           // Names are the user's: escaped (phase 4 review)
+    html_escape(name_html[0], sizeof(name_html[0]), b.payload_name[0]);
+    html_escape(name_html[1], sizeof(name_html[1]), b.payload_name[1]);
+    put(&o, "  Payloads           : 1 \"%s\" %s, 2 \"%s\" %s; chosen %s%s%s\n",
+        name_html[0], payload_check(PAYLOAD_BASE(0), LAYOUT_PAYLOAD1_SIZE) ? "valid" : "none",
+        name_html[1], payload_check(PAYLOAD_BASE(1), LAYOUT_PAYLOAD2_SIZE) ? "valid" : "none",
+        b.active_payload == BOOTCTL_PAYLOAD_2 ? "2" : b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in" : "1",
+        (b.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) ? "; ORIGINAL IPL at the next power-on" : "",
+        r->payload_usb_install && r->result != INJECTION_SKIPPED ? "; this power-on: payload 1 from a USB install (D17)" : "");
     static const char *const states[] = {"installed", "empty", "TRIAL", "kept", "FAILED"};
     put(&o, "  Slots              : A %s, B %s%s; running %c\n",
         b.slot_state[0] < 5 ? states[b.slot_state[0]] : "?", b.slot_state[1] < 5 ? states[b.slot_state[1]] : "?",

@@ -43,6 +43,13 @@ typedef struct {
 const record_header_t *record_find(const uint8_t *area, uint32_t magic, uint16_t version, uint16_t length,
                                    uint32_t *seq);
 
+// The newest intact record of `magic` whose version is at least `min_version` and which holds at
+// least `min_length` bytes, whatever its exact version: for areas whose format only grows at the
+// end, so that a reader takes the fields it knows from a newer record (boot control from format 2,
+// design D42). Its own version and length are in the header.
+const record_header_t *record_find_any(const uint8_t *area, uint32_t magic, uint16_t min_version,
+                                       uint16_t min_length);
+
 // The payload of a record found by record_find()
 static inline const void *record_payload(const record_header_t *rec) {
     return rec + 1;
@@ -53,6 +60,12 @@ static inline const void *record_payload(const record_header_t *rec) {
 // record of another version (another firmware's), it's left alone (see target_sector()).
 bool record_write(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
                   const void *payload, uint16_t length);
+
+// As record_write(), for an area whose format only grows at the end and whose readers use
+// record_find_any() (boot control, D42): the new record goes into the sector that doesn't hold the
+// newest record of any version, so a record of an older format never pins a sector
+bool record_write_any(const uint8_t *area, const record_flash_t *flash, uint32_t magic, uint16_t version,
+                      const void *payload, uint16_t length);
 
 // CRC-32 (IEEE 802.3, as zlib), also used by other modules
 uint32_t record_crc32(uint32_t crc, const void *data, size_t length);

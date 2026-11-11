@@ -68,6 +68,7 @@ The loader changes only with a USB install (D24), so an update must not bring a 
 | `board` is `"pico2_w"` | `wrong_board` |
 | `layout` is this firmware's `LAYOUT_VERSION` | `needs_usb_install` |
 | `loader` is at most the installed loader's version | `needs_usb_install` |
+| `loader` is at least 3: a firmware built for an older loader reads only boot control format 1, and would run on the defaults (phase 4, D42) | `needs_usb_install` |
 | `image_size` and `blob_size` are in range, `flags` has no unknown bits, the reserved bytes are 0 | `bad_header` |
 | The upload's length (`Content-Length`) is `256 + image_size + blob_size` | `bad_size` |
 | Without the blob: the paired Wi-Fi area holds the one `blob_sha256` names | `needs_blob` |

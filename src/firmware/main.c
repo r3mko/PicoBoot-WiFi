@@ -33,6 +33,7 @@
 #include "api.h"
 #include "updater.h"
 #include "slots.h"
+#include "payloads.h"
 #include "hardware/watchdog.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -48,6 +49,8 @@
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
 #define WATCHDOG_MS          8000                   // A hang becomes a reboot the loader counts (D12)
+#define SKIPPED_IPL_WAIT_MS  1500                   // "Original IPL once": the console's own IPL read is
+                                                    // over by then (Swiss's injection ends ~0.6 s in)
 
 #ifndef PICOBOOT_WIFI_TEST_CRASH
 #define PICOBOOT_WIFI_TEST_CRASH 0                  // Test builds that crash on purpose (plan step 3.7)
@@ -97,14 +100,21 @@ static void read_boot_info(void) {
     }
 }
 
-// The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid
-static injection_payload_t choose_payload(const bootctl_t *b) {
+// The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid. `stored`:
+// boot control was read from flash, not the defaults.
+static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
     injection_payload_t payload = {0};
-    report.payload_chosen = b->active_payload;
-    if (b->active_payload == BOOTCTL_PAYLOAD_1) {
+    // D17: payload 1 changed since it was recorded, so a USB install wrote it: it boots, whatever the
+    // choice. A short fingerprint, quick enough before the injection (C1).
+    report.payload1_fingerprint = payload_fingerprint(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE);
+    bool usb_install;
+    const uint8_t chosen = payload_choose(b, stored, report.payload1_fingerprint, &usb_install);
+    report.payload_usb_install = usb_install;
+    report.payload_chosen = chosen;
+    if (chosen == BOOTCTL_PAYLOAD_1) {
         payload = (injection_payload_t){PAYLOAD1, payload_check(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE), true};
         report.payload = PAYLOAD_SOURCE_PAYLOAD1;
-    } else if (b->active_payload == BOOTCTL_PAYLOAD_2) {
+    } else if (chosen == BOOTCTL_PAYLOAD_2) {
         payload = (injection_payload_t){PAYLOAD2, payload_check(PAYLOAD2, LAYOUT_PAYLOAD2_SIZE), true};
         report.payload = PAYLOAD_SOURCE_PAYLOAD2;
     }
@@ -225,10 +235,11 @@ static void run_wifi(uint64_t t_start, uint32_t boot_number) {
                                    report.result == INJECTION_STALLED ? WIFI_LED_STALLED : WIFI_LED_STEADY;
             // Updates go into the other slot (D11), if the installed loader can start them
             updater_init(report.slot, report.loader_version, report.from_loader);
+            static const net_upload_t *const uploads[] = {&UPDATER_UPLOAD, &PAYLOADS_UPLOAD, NULL};
 #if PICOBOOT_WIFI_TEST_BUILD
-            const bool up = wifi_start(page_render, page_action, api_handle, &UPDATER_UPLOAD, led);  // With the test page
+            const bool up = wifi_start(page_render, page_action, api_handle, uploads, &API_DOWNLOAD, led);  // With the test page
 #else
-            const bool up = wifi_start(NULL, NULL, api_handle, &UPDATER_UPLOAD, led);
+            const bool up = wifi_start(NULL, NULL, api_handle, uploads, &API_DOWNLOAD, led);
 #endif
             page.ap_start_ms = (uint32_t)((time_us_64() - t_net) / 1000);
             TRACE("wifi_start: %s, SSID %s, channel %u\n", up ? "ok" : "FAILED", wifi_ssid(), wifi_settings()->channel);
@@ -296,16 +307,39 @@ int main(void) {
     report.payload_chosen = BOOTCTL_NONE;
     if (report.power_on) {
         bootctl_t bootctl;
-        storage_bootctl_load(&bootctl);
+        const bool stored = storage_bootctl_load(&bootctl);
 #if PICOBOOT_WIFI_TEST_BUILD
         report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
 #endif
-        const injection_payload_t payload = choose_payload(&bootctl);
-        TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
-              report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
-        inject(&payload, !report.cs_pulldown_test);
-        TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
-              (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
+        const injection_payload_t payload = choose_payload(&bootctl, stored);
+        if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {
+            // "Original IPL once" (D22): no injection, so the console starts its own IPL (to set
+            // its clock or language); cleared below. Nothing goes to the console, so the report names
+            // no payload (docs/api.md); and Wi-Fi waits until the console's own IPL read is over, as
+            // it waits for an injection (D9: the radio's start-up current; phase 4 review).
+            report.result = INJECTION_SKIPPED;
+            report.payload = PAYLOAD_SOURCE_NONE;
+            report.payload_chosen = BOOTCTL_NONE;
+            report.payload_words = 0;
+            sleep_ms(SKIPPED_IPL_WAIT_MS);
+        } else {
+            TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
+                  report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
+            inject(&payload, !report.cs_pulldown_test);
+            TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
+                  (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
+        }
+        // D17 and "original IPL once" into boot control, now that flash may be written. A choice, a
+        // rename or an upload over Wi-Fi settles a USB install too (payloads.c).
+        bool changed = payload_record(&bootctl, report.payload1_fingerprint, report.payload_usb_install,
+                                      report.result == INJECTION_COMPLETE);
+        if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {
+            bootctl.flags &= (uint8_t)~BOOTCTL_FLAG_ORIGINAL_IPL_ONCE;
+            changed = true;
+        }
+        if (changed) {
+            storage_bootctl_store(&bootctl);
+        }
     } else {
         report.result = INJECTION_NOT_RUN;      // A warm reboot: the console may be running (C2)
     }

@@ -31,6 +31,8 @@
 
 #define WIFI_HEADER_SIZE 64u        // A Wi-Fi area image: the "W43B" header, then the data (mkwifiblob.py)
 
+_Static_assert(H_HEADER_SHA == UPDATE_HEADER_HASHED && H_HEADER_SHA + 32 == UPDATE_HEADER_SIZE, "header layout");
+
 _Static_assert(sizeof(((update_t *)0)->sector) == SECTOR, "the writer buffers one flash sector");
 
 const char *update_result_code(update_result_t r) {
@@ -58,6 +60,13 @@ static uint32_t le32(const uint8_t *p) {
 
 static uint16_t le16(const uint8_t *p) {
     return (uint16_t)(p[0] | p[1] << 8);
+}
+
+static void put_le32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
 }
 
 static bool all_zero(const uint8_t *p, size_t n) {
@@ -119,7 +128,7 @@ update_result_t update_check_header(const uint8_t *raw, const update_env_t *env,
     h.loader = le32(raw + H_LOADER);
     h.image_size = le32(raw + H_IMAGE_SIZE);
     h.blob_size = le32(raw + H_BLOB_SIZE);
-    if (h.layout != env->layout || h.loader > env->loader) {
+    if (h.layout != env->layout || h.loader > env->loader || h.loader < UPDATE_LOADER_FLOOR) {
         return UPDATE_NEEDS_USB_INSTALL;
     }
     const bool blob = h.flags & UPDATE_FLAG_BLOB;
@@ -137,6 +146,31 @@ update_result_t update_check_header(const uint8_t *raw, const update_env_t *env,
     return UPDATE_OK;
 }
 
+void update_build_header(const update_header_t *h, uint8_t raw[UPDATE_HEADER_SIZE]) {
+    memset(raw, 0, UPDATE_HEADER_SIZE);
+    memcpy(raw + H_MAGIC, "PBWU", 4);
+    raw[H_FORMAT] = UPDATE_FORMAT;
+    raw[H_HEADER_SIZE] = (uint8_t)UPDATE_HEADER_SIZE;
+    raw[H_HEADER_SIZE + 1] = (uint8_t)(UPDATE_HEADER_SIZE >> 8);
+    put_le32(raw + H_FLAGS, h->flags);
+    put_le32(raw + H_LAYOUT, h->layout);
+    put_le32(raw + H_LOADER, h->loader);
+    put_le32(raw + H_IMAGE_SIZE, h->image_size);
+    put_le32(raw + H_BLOB_SIZE, h->blob_size);
+    memcpy(raw + H_BOARD, h->board, strlen(h->board));         // Zero-terminated within the field
+    memcpy(raw + H_VERSION, h->version, strlen(h->version));
+    memcpy(raw + H_IMAGE_SHA, h->image_sha256, 32);
+    memcpy(raw + H_BLOB_SHA, h->blob_sha256, 32);
+}
+
+uint32_t update_wifi_image_size(const uint8_t *area) {
+    if (memcmp(area, "W43B", 4) != 0) {
+        return 0;
+    }
+    const uint32_t data_len = le32(area + 16);
+    return data_len > LAYOUT_WIFI_SIZE - WIFI_HEADER_SIZE ? 0 : WIFI_HEADER_SIZE + data_len;
+}
+
 // --- The writer -----------------------------------------------------------------------------------
 
 static uint32_t slot_offset(uint8_t slot) {
@@ -150,15 +184,12 @@ static uint32_t wifi_offset(uint8_t slot) {
 // Whether the slot's paired Wi-Fi area holds exactly the image with this SHA-256 (D14)
 static bool area_holds(const update_t *u, const uint8_t want[32]) {
     const uint8_t *area = u->io->read(u->io->ctx, wifi_offset(u->slot));
-    if (memcmp(area, "W43B", 4) != 0) {
-        return false;
-    }
-    const uint32_t data_len = le32(area + 16);
-    if (data_len > LAYOUT_WIFI_SIZE - WIFI_HEADER_SIZE) {
+    const uint32_t size = update_wifi_image_size(area);
+    if (!size) {
         return false;
     }
     uint8_t sha[32];
-    sha256(u->io, area, WIFI_HEADER_SIZE + data_len, sha);
+    sha256(u->io, area, size, sha);
     return memcmp(sha, want, 32) == 0;
 }
 

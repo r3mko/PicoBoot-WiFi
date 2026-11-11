@@ -22,6 +22,10 @@ LAYOUT_H = os.path.join(REPO, "src", "common", "layout.h")
 XIP_BASE = 0x10000000
 PICOBOOT_PAYLOAD_OFFSET = 0x80000       # Where PicoBoot payload UF2s land (design C3)
 PICOBOOT_PAYLOAD_SIZE = 0x180000        # 1.5 MB (design C4)
+# .bss is zeroed before main(), on the clock the boot ROM left running, before the injection: about
+# 0.13 ms of the margin per KB (D10; phase 4, step 4.8). Large buffers that are set up when first used
+# go in .uninitialized_data instead.
+BSS_MAX = {"loader": 8 * 1024, "firmware": 24 * 1024}
 
 # (name, offset define, size define), in flash order
 REGIONS = [
@@ -99,6 +103,13 @@ def check_elf(kind, values, layout):
     end = values["__flash_binary_end"]
     if not XIP_BASE <= end <= XIP_BASE + limit:
         return [f"{kind}: ends at 0x{end:08X}, outside 0x{XIP_BASE:08X}-0x{XIP_BASE + limit:08X}"]
+    for symbol in ("__bss_start__", "__bss_end__"):
+        if symbol not in values:
+            return [f"{kind}: symbol not found: {symbol}"]
+    bss = values["__bss_end__"] - values["__bss_start__"]
+    if bss > BSS_MAX[kind]:
+        return [f"{kind}: .bss is {bss} bytes, more than {BSS_MAX[kind]}: it's zeroed before the injection "
+                "and costs margin (D10); keep large buffers in .uninitialized_data"]
     return []
 
 
@@ -125,7 +136,9 @@ def main(argv):
         problems += check_elf(kind, values, layout)
         if "__flash_binary_end" in values:
             limit = layout["LOADER_SIZE" if kind == "loader" else "SLOT_SIZE"]
-            sizes.append(f"{kind} {values['__flash_binary_end'] - XIP_BASE} of {limit} bytes")
+            bss = values.get("__bss_end__", 0) - values.get("__bss_start__", 0)
+            sizes.append(f"{kind} {values['__flash_binary_end'] - XIP_BASE} of {limit} bytes "
+                         f"(.bss {bss} of {BSS_MAX[kind]})")
 
     for problem in problems:
         print(f"Error: {problem}", file=sys.stderr)

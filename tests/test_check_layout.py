@@ -52,7 +52,8 @@ class LayoutTest(unittest.TestCase):
 
 
 class ElfTest(unittest.TestCase):
-    NM = "10000ab4 N __flash_binary_end\n10000000 T __logical_binary_start\n"
+    NM = ("10000ab4 N __flash_binary_end\n10000000 T __logical_binary_start\n"
+          "20000110 B __bss_start__\n20001170 B __bss_end__\n")
 
     def test_loader_that_fits_passes(self):
         values = check_layout.parse_nm(self.NM)
@@ -69,6 +70,18 @@ class ElfTest(unittest.TestCase):
     def test_missing_symbol_fails(self):
         self.assertEqual(check_layout.check_elf("firmware", {}, real_layout()),
                          ["firmware: symbol not found: __flash_binary_end"])
+        values = check_layout.parse_nm(self.NM.replace("__bss_end__", "x"))
+        self.assertEqual(check_layout.check_elf("loader", values, real_layout()),
+                         ["loader: symbol not found: __bss_end__"])
+
+    def test_too_much_bss_fails(self):
+        # Zeroed before the injection on the slow clock: it costs margin (D10)
+        values = check_layout.parse_nm(self.NM.replace("20001170", "20006110"))
+        self.assertEqual(check_layout.check_elf("firmware", values, real_layout()), [])     # 24 KB
+        values = check_layout.parse_nm(self.NM.replace("20001170", "20006111"))
+        self.assertIn(".bss is 24577 bytes", check_layout.check_elf("firmware", values, real_layout())[0])
+        values = check_layout.parse_nm(self.NM.replace("20001170", "20002111"))
+        self.assertIn(".bss is 8193 bytes", check_layout.check_elf("loader", values, real_layout())[0])
 
 
 if __name__ == "__main__":

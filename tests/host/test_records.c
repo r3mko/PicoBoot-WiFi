@@ -173,6 +173,39 @@ static void test_a_record_of_another_version_survives(void) {
     CHECK(find_bootctl(NULL) && find_bootctl(NULL)->active_slot == BOOTCTL_SLOT_A);
 }
 
+// D42: boot control's format grows at the end; readers take a record of any format, and writes
+// alternate whatever format the other sector holds
+static void test_a_growing_format(void) {
+    reset_flash();
+    struct { uint8_t f1[12]; } v1 = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}};
+    struct { uint8_t f1[12]; uint8_t f2[52]; } v2 = {{0}, {0}};
+    CHECK(record_write(area, &flash, BOOTCTL_MAGIC, 1, &v1, sizeof(v1)));      // An old firmware's
+    const record_header_t *r = record_find_any(area, BOOTCTL_MAGIC, 1, 12);
+    CHECK(r && r->version == 1 && r->length == 12);
+    CHECK(record_find_any(area, BOOTCTL_MAGIC, 1, 13) == NULL);                 // Too short for that
+    CHECK(record_find_any(area, BOOTCTL_MAGIC, 2, 12) == NULL);                 // Too old for that
+    for (int i = 0; i < 4; i++) {
+        v2.f1[0] = (uint8_t)i;
+        CHECK(record_write_any(area, &flash, BOOTCTL_MAGIC, 2, &v2, sizeof(v2)));
+        r = record_find_any(area, BOOTCTL_MAGIC, 1, 12);
+        CHECK(r && r->version == 2 && ((const uint8_t *)record_payload(r))[0] == i);
+    }
+    // The format-1 record was overwritten by the alternation: no sector stays pinned
+    CHECK(record_find(area, BOOTCTL_MAGIC, 1, 12, NULL) == NULL);
+    // A power cut during a write leaves the previous record, as D23 wants
+    budget = 30;
+    v2.f1[0] = 99;
+    CHECK(!record_write_any(area, &flash, BOOTCTL_MAGIC, 2, &v2, sizeof(v2)));
+    budget = -1;
+    r = record_find_any(area, BOOTCTL_MAGIC, 1, 12);
+    CHECK(r && ((const uint8_t *)record_payload(r))[0] == 3);
+    // A newer format is read too, by its first fields
+    struct { uint8_t f1[12]; uint8_t f2[52]; uint8_t f3[8]; } v3 = {{42}, {0}, {0}};
+    CHECK(record_write_any(area, &flash, BOOTCTL_MAGIC, 3, &v3, sizeof(v3)));
+    r = record_find_any(area, BOOTCTL_MAGIC, 1, 12);
+    CHECK(r && r->version == 3 && ((const uint8_t *)record_payload(r))[0] == 42);
+}
+
 static void test_payload_that_is_too_long_is_refused(void) {
     reset_flash();
     static uint8_t big[RECORD_SECTOR_SIZE];
@@ -190,6 +223,7 @@ int main(void) {
     test_sequence_numbers_wrap_around();
     test_payload_that_is_too_long_is_refused();
     test_a_record_of_another_version_survives();
+    test_a_growing_format();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

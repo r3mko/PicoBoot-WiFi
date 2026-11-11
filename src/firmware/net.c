@@ -9,7 +9,7 @@
 // status codes:
 //
 //   GET  / or /index.html   the web UI: lwIP's built-in files (fsdata_custom.c, made from src/web/)
-//   GET  /api/...           the JSON API (net_api_fn, docs/api.md)
+//   GET  /api/...           the JSON API (net_api_fn, docs/api.md), or a download (net_download_t)
 //   GET  /favicon.ico       204: there is none
 //   GET  anything else      302 to http://192.168.4.1/: phones probing for a captive portal
 //                           (Apple, Android, Windows) get it and open the page by themselves
@@ -51,8 +51,17 @@ static dns_server_t dns_server;
 static net_page_fn render_page;
 static net_action_fn page_action;
 static net_api_fn api_handler;
-static const net_upload_t *uploader;
+static const net_upload_t *const *uploaders;
+static const net_upload_t *uploader;    // The handler of the upload in progress
 static void *upload_connection;     // The upload in progress, or NULL
+static const net_download_t *downloader;
+// The download being sent (one at a time): httpd's file, the response's headers, and the parts
+static struct {
+    struct fs_file *file;           // NULL when there's none
+    char head[320];
+    uint32_t head_len;
+    net_file_t body;
+} download;
 static uint32_t requests;
 static int client_count;
 static uint64_t next_client_check_us;
@@ -153,6 +162,76 @@ static int respond_api_get(struct fs_file *file, const char *path) {
     return ok;
 }
 
+// A download (net_download_t): the headers made here, then the parts, read as httpd sends them
+// (fs_read_custom(), LWIP_HTTPD_DYNAMIC_FILE_READ); nothing of it is copied ahead
+static int respond_download(struct fs_file *file, const char *path) {
+    char out[API_POST_MAX];
+    size_t len = 0;
+    const char *busy = download.file ? "another download is in progress: try again when it's done" :
+                       upload_connection ? "an upload is in progress: try again when it's done" :
+                       pending_reboot != REBOOT_NONE ? "PicoBoot is about to reboot" : NULL;
+    if (busy) {
+        const int n = snprintf(out, sizeof(out), "{\"error\":\"busy\",\"message\":\"%s\"}", busy);
+        return respond_json(file, 503, out, (size_t)n);
+    }
+    memset(&download.body, 0, sizeof(download.body));
+    const int status = downloader->open(path, &download.body, out, sizeof(out), &len);
+    if (status != 200) {
+        return respond_json(file, status, out, len);
+    }
+    uint32_t total = 0;
+    for (int i = 0; i < NET_FILE_PARTS; i++) {
+        total += download.body.parts[i].length;
+    }
+    const int n = snprintf(download.head, sizeof(download.head),
+                           "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\n"
+                           "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                           "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+                           download.body.type, (unsigned long)total, download.body.filename);
+    if (n < 0 || (size_t)n >= sizeof(download.head)) {
+        return respond_out_of_memory(file);
+    }
+    download.head_len = (uint32_t)n;
+    memset(file, 0, sizeof(*file));
+    file->len = n + (int)total;     // file->data stays NULL: httpd reads through fs_read_custom()
+    file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+    download.file = file;
+    return 1;
+}
+
+int fs_read_custom(struct fs_file *file, char *buffer, int count) {
+    if (file != download.file) {
+        return FS_READ_EOF;
+    }
+    int n = 0;
+    while (n < count && file->index < file->len) {
+        uint32_t at = (uint32_t)file->index, left = 0;
+        const uint8_t *from = NULL;
+        if (at < download.head_len) {
+            from = (const uint8_t *)download.head + at;
+            left = download.head_len - at;
+        } else {
+            at -= download.head_len;
+            for (int i = 0; i < NET_FILE_PARTS && !from; i++) {
+                if (at < download.body.parts[i].length) {
+                    from = download.body.parts[i].data + at;
+                    left = download.body.parts[i].length - at;
+                } else {
+                    at -= download.body.parts[i].length;
+                }
+            }
+        }
+        if (!from) {
+            break;
+        }
+        const uint32_t k = left < (uint32_t)(count - n) ? left : (uint32_t)(count - n);
+        memcpy(buffer + n, from, k);
+        n += (int)k;
+        file->index += (int)k;
+    }
+    return n;
+}
+
 // The answer to the POST that just ended. httpd opens its response file ("/.api") within the same
 // call as httpd_post_finished() or a refusing httpd_post_begin(), so one answer at a time is enough.
 static struct {
@@ -172,6 +251,9 @@ static void api_error(int status, const char *code, const char *message) {
 int fs_open_custom(struct fs_file *file, const char *name) {
     requests++;
     if (strncmp(name, "/api/", 5) == 0 && api_handler) {
+        if (downloader && downloader->handles(name)) {
+            return respond_download(file, name);
+        }
         return respond_api_get(file, name);
     }
     if (strcmp(name, "/test") == 0 && render_page) {
@@ -203,6 +285,10 @@ int fs_open_custom(struct fs_file *file, const char *name) {
 }
 
 void fs_close_custom(struct fs_file *file) {
+    if (file == download.file) {
+        download.file = NULL;       // Sent, or the connection went: its memory isn't ours to free
+        return;
+    }
     if (file->data != OUT_OF_MEMORY) {
         free((void *)file->data);
     }
@@ -294,7 +380,14 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
         }
         return ERR_VAL;
     }
-    const bool upload = api && uploader && strlen(uri) < POST_URI_MAX && uploader->handles(uri);
+    const net_upload_t *handler = NULL;
+    for (int i = 0; api && uploaders && uploaders[i] && strlen(uri) < POST_URI_MAX; i++) {
+        if (uploaders[i]->handles(uri)) {
+            handler = uploaders[i];
+            break;
+        }
+    }
+    const bool upload = handler != NULL;
     if (upload) {
         if (!content_type_is(http_request, http_request_len, "application/octet-stream")) {
             api_error(415, "unsupported_type", "send the file as Content-Type: application/octet-stream");
@@ -302,6 +395,10 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
         }
         if (upload_connection) {
             api_error(503, "busy", "another upload is in progress");
+            return ERR_VAL;
+        }
+        if (download.file) {
+            api_error(503, "busy", "a download is in progress: try again when it's done");
             return ERR_VAL;
         }
         if (pending_reboot != REBOOT_NONE) {
@@ -327,12 +424,13 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
     for (int i = 0; i < POSTS_MAX; i++) {
         if (!posts[i].connection) {
             if (upload) {
-                api_answer.status = uploader->begin(uri, (uint32_t)content_len, api_answer.json,
-                                                    sizeof(api_answer.json), &api_answer.len);
+                api_answer.status = handler->begin(uri, http_request, http_request_len, (uint32_t)content_len,
+                                                   api_answer.json, sizeof(api_answer.json), &api_answer.len);
                 if (api_answer.status != 200) {
                     return ERR_VAL;         // Refused before any of the body came: the answer is ready
                 }
                 upload_connection = connection;
+                uploader = handler;
             }
             posts[i].connection = connection;
             strcpy(posts[i].uri, uri);
@@ -426,11 +524,12 @@ static void ap_up(const net_ap_t *ap) {
 }
 
 bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_api_fn api,
-               const net_upload_t *upload) {
+               const net_upload_t *const *uploads, const net_download_t *download) {
     render_page = page;
     page_action = action;
     api_handler = api;
-    uploader = upload;
+    uploaders = uploads;
+    downloader = download;
     ap_up(ap);
     httpd_init();
     // The driver doesn't say whether the chip came up (cyw43_wifi_set_up() returns nothing): ask it
@@ -438,8 +537,31 @@ bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_a
     return ap_bss_up();
 }
 
+int net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size) {
+    const char *end, *v = header_value(headers, headers_len, name, &end);
+    if (!v) {
+        return -1;
+    }
+    size_t n = 0;
+    while (v + n < end && v[n] && v[n] != '\r' && v[n] != '\n') {
+        n++;
+    }
+    while (n && v[n - 1] == ' ') {
+        n--;
+    }
+    if (n < out_size) {
+        memcpy(out, v, n);
+        out[n] = '\0';
+    }
+    return (int)n;
+}
+
 bool net_upload_running(void) {
     return upload_connection != NULL;
+}
+
+bool net_download_running(void) {
+    return download.file != NULL;
 }
 
 // Whether the chip still has the AP's BSS up ("bss" iovar for the AP's bsscfg; an error means down,

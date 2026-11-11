@@ -5,7 +5,9 @@
  */
 
 // Feeds an update file through src/firmware/update.c into a simulated flash and prints the result
-// code: proves the device side reads what tools/mkupdate.py writes. Run by tests/test_host.py.
+// code: proves the device side reads what tools/mkupdate.py writes, and that the header it rebuilds
+// for a firmware backup (update_build_header(), D42) is the one mkupdate.py wrote. Run by
+// tests/test_host.py.
 //
 //     feed_update FILE
 
@@ -56,6 +58,18 @@ int main(int argc, char **argv) {
     update_result_t r = update_finish(&u);
     if (r == UPDATE_OK && memcmp(flash + LAYOUT_SLOT_B_OFFSET, data + UPDATE_HEADER_SIZE, u.header.image_size) != 0) {
         r = UPDATE_BAD_IMAGE;
+    }
+    if (r == UPDATE_OK) {
+        uint8_t again[UPDATE_HEADER_SIZE];
+        update_build_header(&u.header, again);
+        sha_start(&io_sha);
+        sha_update(&io_sha, again, UPDATE_HEADER_HASHED);
+        sha_finish(&io_sha, again + UPDATE_HEADER_HASHED);
+        if (memcmp(again, data, UPDATE_HEADER_SIZE) != 0) {
+            printf("rebuilt_header_differs\n");
+            free(flash);
+            return 1;
+        }
     }
     printf("%s %s\n", update_result_code(r), u.header.version);
     free(flash);

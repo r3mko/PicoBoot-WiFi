@@ -6,13 +6,16 @@
 
 // Boot control (design D23): which firmware slot and which payload boot. Stored as a record
 // (records.h) in the boot control area; the loader reads it, only the firmware writes it.
-// Fields marked with a later phase are reserved until then and kept at their defaults.
+//
+// From format 2 (D42) the format only grows at the end: readers take the fields they know from any
+// newer record (record_find_any()), so a new format needs no new loader. The loader reads only the
+// first BOOTCTL_LOADER_BYTES.
 
 #pragma once
 #include <stdint.h>
 
 #define BOOTCTL_MAGIC           0x4C544342u     // "BCTL"
-#define BOOTCTL_VERSION         1
+#define BOOTCTL_VERSION         2               // 2: payload names (D42)
 
 #define BOOTCTL_SLOT_A          0
 #define BOOTCTL_SLOT_B          1
@@ -34,15 +37,24 @@
                                                     // instead of the D36 pull-up (plan step 1.10's
                                                     // glitch check); release builds ignore it
 
+#define BOOTCTL_NAME_MAX        24              // Characters in a payload's name (D42)
+
 typedef struct {
+    // Format 1, and all the loader reads (BOOTCTL_LOADER_BYTES)
     uint8_t active_slot;        // BOOTCTL_SLOT_A or _B
-    uint8_t pending_slot;       // Phase 3: the slot on trial (D12), or BOOTCTL_NONE
-    uint8_t slot_state[2];      // BOOTCTL_STATE_*, per slot (phase 3)
-    uint8_t active_payload;     // Phase 4: BOOTCTL_PAYLOAD_* (D15)
+    uint8_t pending_slot;       // The slot on trial (D12), or BOOTCTL_NONE
+    uint8_t slot_state[2];      // BOOTCTL_STATE_*, per slot
+    uint8_t active_payload;     // BOOTCTL_PAYLOAD_* (D15)
     uint8_t flags;              // BOOTCTL_FLAG_*
     uint8_t reserved[2];
-    uint32_t payload1_fingerprint;  // Phase 4: detects USB payload installs (D17)
+    uint32_t payload1_fingerprint;  // Detects USB payload installs (D17)
+    // Format 2 (D42)
+    char payload_name[2][BOOTCTL_NAME_MAX + 1];    // Payload 1 and 2; printable ASCII, "" for none
+    uint8_t reserved2[2];
 } bootctl_t;
+
+#define BOOTCTL_LOADER_BYTES    12
+_Static_assert(sizeof(bootctl_t) == 64, "bootctl_t is stored in flash: its size is part of the format");
 
 // What boot control means when the area holds no valid record: the state right after a USB install.
 // Slot B counts as empty: the install doesn't touch it, so it may hold anything (an old or a test

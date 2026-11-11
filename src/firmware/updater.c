@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "updater.h"
 #include "update.h"
@@ -15,18 +16,20 @@
 #include "bootinfo.h"
 #include "hardware/structs/powman.h"
 #include "hardware/regs/addressmap.h"
-#include "pico/sha256.h"
+#include "sha.h"
 
 #ifndef PICOBOOT_WIFI_BOARD
 #error "PICOBOOT_WIFI_BOARD (PICO_BOARD) comes from CMakeLists.txt"
 #endif
 
+extern char __flash_binary_start[], __flash_binary_end[];   // This image, from the SDK's linker script
+
 static uint8_t running;
 static update_env_t env = {PICOBOOT_WIFI_BOARD, LAYOUT_VERSION, 1};
 static bool can_update;
-static update_t writer;                 // One upload at a time (net.c makes sure)
-static pico_sha256_state_t sha;
-static bool sha_running;                // The hardware is claimed until finished or cleaned up
+// One upload at a time (net.c makes sure). Not zeroed at start-up, which runs on the boot ROM's slow
+// clock before the injection (D10): update_begin() clears it
+static update_t __uninitialized_ram(writer);
 
 void updater_init(uint8_t running_slot, uint32_t loader_version, bool from_loader) {
     running = running_slot;
@@ -53,34 +56,20 @@ static const uint8_t *io_read(void *ctx, uint32_t offset) {
     return (const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + offset);
 }
 
-// The RP2350's SHA-256 hardware, without DMA. A hash an upload left unfinished (cut off, or a failed
-// boot control write) still holds the hardware: release it first, or the start would wait forever
-// inside the lwIP callback until the watchdog took it for a crash (phase 3 review).
-static void sha_release(void) {
-    if (sha_running) {
-        pico_sha256_cleanup(&sha);
-        sha_running = false;
-    }
-}
-
+// The RP2350's SHA-256 hardware (sha.c: an unfinished hash is released at the next start)
 static void io_sha_start(void *ctx) {
     (void)ctx;
-    sha_release();
-    pico_sha256_start_blocking(&sha, SHA256_BIG_ENDIAN, false);
-    sha_running = true;
+    sha_start();
 }
 
 static void io_sha_update(void *ctx, const uint8_t *data, size_t length) {
     (void)ctx;
-    pico_sha256_update_blocking(&sha, data, length);
+    sha_update(data, length);
 }
 
 static void io_sha_finish(void *ctx, uint8_t out[32]) {
     (void)ctx;
-    sha256_result_t result;
-    pico_sha256_finish(&sha, &result);
-    sha_running = false;
-    memcpy(out, result.bytes, 32);
+    sha_finish(out);
 }
 
 // Before the first erase: the slot stops being a firmware in boot control (D12)
@@ -98,6 +87,39 @@ static bool io_slot_emptied(void *ctx, uint8_t slot) {
 static const update_io_t io = {io_erase, io_program, io_read, io_sha_start, io_sha_update, io_sha_finish,
                                io_slot_emptied, NULL};
 
+// --- The backup (GET /api/backup/firmware, D42) --------------------------------------------------
+
+bool updater_backup(int wifi_area, net_file_t *file) {
+    static uint8_t header[UPDATE_HEADER_SIZE];      // Sent from here until the download ends
+    const uint8_t *image = io_read(NULL, running == BOOTCTL_SLOT_B ? LAYOUT_SLOT_B_OFFSET : LAYOUT_SLOT_A_OFFSET);
+    const uint8_t *blob = io_read(NULL, wifi_area == BOOTCTL_SLOT_B ? LAYOUT_WIFI_B_OFFSET : LAYOUT_WIFI_A_OFFSET);
+    update_header_t h = {
+        .flags = UPDATE_FLAG_BLOB,
+        .layout = LAYOUT_VERSION,
+        .loader = BOOTINFO_LOADER_NEEDED,
+        .image_size = (uint32_t)(__flash_binary_end - __flash_binary_start),
+        .blob_size = update_wifi_image_size(blob),
+        .board = PICOBOOT_WIFI_BOARD,
+        .version = PICOBOOT_WIFI_BUILD,
+    };
+    if ((wifi_area != BOOTCTL_SLOT_A && wifi_area != BOOTCTL_SLOT_B) || !h.blob_size) {
+        return false;
+    }
+    sha_of(image, h.image_size, h.image_sha256);
+    sha_of(blob, h.blob_size, h.blob_sha256);
+    update_build_header(&h, header);
+    sha_of(header, UPDATE_HEADER_HASHED, header + UPDATE_HEADER_HASHED);
+    snprintf(file->filename, sizeof(file->filename), "picoboot-wifi-%s-update.bin", PICOBOOT_WIFI_BUILD);
+    file->type = "application/octet-stream";
+    file->parts[0].data = header;
+    file->parts[0].length = UPDATE_HEADER_SIZE;
+    file->parts[1].data = image;
+    file->parts[1].length = h.image_size;
+    file->parts[2].data = blob;
+    file->parts[2].length = h.blob_size;
+    return true;
+}
+
 // --- The upload hooks ----------------------------------------------------------------------------
 
 static bool handles(const char *path) {
@@ -111,7 +133,8 @@ static const char *message(update_result_t r) {
         case UPDATE_UNSUPPORTED_FORMAT: return "this update file has a format this firmware doesn't know";
         case UPDATE_BAD_HEADER: return "the update file's header is damaged";
         case UPDATE_WRONG_BOARD: return "this update is for another board";
-        case UPDATE_NEEDS_USB_INSTALL: return "this update needs a newer loader or another flash layout: install it over USB";
+        case UPDATE_NEEDS_USB_INSTALL: return "this update needs a newer loader or another flash layout, or it's a "
+                                              "firmware from before phase 4 that can't read this boot control: install it over USB";
         case UPDATE_BAD_SIZE: return "the upload's length doesn't match the update file's header";
         case UPDATE_NEEDS_BLOB: return "this update file has no Wi-Fi blob, and the one in flash doesn't match";
         case UPDATE_BAD_IMAGE: return "the firmware image doesn't match its SHA-256 (damaged file or flash)";
@@ -134,8 +157,11 @@ static int answer_error(update_result_t r, char *out, size_t size, size_t *len) 
     return r == UPDATE_FLASH_WRITE ? 500 : 400;
 }
 
-static int begin(const char *path, uint32_t length, char *out, size_t size, size_t *len) {
+static int begin(const char *path, const char *headers, uint16_t headers_len, uint32_t length,
+                 char *out, size_t size, size_t *len) {
     (void)path;
+    (void)headers;
+    (void)headers_len;
     if (!can_update) {
         return answer_error(UPDATE_NEEDS_USB_INSTALL, out, size, len);
     }

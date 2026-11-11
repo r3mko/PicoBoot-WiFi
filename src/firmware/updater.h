@@ -18,3 +18,9 @@ void updater_init(uint8_t running_slot, uint32_t loader_version, bool from_loade
 
 // The upload hooks for net_start()
 extern const net_upload_t UPDATER_UPLOAD;
+
+// The backup of the running firmware (D42): an update file, as tools/mkupdate.py makes it, of the
+// image in the running slot and the Wi-Fi blob in `wifi_area` (BOOTCTL_SLOT_A / _B: the one it runs
+// with), the header made here. Uses the SHA-256 hardware: not while an upload runs (net.c makes
+// sure). False if that Wi-Fi area holds no blob.
+bool updater_backup(int wifi_area, net_file_t *file);

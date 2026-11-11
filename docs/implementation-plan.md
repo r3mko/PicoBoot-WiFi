@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.4, 2026-11-10 |
-| **Design** | [architecture.md](architecture.md), Approved v1.5 |
+| **Status** | Approved v1.5, 2026-11-11 |
+| **Design** | [architecture.md](architecture.md), Approved v1.6 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -16,6 +16,7 @@
 | v1.2 | 2026-11-08 | Approved by the owner at the end of phase 1. Phase 1: the boot log (D39) and the page's test switches, added before step 1.10 so its 60+ console boots can be read in one go. The phase 1 code review's findings, their fixes, and the re-test before the merge (bench and 10 cold boots, the owner's choice). |
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 | v1.4 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
+| v1.5 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4 as built (see its "As built" note), with the owner's choices made during the phase (design D42, D43), its code review, and the `.bss` budget for phase 5. |
 
 ## How this plan works
 

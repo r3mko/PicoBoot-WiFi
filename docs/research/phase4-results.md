@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 4, run by the owner on the `phase-4-payload-ota` builds.
 
-**Status:** steps 4.1 to 4.8 done (bench, phones and console); the review of 4.9 to come.
+**Status:** approved by the owner with design v1.6, plan v1.5, `docs/update-format.md` and `docs/api.md`; phase 4 merged into `main` on 2026-11-11.
 
 **Setup:** the Pico 2 W from phases 0 to 3 (SSID suffix C2C4, RP2350 A2); `curl` and `tools/picoboot-wifi.py` from a Mac joined to the access point. The payloads are the release files Swiss r2119 (`PicoBoot/swiss_r2119.uf2`, RP2040 and RP2350 blocks) and gekkoboot r9.4 (`gekkoboot_pico.uf2`, RP2040 blocks only).
 
@@ -98,3 +98,20 @@ Build `aa512e1` (`.bss` 77 KB → 20 KB) over Wi-Fi into slot B, kept by its fir
 **Result:** 1.6 ms below PicoBoot-DX, well within D10's 10 ms, and the spread is 1.2 ms instead of 4.2. 57 KB less to zero gained 7.4 ms, about 0.13 ms per KB: phase 4's 10 KB had cost about 1.3 ms, the rest of the first run's low margins was most likely the cold console. CS 1544/1544 and complete on every power-on; Wi-Fi, uploads and downloads work with lwIP's pools in `.uninitialized_data`.
 
 **So that it stays:** `tests/check_layout.py` (run by CI after the build) now fails a `.bss` over 24 KB in the firmware or 8 KB in the loader, and prints both in its OK line.
+
+## 4.9 Code review and re-test (2026-11-11)
+
+**Code review** (a fresh Opus 5.5 reviewer): no high findings, one medium and ten low; all fixed (`721d396`), listed in the implementation plan (phase 4, "Code review of phase 4").
+
+**Re-test**, build `96f3309`, in the console:
+
+| Check | Result |
+|---|---|
+| The update over Wi-Fi, kept by its first power-on (boot 45) | **Passed.** As expected, that power-on counted payload 1 as a USB install once (the fingerprint had changed): the notice showed, and payload 1's name was cleared, then renamed |
+| A phase 3 update file (loader requirement 2) | **Passed:** refused, `needs_usb_install`, "a firmware from before phase 4 that can't read this boot control"; nothing written |
+| An `X-Name` of 70 characters | **Passed:** 400 `bad_value` |
+| A payload named `<b>bold</b>` on the test page | **Passed:** shown as text |
+| Original IPL once (boot 46) | **Passed:** the console's own IPL; the boot reports `payload: none`; Swiss at the next power-on |
+| Margin, Swiss (boots 45, 47–52) | 162.0–164.1 ms, mean 163.0 ms: 2.5 ms below PicoBoot-DX. The wider fingerprint costs 118 µs ("main() to PIO ready" 474 → 592 µs); the rest is the console's spread |
+
+**Step 4.9:** review fixes in, re-test passed. **Done when (D28): Swiss and gekkoboot uploaded and chosen over Wi-Fi:** met (steps 4.8 and 4.9).

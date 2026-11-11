@@ -27,3 +27,9 @@ Build `0.5.0-dev+3806ed3` (the fixes of `360d8dd`), installed over Wi-Fi from `0
 | PicoBoot-DX (phase 0) | | | 165.5 |
 
 **Result:** passed. The mean margin is 1.1 ms lower, within the console's spread: the old build's last power-on (boot 53) was 160.0 ms. "main() to PIO ready" is 600 µs, against 593 µs before, and `.bss` is 20.2 KB, within the 24 KB budget. The margin is 3.9 ms below PicoBoot-DX, within D10's 10 ms.
+
+## 5.4 Acceptance, first run (2026-11-11)
+
+Build `1.0.0` (`25da3ce`). The owner got through part 1 (the upgrade from PicoBoot-DX) and steps 2.1–2.2 of the fresh install; step 2.3's upload hung.
+
+**Finding: clients lost their address every 10 minutes.** The upload of Swiss on the Payloads tab hung, and the Mac showed the captive-portal page again after 10 minutes on the access point. The DHCP server (from pico-examples) answered a request only if it named the address in option 50, as a client does when it joins. A client renewing its lease names it in `ciaddr` instead (RFC 2131 4.3.2), and those requests went unanswered. Before the security review that didn't matter, because a lease lasted a day. With step 5.1's 10-minute leases (L4), a client renews after 5 minutes, isn't answered, and loses its address at 10 minutes. It then joins again, but an upload running at that moment stalls, which is most likely what happened in step 2.3. The server now takes the address from `ciaddr` and answers to it; a host test (`tests/host/test_dhcpserver.c`) covers joining, renewing and the leases running out, and fails on the old code.

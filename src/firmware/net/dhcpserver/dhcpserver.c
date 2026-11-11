@@ -215,6 +215,9 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
     // The option bytes received: the search stays inside them, not in what the stack held before
     const int opt_size = (int)len - (int)(opt - (uint8_t *)&dhcp_msg);
 
+    // The reply is broadcast, but to a client that has its address (renewing), it goes there
+    uint32_t reply_to = 0xffffffff;
+
     uint8_t *msgtype = opt_find(opt, opt_size, DHCP_OPT_MSG_TYPE, 1);
     if (msgtype == NULL) {
         // A DHCP package without MSG_TYPE?
@@ -254,16 +257,25 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
         }
 
         case DHCPREQUEST: {
+            // The address asked for: option 50 when taking an offer or rejoining, ciaddr when renewing
+            // or rebinding (RFC 2131 4.3.2). With 10-minute leases a client renews while it's joined:
+            // ignored, it lost its address when the lease ran out (phase 5 acceptance)
+            const uint8_t *req;
             uint8_t *o = opt_find(opt, opt_size, DHCP_OPT_REQUESTED_IP, 4);
-            if (o == NULL) {
+            if (o != NULL) {
+                req = o + 2;
+            } else if (memcmp(dhcp_msg.ciaddr, "\x00\x00\x00\x00", 4) != 0) {
+                req = dhcp_msg.ciaddr;
+                reply_to = (uint32_t)req[0] << 24 | (uint32_t)req[1] << 16 | (uint32_t)req[2] << 8 | req[3];
+            } else {
                 // Should be NACK
                 goto ignore_request;
             }
-            if (memcmp(o + 2, &ip4_addr_get_u32(ip_2_ip4(&d->ip)), 3) != 0) {
+            if (memcmp(req, &ip4_addr_get_u32(ip_2_ip4(&d->ip)), 3) != 0) {
                 // Should be NACK
                 goto ignore_request;
             }
-            uint8_t yi = o[5] - DHCPS_BASE_IP;
+            uint8_t yi = req[3] - DHCPS_BASE_IP;
             if (yi >= DHCPS_MAX_IP) {
                 // Should be NACK
                 goto ignore_request;
@@ -316,7 +328,7 @@ static void dhcp_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p,
     opt_write_u32(&opt, DHCP_OPT_IP_LEASE_TIME, DEFAULT_LEASE_TIME_S);
     *opt++ = DHCP_OPT_END;
     struct netif *nif = ip_current_input_netif();
-    dhcp_socket_sendto(&d->udp, nif, &dhcp_msg, opt - (uint8_t *)&dhcp_msg, 0xffffffff, PORT_DHCP_CLIENT);
+    dhcp_socket_sendto(&d->udp, nif, &dhcp_msg, opt - (uint8_t *)&dhcp_msg, reply_to, PORT_DHCP_CLIENT);
 
 ignore_request:
     pbuf_free(p);

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved with phase 2, 2026-11-09; extended in phases 3 and 4; final for release 1.0 (phase 5) |
+| **Status** | Approved with phase 2, 2026-11-09; extended in phases 3 and 4; final for release 1.0, approved with phase 5, 2026-11-11 |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
 The web UI and the CLI tool use this API: the status, settings, diagnostics and reboot; firmware updates and the slot choices; payloads, the payload and IPL choices; and backups. `api` in the status is 1.

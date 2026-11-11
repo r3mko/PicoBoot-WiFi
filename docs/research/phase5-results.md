@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 5, run by the owner on the `phase-5-release` builds.
 
-**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed. The code review's fixes passed their re-test (`9b8a107`), and so did step 5.2's page changes (`c468ee9`, `527823a`); the release build is `527823a`'s.
+**Status:** approved by the owner with design v1.7, plan v1.6 and `docs/api.md`; phase 5 merged into `main` on 2026-11-11. The acceptance (step 5.4) passed on its third run, after two fixes; the release build is `527823a`'s.
 
 **Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. In step 5.1 payload 1 holds Swiss r2119; the acceptance erases the flash first.
 

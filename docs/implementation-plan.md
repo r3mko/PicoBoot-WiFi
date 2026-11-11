@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.5, 2026-11-11; draft v1.6 (phase 5) for approval at the end of phase 5 |
-| **Design** | [architecture.md](architecture.md), Approved v1.6 |
+| **Status** | Approved v1.6, 2026-11-11 |
+| **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -17,7 +17,7 @@
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 | v1.4 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
 | v1.5 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4 as built (see its "As built" note), with the owner's choices made during the phase (design D42, D43), its code review, and the `.bss` budget for phase 5. |
-| v1.6 draft | 2026-11-11 | Phase 5 as built (see its "As built" note): the security review of step 5.1, its fixes and their re-test in the console; the release workflow; the acceptance, its two fixes, and a rule for later releases from them; the code review and its two fixes; the owner's choices (the logo and the device's name, the fork test for the next release). For approval at the end of phase 5. |
+| v1.6 | 2026-11-11 | Approved by the owner at the end of phase 5. Phase 5 as built (see its "As built" note): the security review of step 5.1, its fixes and their re-test in the console; the release workflow; the acceptance, its two fixes, and a rule for later releases from them; the code review and its two fixes; the owner's choices (the logo and the device's name, the fork test for the next release). |
 
 ## How this plan works
 
@@ -377,6 +377,7 @@ docs/                       design, plan, research, API, update-file format
 | 5.2 | The README for release 1.0: installing, upgrading from PicoBoot-DX, the wiring with D38's 5 V, the default password, security, recovery, the DOL-101 note. `docs/api.md` final, the release notes in `docs/releases/1.0.0.md` | Reviewed: PicoBoot-DX's logo added to the README; the device named PicoBoot-WiFi on the page, in its messages and in the README (`c468ee9`), not "PicoBoot", which could be taken for upstream; the Wi-Fi name stays `PicoBoot-XXXX` (D30); the selects' arrow inset from the edge (`527823a`); the release notes approved |
 | 5.3 | `.github/workflows/release.yml` (D24): on a tag `vX.Y.Z` that matches `CMakeLists.txt` and has release notes, it builds, tests, checks the built version and makes a draft release with the install UF2, the update file, the CLI and `SHA256SUMS`. A release's version has no git hash. A host test took only test-build versions, so a real tag would have failed: fixed in `25da3ce`. The release build is byte-identical from a clean checkout | The fork test is for the next release: the `v1.0.0` tag is the workflow's first run, which only makes a draft. Instead, its steps up to the draft were run on a clean checkout, and gave the files of the acceptance |
 | 5.4 | Passed on the third build of 1.0.0, with a margin of 165.2 ms, 0.3 ms below PicoBoot-DX. The first two runs found two bugs, both from review fixes:<br>• the DHCP server ignored renewals, so with 5.1's 10-minute leases every client lost its address at 10 minutes (`9a3b17b`, with a host test);<br>• `invalidate()`, from the phase 4 review, programmed flash from a `const` array in flash, so every payload upload and delete hung until the watchdog reset the Pico (`df962b8`) | |
+| 5.5 | Merged into `main` on 2026-11-11. The owner tags `v1.0.0` and publishes the workflow's draft once its checksums match the release build's ([phase5-results.md](research/phase5-results.md)) | |
 
 **Security review** (step 5.1, Fable 5.2, 2026-11-11):
 - **Overall:** no critical, high or medium findings; seven low and five informational. The upload parsers, the flash writers, the header and JSON parsers, the records and the DNS and DHCP servers were fuzzed on the host (about 20 million inputs, with AddressSanitizer and UndefinedBehaviorSanitizer). The fixes are in `360d8dd`.

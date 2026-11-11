@@ -716,7 +716,7 @@ def cmd_restore_settings(args):
     if "password" in settings:
         # A backup never holds the password: a file that sets one would hand the Wi-Fi to whoever
         # made it (phase 5 security review). Change the password in the settings instead.
-        raise Refused(f"{args.file} sets a password, which a PicoBoot backup never does: "
+        raise Refused(f"{args.file} sets a password, which a PicoBoot-WiFi backup never does: "
                       "it isn't one, so it isn't restored")
     body = post(args, "/api/settings", settings)
     print("Settings saved.")

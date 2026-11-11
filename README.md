@@ -12,7 +12,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
   - upload a `.dol`, a payload `.uf2` or a raw payload; it goes into the slot that isn't chosen;
   - choose what boots next, rename, delete, and download a backup;
   - **Original IPL once:** the next power-on starts the console's own menu, to set the clock or the language.
-- **Firmware updates over Wi-Fi:** an update goes into the other firmware slot and starts on trial. If it doesn't work, PicoBoot goes back to the previous firmware by itself.
+- **Firmware updates over Wi-Fi:** an update goes into the other firmware slot and starts on trial. If it doesn't work, PicoBoot-WiFi goes back to the previous firmware by itself.
 - **Settings and diagnostics:** the Wi-Fi name, password, country, channel and transmit power, auto-off, and the LED. A boot log shows each power-on's injection and its timing margin.
 - **A running game is never disturbed:** a reboot of the Pico without a power cycle doesn't inject again.
 - **A command-line tool** does the same from a computer: [`tools/picoboot-wifi.py`](tools/picoboot-wifi.py).
@@ -112,7 +112,7 @@ The JSON API is described in [docs/api.md](docs/api.md).
 
 - **The Wi-Fi password is the only gate.** There's no separate login, and update files aren't signed. Anyone who has the password can install any firmware, and a hostile firmware could even write the chip's one-time-programmable memory, which no USB reinstall undoes. Change the default password, and install only files from this project's releases.
 - **WPA2-AES,** and plain HTTP on the access point.
-- **A web page elsewhere can't change anything on PicoBoot,** but one left open while a phone joins its Wi-Fi could read what the page shows: the status, the settings without the password, the diagnostics and the backups.
+- **A web page elsewhere can't change anything on PicoBoot-WiFi,** but one left open while a phone joins its Wi-Fi could read what the page shows: the status, the settings without the password, the diagnostics and the backups.
 
 ## Recovery
 

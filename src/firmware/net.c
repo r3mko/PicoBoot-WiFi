@@ -170,7 +170,7 @@ static int respond_download(struct fs_file *file, const char *path) {
     size_t len = 0;
     const char *busy = download.file ? "another download is in progress: try again when it's done" :
                        upload_connection ? "an upload is in progress: try again when it's done" :
-                       pending_reboot != REBOOT_NONE ? "PicoBoot is about to reboot" : NULL;
+                       pending_reboot != REBOOT_NONE ? "PicoBoot-WiFi is about to reboot" : NULL;
     if (busy) {
         const int n = snprintf(out, sizeof(out), "{\"error\":\"busy\",\"message\":\"%s\"}", busy);
         return respond_json(file, 503, out, (size_t)n);
@@ -282,7 +282,7 @@ int fs_open_custom(struct fs_file *file, const char *name) {
         return respond_json(file, api_answer.status, api_answer.json, api_answer.len);
     }
     if (strcmp(name, "/.forbidden") == 0) {
-        static const char body[] = "<!doctype html><pre>Open PicoBoot at http://192.168.4.1/</pre>";
+        static const char body[] = "<!doctype html><pre>Open PicoBoot-WiFi at http://192.168.4.1/</pre>";
         return respond(file, 403, "", body, sizeof(body) - 1);
     }
     if (strcmp(name, "/.done") == 0) {
@@ -415,7 +415,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
             return ERR_VAL;
         }
         if (pending_reboot != REBOOT_NONE) {
-            api_error(503, "busy", "PicoBoot is about to reboot");
+            api_error(503, "busy", "PicoBoot-WiFi is about to reboot");
             return ERR_VAL;
         }
     } else if (api) {

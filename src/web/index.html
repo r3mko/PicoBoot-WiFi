@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>PicoBoot</title>
+<title>PicoBoot-WiFi</title>
 <style>
 /* Light and dark follow the phone */
 :root { --bg:#f4f5f7; --card:#fff; --text:#1b1f24; --dim:#5d6671; --line:#d9dde3; --accent:#0a62d0;
@@ -62,7 +62,7 @@ progress { width:100%; height:14px; margin-top:12px; }
 </head>
 <body>
 <main>
-<h1>PicoBoot</h1>
+<h1>PicoBoot-WiFi</h1>
 <nav role="tablist">
   <button role="tab" data-tab="status" aria-selected="true">Status</button>
   <button role="tab" data-tab="pl" aria-selected="false">Payloads</button>
@@ -72,7 +72,7 @@ progress { width:100%; height:14px; margin-top:12px; }
 </nav>
 
 <!-- Banners, shown on every tab -->
-<div id="offline" class="banner bad" hidden>Can't reach PicoBoot. Retrying…</div>
+<div id="offline" class="banner bad" hidden>Can't reach PicoBoot-WiFi. Retrying…</div>
 <div id="b-default" class="banner" hidden>The Wi-Fi password is still the default. Please
   <button class="linkbtn" data-goto="settings">change it in Settings</button>.</div>
 <div id="b-trial" class="banner" hidden>This firmware is on trial. It's kept by itself after the next console start
@@ -183,7 +183,7 @@ progress { width:100%; height:14px; margin-top:12px; }
 
   <h2>Reboot</h2>
   <div class="hint">A warm reboot doesn't touch a running game. The Wi-Fi drops for a few seconds.</div>
-  <button class="btn danger" id="reboot">Reboot PicoBoot</button>
+  <button class="btn danger" id="reboot">Reboot PicoBoot-WiFi</button>
   <span id="reboot-ask" hidden><button class="btn danger" id="reboot-yes">Yes, reboot</button><button
     class="btn sec" id="reboot-no">Cancel</button></span>
 </section>
@@ -294,7 +294,7 @@ document.addEventListener("visibilitychange", () => {
 const STATES = {
   installed: "installed over USB", empty: "empty: being written, or an upload failed",
   trial: "on trial: not kept yet", kept: "kept: confirmed good",
-  failed: "failed: its trial crashed and PicoBoot went back",
+  failed: "failed: its trial crashed and PicoBoot-WiFi went back",
 };
 let bootTarget = null;   // the slot the inline confirmation is about
 let upFile = null;       // the chosen update file, once its header checked out
@@ -316,7 +316,7 @@ function renderFw() {
   $("fw-back").dataset.boot = o;
   $("fw-back").hidden = f.states[o] === "empty";
   $("up-block").textContent = trial ?
-    "An update can't be installed while this firmware is on trial: the other slot is what PicoBoot falls back to. Keep this firmware first, or go back to slot " + o + "." : "";
+    "An update can't be installed while this firmware is on trial: the other slot is what PicoBoot-WiFi falls back to. Keep this firmware first, or go back to slot " + o + "." : "";
   $("up-box").hidden = trial;
 }
 
@@ -338,8 +338,8 @@ $("boot-yes").onclick = async () => {
   if (restarting || uploading || !bootTarget) return;
   $("fw-err").textContent = "";
   const r = await api("/api/boot", { slot: bootTarget });
-  if (!r || !r.ok) { $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Nothing changed."; return; }
-  if (r.data && r.data.rebooting) { $("fw-err").textContent = "Rebooting into slot " + bootTarget + ". Waiting for PicoBoot…"; await pollUntilBack(2000); }
+  if (!r || !r.ok) { $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Nothing changed."; return; }
+  if (r.data && r.data.rebooting) { $("fw-err").textContent = "Rebooting into slot " + bootTarget + ". Waiting for PicoBoot-WiFi…"; await pollUntilBack(2000); }
   else await loadStatus();
   $("fw-err").textContent = "";
 };
@@ -347,7 +347,7 @@ $("fw-keep").onclick = async () => {
   if (restarting || uploading) return;
   $("fw-err").textContent = "";
   const r = await api("/api/boot", { keep: true });
-  if (!r || !r.ok) $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Not kept.";
+  if (!r || !r.ok) $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Not kept.";
   await loadStatus();
 };
 
@@ -413,21 +413,21 @@ $("up-go").onclick = () => {
   x.setRequestHeader("Content-Type", "application/octet-stream");
   x.timeout = 60000;
   x.upload.onprogress = e => { if (e.lengthComputable) $("up-bar").value = e.loaded / e.total; };
-  x.upload.onload = () => { $("up-bar").value = 1; $("up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot writes and checks the flash. Please wait…"; };
-  x.onerror = x.ontimeout = () => done("No answer from PicoBoot, so the update may or may not be installed. Check the slots above.");
+  x.upload.onload = () => { $("up-bar").value = 1; $("up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot-WiFi writes and checks the flash. Please wait…"; };
+  x.onerror = x.ontimeout = () => done("No answer from PicoBoot-WiFi, so the update may or may not be installed. Check the slots above.");
   x.onload = async () => {
     let d = null;
     try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
     if (x.status !== 200 || !d || !d.installed) { restarting = false; done((d && d.message) || "Error " + x.status); return loadStatus(); }
     $("up-bar").hidden = $("up-info").hidden = true;
-    $("up-msg").textContent = "Installed into slot " + (d.slot || slotNote) + "; PicoBoot restarts into it on trial…";
+    $("up-msg").textContent = "Installed into slot " + (d.slot || slotNote) + "; PicoBoot-WiFi restarts into it on trial…";
     await pollUntilBack(2000);
     uploading = false; $("up-file").disabled = false; $("up-file").value = ""; upFile = null;
     // Check that the new firmware came up: if it crashed, the loader went back (D12)
     const f = lastStatus && lastStatus.firmware;
     $("up-msg").textContent = f && f.slot === d.slot && f.pending === d.slot ?
-      "PicoBoot is back, running the new firmware on trial." :
-      "The new firmware didn't come up: PicoBoot went back to slot " + (f ? f.slot : "?") +
+      "PicoBoot-WiFi is back, running the new firmware on trial." :
+      "The new firmware didn't come up: PicoBoot-WiFi went back to slot " + (f ? f.slot : "?") +
       ", and slot " + d.slot + " is marked failed.";
   };
   x.send(f);
@@ -467,7 +467,7 @@ function renderPl() {
 async function plPost(path, body) {
   $("pl-err").textContent = "";
   const r = await api(path, body);
-  if (!r || !r.ok) $("pl-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot. Nothing changed.";
+  if (!r || !r.ok) $("pl-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Nothing changed.";
   await loadStatus();
 }
 const plNameErr = n => n.length > 24 ? "The name can be at most 24 characters." : printable(n) ? "" : "Use printable ASCII characters only (no accents or emoji).";
@@ -548,7 +548,7 @@ $("pl-file").onchange = async () => {
   } catch (e) { return bad("Can't read this file."); }
   await loadStatus();
   const p = lastStatus && lastStatus.payloads;
-  if (!p) return bad("Can't reach PicoBoot.");
+  if (!p) return bad("Can't reach PicoBoot-WiFi.");
   plBlob = blob;
   const t = p.upload_target, o = t === "payload1" ? "payload 2" : "payload 1";
   $("pl-up-name").value = nameFrom(f.name);
@@ -579,8 +579,8 @@ $("pl-up-go").onclick = () => {
   if (n) x.setRequestHeader("X-Name", n);
   x.timeout = 60000;
   x.upload.onprogress = e => { if (e.lengthComputable) $("pl-bar").value = e.loaded / e.total; };
-  x.upload.onload = () => { $("pl-bar").value = 1; $("pl-up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot writes and checks the flash. Please wait…"; };
-  x.onerror = x.ontimeout = () => done("No answer from PicoBoot, so the upload may or may not have gone through. Check the list above.");
+  x.upload.onload = () => { $("pl-bar").value = 1; $("pl-up-msg").textContent = "Uploaded. This takes a few seconds more while PicoBoot-WiFi writes and checks the flash. Please wait…"; };
+  x.onerror = x.ontimeout = () => done("No answer from PicoBoot-WiFi, so the upload may or may not have gone through. Check the list above.");
   x.onload = () => {
     let d = null;
     try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
@@ -613,7 +613,7 @@ async function loadDiag() {
       b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : ""].filter(Boolean).join("; ")) +
     row("Result", esc(RESULTS[b.result] || b.result)) +
     row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
-    row("Margin", margin(b), "How long before the console's first read PicoBoot was ready") +
+    row("Margin", margin(b), "How long before the console's first read PicoBoot-WiFi was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
     row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), glitch ? "Glitch ignored by the injection" : "") +
     (b.cs_pulldown_test ? row("CS pull-down test", "on") : "") +
@@ -701,9 +701,9 @@ $("form").onsubmit = async e => {
   if (!r) {
     // The answer may have been lost while the change went through (a Wi-Fi change restarts the AP):
     // wait for PicoBoot and show what it has now
-    setErr("form", "No answer from PicoBoot, so the change may or may not be saved. Waiting for it…");
+    setErr("form", "No answer from PicoBoot-WiFi, so the change may or may not be saved. Waiting for it…");
     await pollUntilBack(2000);
-    setErr("form", "PicoBoot is back. The form shows the settings it has now.");
+    setErr("form", "PicoBoot-WiFi is back. The form shows the settings it has now.");
     return;
   }
   const d = r.data || {};
@@ -755,9 +755,9 @@ $("rs-file").onchange = async () => {
   $("rs-file").value = "";
   if (!body || typeof body !== "object" || Array.isArray(body)) { $("rs-err").textContent = "This isn't a settings file."; return; }
   // A backup never holds the password: a file that sets one would hand the Wi-Fi to whoever made it
-  if ("password" in body) { $("rs-err").textContent = "This file sets a Wi-Fi password, which a PicoBoot backup never does, so it isn't restored."; return; }
+  if ("password" in body) { $("rs-err").textContent = "This file sets a Wi-Fi password, which a PicoBoot-WiFi backup never does, so it isn't restored."; return; }
   const r = await api("/api/settings", body);
-  if (!r) { $("rs-err").textContent = "No answer from PicoBoot, so the settings may or may not be restored."; return; }
+  if (!r) { $("rs-err").textContent = "No answer from PicoBoot-WiFi, so the settings may or may not be restored."; return; }
   const d = r.data || {};
   if (!r.ok) { $("rs-err").textContent = d.message || "Error " + r.status; return; }
   if (d.wifi_restart) return waitForRestart(esc(d.ssid_in_use || settings.ssid_in_use), "password" in body, 3000);
@@ -774,14 +774,14 @@ $("reboot-yes").onclick = async () => {
   askReboot(false);
   if (restarting) return;
   const r = await api("/api/reboot", {});
-  if (!r || !r.ok) { setErr("form", (r && r.data && r.data.message) || "Can't reach PicoBoot. Not rebooted."); return; }
+  if (!r || !r.ok) { setErr("form", (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Not rebooted."); return; }
   const n = $("restart-notice");
   n.hidden = false;
   n.className = "banner";
-  n.textContent = "Rebooting. Waiting for PicoBoot to come back…";
+  n.textContent = "Rebooting. Waiting for PicoBoot-WiFi to come back…";
   await pollUntilBack(2000);
   n.className = "banner ok";
-  n.textContent = "PicoBoot is back.";
+  n.textContent = "PicoBoot-WiFi is back.";
 };
 
 show("status");

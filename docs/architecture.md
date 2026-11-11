@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.6, 2026-11-11 |
+| **Status** | Approved v1.6, 2026-11-11; draft v1.7 (D24, the release) for approval at the end of phase 5 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -20,6 +20,7 @@
 | v1.4 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
 | v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. D17: a USB install is recorded after a complete injection (or a choice, rename or upload over Wi-Fi), so the console's power-on shows it. D43: a loader stub for ordinary `.dol` files, for a later release. The phase 4 review: a wider fingerprint, no update to a firmware from before boot control format 2, Wi-Fi 1.5 s later on an "original IPL once" boot. |
+| v1.7 draft | 2026-11-11 | Phase 5: how a release is made (D24): a draft release by CI on a version tag, with the CLI and checksums; a release's version without the git hash. |
 
 ## How to read the decisions
 
@@ -467,7 +468,8 @@ Home Wi-Fi (D21) is left out of the first release.
   - `.dol` → payload (raw and UF2);
   - update-file builder (CI);
   - CLI client for the JSON API.
-- **Version:** semver, in the update header and in picotool binary info. Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (D35).
+- **Version:** semver, in the update header and in picotool binary info. Test builds are 0.N.0-dev (N = the phase) plus the git hash; a release is its plain version, and the first is 1.0.0 (D35).
+- **How it's made** (phase 5): a tag `vX.Y.Z` that matches the version in `CMakeLists.txt` starts `.github/workflows/release.yml`. It builds and tests as CI does, and makes a draft release with the USB install, the update file, the CLI (which holds the `.dol` converter) and `SHA256SUMS`, its notes from `docs/releases/X.Y.Z.md`. The owner checks the draft and publishes it.
 
 **D29 (Decision): license GPL-2.0-only.** PicoBoot-DX and the gekkoboot code it bundles are GPL-2.0, and this project reuses both.
 

@@ -2,7 +2,7 @@
 
 Hardware tests from implementation plan phase 4, run by the owner on the `phase-4-payload-ota` builds.
 
-**Status:** in progress (steps 4.1 to 4.7 checked on the bench and on phones; 4.8 console tests run once, the margin to re-measure).
+**Status:** steps 4.1 to 4.8 done (bench, phones and console); the review of 4.9 to come.
 
 **Setup:** the Pico 2 W from phases 0 to 3 (SSID suffix C2C4, RP2350 A2); `curl` and `tools/picoboot-wifi.py` from a Mac joined to the access point. The payloads are the release files Swiss r2119 (`PicoBoot/swiss_r2119.uf2`, RP2040 and RP2350 blocks) and gekkoboot r9.4 (`gekkoboot_pico.uf2`, RP2040 blocks only).
 
@@ -82,3 +82,19 @@ Build `e1a2ad5`, installed over Wi-Fi with the CLI and kept (slot B). The web UI
 | 22, 23, 26, 27, 28 | 158.0, 158.3, 158.2, 154.2, 157.3 |
 
 **Finding: the margin.** 154.1–158.3 ms, mean 156.5 ms, against 158.5–161.6 ms (mean 159.4) in phase 3: 9.0 ms below PicoBoot-DX's 165.5 ms, close to D10's 10 ms. The Pico's own start-up to PIO ready ("main() to PIO ready") is 0.38–0.48 ms; what isn't measured is before `main()`: the SDK's start-up zeroes `.bss` on the clock the boot ROM left running (the loader keeps it), and phase 4's payload writer had added 8.8 KB to its 67 KB. The console was cold (the RP2350 read 10–15 °C), which phase 3 also saw lower margins with. `aa512e1` keeps the two upload writers and lwIP's pools out of `.bss` (77 KB → 20 KB); to be measured.
+
+## 4.8 Re-test of the margin (2026-11-11)
+
+Build `aa512e1` (`.bss` 77 KB → 20 KB) over Wi-Fi into slot B, kept by its first power-on (boot 31); then ten power-ons with Swiss, one of them after the console had been off for a while. On the page, the `.dol` upload now shows its size.
+
+| Build | Boots | Margin (ms) | Mean (ms) |
+|---|---|---|---|
+| `e74bc99`, the first run | 13–28 (11 power-ons) | 154.1–158.3 | 156.5 |
+| `e74bc99`, just before the update | 29 | 159.0 | |
+| **`aa512e1`** | **31–41 (11 power-ons)** | **163.2–164.4** | **163.9** |
+| Phase 3 (`0e23c77`) | | 158.5–161.6 | 159.4 |
+| PicoBoot-DX (phase 0) | | | 165.5 |
+
+**Result:** 1.6 ms below PicoBoot-DX, well within D10's 10 ms, and the spread is 1.2 ms instead of 4.2. 57 KB less to zero gained 7.4 ms, about 0.13 ms per KB: phase 4's 10 KB had cost about 1.3 ms, the rest of the first run's low margins was most likely the cold console. CS 1544/1544 and complete on every power-on; Wi-Fi, uploads and downloads work with lwIP's pools in `.uninitialized_data`.
+
+**So that it stays:** `tests/check_layout.py` (run by CI after the build) now fails a `.bss` over 24 KB in the firmware or 8 KB in the loader, and prints both in its OK line.

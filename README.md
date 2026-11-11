@@ -94,7 +94,7 @@ python3 picoboot-wifi.py payload upload swiss_r2119.uf2        # or a .dol, or a
 python3 picoboot-wifi.py payload choose payload1|payload2|builtin
 python3 picoboot-wifi.py payload rename payload1 "Swiss r2119"
 python3 picoboot-wifi.py payload delete payload2
-python3 picoboot-wifi.py payload convert gekkoboot.dol         # .dol → raw payload, no Pico needed
+python3 picoboot-wifi.py payload convert gekkoboot.dol [--uf2] # .dol → raw payload, or a UF2 for USB; no Pico needed
 python3 picoboot-wifi.py ipl-once [--off]
 python3 picoboot-wifi.py update picoboot-wifi-X.Y.Z-update.bin
 python3 picoboot-wifi.py keep
@@ -105,6 +105,12 @@ python3 picoboot-wifi.py reboot
 ```
 
 The JSON API is described in [docs/api.md](docs/api.md).
+
+## Security
+
+- **The Wi-Fi password is the only gate.** There's no separate login, and update files aren't signed. Anyone who has the password can install any firmware, and a hostile firmware could even write the chip's one-time-programmable memory, which no USB reinstall undoes. Change the default password, and install only files from this project's releases.
+- **WPA2-AES,** and plain HTTP on the access point.
+- **A web page elsewhere can't change anything on PicoBoot,** but one left open while a phone joins its Wi-Fi could read what the page shows: the status, the settings without the password, the diagnostics and the backups.
 
 ## Recovery
 

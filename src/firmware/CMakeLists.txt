@@ -93,6 +93,9 @@ target_link_libraries(firmware PRIVATE
 # through the same include-file hook as the SDK's partition variant
 target_compile_definitions(firmware PRIVATE
     CYW43_CHIPSET_FIRMWARE_INCLUDE_FILE="cyw43_fixed_firmware.h"
+    # A failed allocation returns NULL, which net.c and lwIP answer with 503 or a dropped packet; the
+    # SDK's default panics, a crash that D12 counts (phase 5 security review)
+    PICO_MALLOC_PANIC=0
 )
 
 # The access point is at 192.168.4.1

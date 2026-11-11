@@ -20,7 +20,7 @@
 | v1.4 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2, step 2.1: the settings, their values and defaults (D40). The owner chose channel 6 as the default and named Tx power levels (low, medium, high, max) instead of a dBm number. Step 2.3: how a settings change takes effect (D41). The owner chose an access-point restart at once, a trial for Wi-Fi changes until a client joins, and a write-only password. Step 2.6: the owner set the Tx power levels to 5, 10 and 15 dBm and the chip's limit (D40), and the stalled-injection LED to blink for as long as Wi-Fi is on (D26). |
 | v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. D17: a USB install is recorded after a complete injection (or a choice, rename or upload over Wi-Fi), so the console's power-on shows it. D43: a loader stub for ordinary `.dol` files, for a later release. The phase 4 review: a wider fingerprint, no update to a firmware from before boot control format 2, Wi-Fi 1.5 s later on an "original IPL once" boot. |
-| v1.7 draft | 2026-11-11 | Phase 5: how a release is made (D24): a draft release by CI on a version tag, with the CLI and checksums; a release's version without the git hash. |
+| v1.7 draft | 2026-11-11 | Phase 5: how a release is made (D24): a draft release by CI on a version tag, with the CLI and checksums; a release's version without the git hash. The security review (D19): what the password gate means, and DNS-rebinding reads of the GETs accepted by the owner. |
 
 ## How to read the decisions
 
@@ -386,6 +386,10 @@ power on -> boot ROM -> loader (flash offset 0)
 - **Change prompt:** a banner on every page until the password is changed.
 - **The Wi-Fi password is the only gate:** no separate web login and no image signing (D11).
 - **Forgotten password:** reinstalling the USB install UF2 resets the settings.
+- **What the gate means** (phase 5 security review):
+  - Anyone with the password can install any firmware. A hostile one could do what any firmware can, including writing the RP2350's one-time-programmable memory, which a USB reinstall can't undo. Signing (D11) is what would close that.
+  - Such a client can also wear out the flash by changing settings or choices over and over. A store that changes nothing writes nothing, but the rest is accepted: it needs the password, which already allows worse.
+  - A web page elsewhere can read the GET answers through DNS rebinding, though it can't change anything (POSTs need `Host: 192.168.4.1`). So no GET answer holds the password or another secret (the owner's choice).
 - **Details:** see D30.
 
 **D20 (Decision): Wi-Fi turns off after 10 minutes without a client.**

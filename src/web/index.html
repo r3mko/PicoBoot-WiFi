@@ -754,6 +754,8 @@ $("rs-file").onchange = async () => {
   try { body = JSON.parse(await f.text()); } catch (e) { /* checked below */ }
   $("rs-file").value = "";
   if (!body || typeof body !== "object" || Array.isArray(body)) { $("rs-err").textContent = "This isn't a settings file."; return; }
+  // A backup never holds the password: a file that sets one would hand the Wi-Fi to whoever made it
+  if ("password" in body) { $("rs-err").textContent = "This file sets a Wi-Fi password, which a PicoBoot backup never does, so it isn't restored."; return; }
   const r = await api("/api/settings", body);
   if (!r) { $("rs-err").textContent = "No answer from PicoBoot, so the settings may or may not be restored."; return; }
   const d = r.data || {};

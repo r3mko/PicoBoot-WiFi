@@ -2,19 +2,20 @@
 
 | | |
 |---|---|
-| **Status** | Approved with phase 2, 2026-11-09; the phase 3 additions with phase 3, 2026-11-10 |
+| **Status** | Approved with phase 2, 2026-11-09; extended in phases 3 and 4; final for release 1.0 (phase 5) |
 | **Design** | [architecture.md](architecture.md) D18 (the API), D19 and D30 (security), D22 (features), D40 and D41 (settings) |
 
-The web UI and the CLI tool use this API. Phase 2 defines status, settings, diagnostics and reboot; phase 3 adds the firmware upload and the slot choices; phase 4 the payloads, the payload and IPL choices, and backups.
+The web UI and the CLI tool use this API: the status, settings, diagnostics and reboot; firmware updates and the slot choices; payloads, the payload and IPL choices; and backups. `api` in the status is 1.
 
 ## Common rules
 
 - **Address:** `http://192.168.4.1/api/…`, over the access point. There is no other login: the Wi-Fi password is the gate (D19).
-- **Responses** are JSON (`Content-Type: application/json`), never cached (`Cache-Control: no-store`), one per connection (`Connection: close`). The backups are files (below).
+- **Responses** are JSON (`Content-Type: application/json`), never cached (`Cache-Control: no-store`), never in another site's frame (`X-Frame-Options: DENY`), one per connection (`Connection: close`). The backups are files (below).
 - **POST bodies** are JSON, sent with `Content-Type: application/json`; anything else gets 415.
   - **Why:** a page on another site can't send that content type to the Pico without a CORS preflight, which the Pico doesn't answer. So a web page a phone opened elsewhere can't change settings through it.
 - **POSTs must be addressed to `Host: 192.168.4.1`** (or `192.168.4.1:80`); anything else gets 403.
   - **Why:** the Pico's DNS answers every name with its own address. A page opened elsewhere could otherwise point its own name at the Pico and send same-origin requests, which need no preflight (DNS rebinding).
+- **GETs carry no secrets.** lwIP's httpd doesn't hand a GET's headers to the firmware, so GETs have no Host check. A page that a client opened elsewhere can therefore read them through DNS rebinding: the status, the settings, the diagnostics and the backups. None of them holds the password, and later GET endpoints mustn't either (phase 5 security review: accepted by the owner).
 - **Body size:** at most 1024 bytes for the endpoints here; more gets 413.
 - **While an upload streams in,** other POSTs get 503 `busy`: a reboot or an access-point restart would cut it off.
 - **One transfer of a file at a time:** while a backup downloads, uploads and payload deletes get 503 `busy`, so what it sends can't change under it; a backup asked for during an upload or another backup gets 503 `busy` too.

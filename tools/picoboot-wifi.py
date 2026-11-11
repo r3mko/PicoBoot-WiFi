@@ -12,7 +12,7 @@ Command-line client for the PicoBoot-WiFi JSON API (docs/api.md). Join the Pico'
     python3 tools/picoboot-wifi.py payload choose payload1|payload2|builtin
     python3 tools/picoboot-wifi.py payload rename payload1|payload2 NAME
     python3 tools/picoboot-wifi.py payload delete payload1|payload2 [--yes]
-    python3 tools/picoboot-wifi.py payload convert FILE.dol [-o OUT] [--force]  (offline)
+    python3 tools/picoboot-wifi.py payload convert FILE.dol [--uf2] [-o OUT] [--force]  (offline)
     python3 tools/picoboot-wifi.py ipl-once [--off]
     python3 tools/picoboot-wifi.py backup payload1|payload2|firmware|settings [-o FILE] [--force]
     python3 tools/picoboot-wifi.py restore-settings FILE
@@ -594,18 +594,29 @@ def write_new(path, data, force):
         raise Refused(f"can't write {path}: {e.strerror}")
 
 
+def payload_uf2(payload):
+    """A payload UF2 for a USB install into payload 1 (D24): RP2350 blocks of 256 bytes from 0x10080000,
+    the last page padded with 0xFF, as tools/mkuf2.py makes them."""
+    padded = payload + b"\xff" * (-len(payload) % 256)
+    total = len(padded) // 256
+    return b"".join(struct.pack("<8I476sI", 0x0A324655, 0x9E5D5157, 0x00002000, PAYLOAD_BASE + n * 256, 256,
+                                n, total, 0xE48BFF59, padded[n * 256:(n + 1) * 256], 0x0AB16F30)
+                    for n in range(total))
+
+
 def cmd_payload_convert(args):
     try:
         with open(args.file, "rb") as f:
             dol = f.read()
     except OSError as e:
         raise Refused(f"can't read {args.file}: {e.strerror}")
-    out = args.output or os.path.splitext(args.file)[0] + ".bin"
+    out = args.output or os.path.splitext(args.file)[0] + (".uf2" if args.uf2 else ".bin")
     if os.path.exists(out) and not args.force:
         raise Refused(f"{out} exists already; use --force to overwrite it")
     payload = convert_dol(dol, args.file)
-    write_new(out, payload, True)
-    print(f"Wrote {out}, {len(payload)} bytes.\nSHA-256: {hashlib.sha256(payload).hexdigest()}")
+    write_new(out, payload_uf2(payload) if args.uf2 else payload, True)
+    what = "a UF2 for a USB install into payload 1" if args.uf2 else "a raw payload"
+    print(f"Wrote {out} ({what}), payload {len(payload)} bytes.\nSHA-256: {hashlib.sha256(payload).hexdigest()}")
 
 
 def cmd_ipl_once(args):
@@ -641,12 +652,14 @@ def verify_update_download(data):
 
 
 def backup_file_name(headers, what):
-    """The base name from Content-Disposition, or a default."""
+    """The name from Content-Disposition if it's a plain one of the expected kind, or a default: the
+    device doesn't choose a dotfile or a script for this directory (phase 5 security review)."""
+    default = {"settings": "picoboot-wifi-settings.json", "firmware": "picoboot-wifi-update.bin"}.get(what, what + ".bin")
     m = re.search(r'filename\s*=\s*(?:"([^"]*)"|([^;\s]+))', headers.get("Content-Disposition") or "")
-    name = (m.group(1) if m and m.group(1) is not None else m.group(2) if m else "").replace("\\", "/")
-    name = os.path.basename(name)
-    if name in ("", ".", ".."):
-        name = {"settings": "picoboot-wifi-settings.json", "firmware": "picoboot-wifi-update.bin"}.get(what, what + ".bin")
+    name = m.group(1) if m and m.group(1) is not None else m.group(2) if m else ""
+    extension = ".json" if what == "settings" else ".bin"
+    if not re.fullmatch(r"[A-Za-z0-9 _()+-][A-Za-z0-9 ._()+-]*", name) or not name.endswith(extension):
+        return default
     return name
 
 
@@ -696,6 +709,11 @@ def cmd_restore_settings(args):
         raise Refused(f"{args.file} is not JSON")
     if not isinstance(settings, dict):
         raise Refused(f"{args.file} is not a JSON object of settings")
+    if "password" in settings:
+        # A backup never holds the password: a file that sets one would hand the Wi-Fi to whoever
+        # made it (phase 5 security review). Change the password in the settings instead.
+        raise Refused(f"{args.file} sets a password, which a PicoBoot backup never does: "
+                      "it isn't one, so it isn't restored")
     body = post(args, "/api/settings", settings)
     print("Settings saved.")
     if body.get("wifi_restart"):
@@ -754,9 +772,11 @@ def make_parser():
     s.add_argument("slot", choices=slots)
     s.add_argument("--yes", "-y", action="store_true", help="don't ask for confirmation")
     s.set_defaults(func=cmd_payload_delete)
-    s = psub.add_parser("convert", help="convert a .dol into a raw payload file (no Pico needed)")
+    s = psub.add_parser("convert", help="convert a .dol into a raw payload file, or a UF2 (no Pico needed)")
     s.add_argument("file")
-    s.add_argument("-o", "--output", help="output file (default: the input's name with .bin)")
+    s.add_argument("--uf2", action="store_true",
+                   help="write a UF2 to copy onto the Pico over USB (it goes into payload 1)")
+    s.add_argument("-o", "--output", help="output file (default: the input's name with .bin, or .uf2)")
     s.add_argument("--force", action="store_true", help="overwrite an existing file")
     s.set_defaults(func=cmd_payload_convert)
     s = sub.add_parser("ipl-once", help="boot the console's own IPL at the next power-on, then go back")

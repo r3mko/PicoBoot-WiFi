@@ -397,6 +397,15 @@ docs/                       design, plan, research, API, update-file format
 | I4 | The POST answer files (`/.api`, …) answered a plain GET | Served only right after a POST |
 | I5 | The DHCP lease expiry shifted a 16-bit value as `int` | A 32-bit cast |
 
+**Code review of phase 5** (a fresh Opus 5.5 reviewer, 2026-11-11):
+- **Overall:** no high findings; one medium and one low, both fixed. Nothing else was found in the flash writes, httpd's POST paths, the DHCP changes, memory or the release workflow.
+- **Re-test before the merge:** in the console, in [phase5-results.md](research/phase5-results.md).
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Medium:** the CLI's `payload convert --uf2` wrote any payload size. Over 1.5 MB, the UF2's last blocks would overwrite firmware slot A in a USB install | Fixed in the CLI (`a5cb225`), as `tools/mkuf2.py` already refused it. CLI test |
+| 2 | **Low:** after a POST cut short, the next GET of `/.api` could read its error answer | Fixed: the answer is offered only after a POST whose body all came. The owner chose to fix it before the release |
+
 **For later releases:**
 - **A review fix is re-tested on the Pico along every path it touches,** not only by the host tests. Both bugs of the acceptance came from review fixes that passed the host tests, on paths no re-test had run: a payload upload and a delete (phase 4), and a client joined for 10 minutes (phase 5).
 - **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it.

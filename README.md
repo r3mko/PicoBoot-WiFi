@@ -4,6 +4,8 @@
 
 PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a GameCube IPL-injection modchip: at power-on it boots the homebrew of your choice (Swiss, gekkoboot, …). Once the console has started, it runs a Wi-Fi access point. There a phone or computer can update its payloads and its own firmware, change settings and make backups, without opening the console.
 
+**How it relates to PicoBoot-DX:** the injection itself (PicoBoot's PIO programs, as PicoBoot-DX has them) and the payload format carry over nearly unchanged. Everything around them is new: a loader with two firmware slots, the Wi-Fi access point and its page, the API and the command-line tool, and the updates over Wi-Fi.
+
 ## What it does
 
 - **Boots a payload at every power-on:** payload 1, payload 2, or the built-in gekkoboot. It takes the same payloads as PicoBoot and PicoBoot-DX: `swiss_rXXXX.uf2`, `gekkoboot_pico.uf2`, or a `.dol` built as an IPL replacement.

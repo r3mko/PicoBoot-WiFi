@@ -39,6 +39,7 @@ UF2_MAGIC = b"UF2\n"
 HEADER_SIZE = 256
 PAYLOAD_MAGIC = b"IPLBOOT "
 PAYLOAD_BASE = 0x10080000       # where a payload UF2 holds the payload (D16)
+PAYLOAD1_SIZE = 0x180000        # payload 1, up to firmware slot A (src/common/layout.h)
 NAME_MAX = 24
 EXPECTED_ENTRY = 0x81300000     # of an IPL payload, for the .dol converter (a copy of tools/process_ipl.py's)
 EXPECTED_BASE = 0x01300000
@@ -596,7 +597,10 @@ def write_new(path, data, force):
 
 def payload_uf2(payload):
     """A payload UF2 for a USB install into payload 1 (D24): RP2350 blocks of 256 bytes from 0x10080000,
-    the last page padded with 0xFF, as tools/mkuf2.py makes them."""
+    the last page padded with 0xFF, as tools/mkuf2.py makes them. A larger payload than payload 1 holds is
+    refused: over USB, its last blocks would overwrite firmware slot A."""
+    if len(payload) > PAYLOAD1_SIZE:
+        raise Refused(f"the payload is {len(payload)} bytes, more than payload 1 holds ({PAYLOAD1_SIZE})")
     padded = payload + b"\xff" * (-len(payload) % 256)
     total = len(padded) // 256
     return b"".join(struct.pack("<8I476sI", 0x0A324655, 0x9E5D5157, 0x00002000, PAYLOAD_BASE + n * 256, 256,

@@ -770,6 +770,19 @@ class PayloadCommandsTest(CliTestCase):
         self.assertEqual(cli.raw_payload(cli.uf2_payload(uf2, "x"), "x"), PAYLOAD)
         self.assertIn(PAYLOAD_SHA, out)
 
+    def test_convert_refuses_a_uf2_larger_than_payload_1(self):
+        # Over USB, blocks past payload 1 would land on firmware slot A at 0x10200000 (phase 5 review)
+        path = self.write(synthetic_dol(text=bytes(0x180000)), "big.dol")
+        code, _, err = self.cli("payload", "convert", path, "--uf2")
+        self.assertEqual(code, 1)
+        self.assertIn("more than payload 1 holds", err)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "big.uf2")))
+        # The largest that fits ends right below slot A
+        uf2 = cli.payload_uf2(b"\xaa" * 0x180000)
+        self.assertEqual(struct.unpack_from("<I", uf2, len(uf2) - 512 + 12)[0], 0x10200000 - 256)
+        # A raw payload goes over Wi-Fi, where the Pico checks its size
+        self.assertEqual(self.cli("payload", "convert", path)[0], 0)
+
     def test_convert_does_not_overwrite(self):
         path = self.write(synthetic_dol(), "a.dol")
         target = self.write(b"mine", "a.bin")

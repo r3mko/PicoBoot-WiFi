@@ -17,7 +17,7 @@
 | v1.3 | 2026-11-09 | Approved by the owner at the end of phase 2. Phase 2 as built (see its "As built" note), with the owner's choices made during the phase (design D40, D41, and changes to D20 and D26), and what it means for phases 3 and 4. |
 | v1.4 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3 as built (see its "As built" note), with the owner's choices made during the phase (design D11, D12, D14), the phase 2 review's items for phase 3, and the test builds of step 3.7. |
 | v1.5 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4 as built (see its "As built" note), with the owner's choices made during the phase (design D42, D43), its code review, and the `.bss` budget for phase 5. |
-| v1.6 draft | 2026-11-11 | Phase 5: the security review of step 5.1, its fixes and their re-test in the console. For approval at the end of phase 5. |
+| v1.6 draft | 2026-11-11 | Phase 5 as built (see its "As built" note): the security review of step 5.1, its fixes and their re-test in the console; the release workflow; the acceptance, its two fixes, and a rule for later releases from them. For approval at the end of phase 5. |
 
 ## How this plan works
 
@@ -369,6 +369,15 @@ docs/                       design, plan, research, API, update-file format
 | 5.4 | **Acceptance** on the DOL-001: fresh install, upgrade from PicoBoot-DX, OTA from a 0.4.0-dev build to 1.0.0 | Owner | Passed |
 | 5.5 | **Merge and tag 1.0.0** | Owner | Released |
 
+**As built (2026-11-11):** results in [phase5-results.md](research/phase5-results.md); test builds were `0.5.0-dev`, the release is `1.0.0`.
+
+| Step | What was built | The owner's choices |
+|---|---|---|
+| 5.1 | The security review by Fable 5.2 (the plan named 5.1, the model then current), below; its fixes in `360d8dd`, re-tested in the console | L1 accepted and documented |
+| 5.2 | The README for release 1.0: installing, upgrading from PicoBoot-DX, the wiring with D38's 5 V, the default password, security, recovery, the DOL-101 note. `docs/api.md` final, the release notes in `docs/releases/1.0.0.md` | |
+| 5.3 | `.github/workflows/release.yml` (D24): on a tag `vX.Y.Z` that matches `CMakeLists.txt` and has release notes, it builds, tests, checks the built version and makes a draft release with the install UF2, the update file, the CLI and `SHA256SUMS`. A release's version has no git hash. A host test took only test-build versions, so a real tag would have failed: fixed in `25da3ce`. The release build is byte-identical from a clean checkout | |
+| 5.4 | Passed on the third build of 1.0.0, with a margin of 165.2 ms, 0.3 ms below PicoBoot-DX. The first two runs found two bugs, both from review fixes:<br>• the DHCP server ignored renewals, so with 5.1's 10-minute leases every client lost its address at 10 minutes (`9a3b17b`, with a host test);<br>• `invalidate()`, from the phase 4 review, programmed flash from a `const` array in flash, so every payload upload and delete hung until the watchdog reset the Pico (`df962b8`) | |
+
 **Security review** (step 5.1, Fable 5.2, 2026-11-11):
 - **Overall:** no critical, high or medium findings; seven low and five informational. The upload parsers, the flash writers, the header and JSON parsers, the records and the DNS and DHCP servers were fuzzed on the host (about 20 million inputs, with AddressSanitizer and UndefinedBehaviorSanitizer). The fixes are in `360d8dd`.
 - **Re-test:** in the console, build `0.5.0-dev+3806ed3`: passed, in [phase5-results.md](research/phase5-results.md).
@@ -387,6 +396,11 @@ docs/                       design, plan, research, API, update-file format
 | I3 | A cut-off blob could leave a Wi-Fi area that looks whole | The Wi-Fi area's first sector, then the image's, programmed last of all. Host test |
 | I4 | The POST answer files (`/.api`, …) answered a plain GET | Served only right after a POST |
 | I5 | The DHCP lease expiry shifted a 16-bit value as `int` | A 32-bit cast |
+
+**For later releases:**
+- **A review fix is re-tested on the Pico along every path it touches,** not only by the host tests. Both bugs of the acceptance came from review fixes that passed the host tests, on paths no re-test had run: a payload upload and a delete (phase 4), and a client joined for 10 minutes (phase 5).
+- **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it.
+- **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4.
 
 ## Local builds and CI
 

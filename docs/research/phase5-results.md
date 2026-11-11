@@ -2,9 +2,9 @@
 
 Hardware tests from implementation plan phase 5, run by the owner on the `phase-5-release` builds.
 
-**Status:** in progress. Step 5.1's re-test passed; the acceptance (step 5.4) is to come.
+**Status:** step 5.1's re-test passed, and the acceptance (step 5.4) passed on its third run, build `1.0.0` (`df962b8`). The first two runs found two bugs, both fixed.
 
-**Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. Payload 1 holds Swiss r2119.
+**Setup:** the Pico 2 W from phases 0 to 4 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3. The CLI and the page run on a Mac, an iPhone and an Android phone joined to the access point. In step 5.1 payload 1 holds Swiss r2119; the acceptance erases the flash first.
 
 ## 5.1 Re-test of the security fixes (2026-11-11, in the console)
 
@@ -39,3 +39,35 @@ Build `1.0.0` (`25da3ce`). The owner got through part 1 (the upgrade from PicoBo
 Build `1.0.0` (`9a3b17b`, with the DHCP fix). The upload of step 2.3 hung again, and the Pico restarted.
 
 **Finding: an upload or a delete hung the Pico.** Before a payload slot is erased, `invalidate()` programs its first page to zeros (phase 4 review, finding 2). The zeros came from a `const` array, which the linker puts in flash (`.rodata`, `0x1001fc5c`). Flash can't be read while it's being programmed, so `flash_range_program()` stalled at the upload's first sector, with interrupts off, until the 8 s watchdog reset the Pico. A delete runs the same code. Neither was run on the Pico after that review: the 4.9 and 5.1 re-tests had no payload upload or delete, and the host tests use simulated flash. The zeros are now a RAM buffer (`.uninitialized_data`, so `.bss` is unchanged), and `storage.h` says the data must be in RAM. Every other flash write already programs from RAM: the record and log writers, and the two upload writers.
+
+## 5.4 Acceptance, third run (2026-11-11)
+
+Build `1.0.0` (`df962b8`, with both fixes). Boot numbers are the boot log's, which starts again after part 2's flash erase.
+
+| Part | Boots | Result |
+|---|---|---|
+| 1: the upgrade from PicoBoot-DX, back to DX and to PicoBoot-WiFi again | | **Passed** (the owner). Part 2's flash erase cleared its boot log |
+| 2: fresh install (`flash_nuke.uf2`, then `picoboot-wifi-1.0.0.uf2`) | 1–2 | **Passed:** the install's restart on USB power (1, `no_cs`: no console), then the built-in gekkoboot at the console's power-on (2, boot control's defaults) |
+| 2: Swiss uploaded on the Payloads tab, into payload 2 | 3–4 | **Passed:** Swiss from payload 2, complete |
+| 2: gekkoboot's `.dol` uploaded on the page (into payload 1, now the choice), payload 2 chosen again, payload 1 deleted | | **Passed** (the owner); Swiss from payload 2 at the power-ons after it |
+| 3: the `0.4.0-dev+96f3309` update over Wi-Fi into slot B | 5–6 | **Passed:** the update's restart (5), then on trial, complete (6) |
+| 3: the `1.0.0` update over Wi-Fi into slot A | 7–8 | **Passed:** the update's restart (7), then on trial, complete, kept (8) |
+| 3: power-ons on 1.0.0 | 9–13 | **Passed:** all complete |
+| 3: the password set in part 2, after both updates | | **Passed** |
+| The Mac joined for 14 minutes (the DHCP fix) | | **Passed:** still connected; before the fix it lost its address at 10 minutes |
+
+**Injection:** complete on every console power-on. CS 1544/1544 for Swiss (406.8 ms), 285/285 for the built-in gekkoboot (19.4 ms). Wi-Fi was up 785 ms after the start (boot 13).
+
+| Build | Boots | Margin (ms) | Mean (ms) |
+|---|---|---|---|
+| **`1.0.0`** | **3, 4, 8–13 (8 power-ons)** | **164.7–165.4** | **165.2** |
+| `1.0.0`, the built-in gekkoboot | 2 | 166.0 | |
+| `0.4.0-dev+96f3309` | 6 | 164.8 | |
+| `0.5.0-dev+3806ed3` (5.1 re-test) | 55, 57–62 | 160.3–163.0 | 161.6 |
+| PicoBoot-DX (phase 0) | | | 165.5 |
+
+**Margin:** 0.3 ms below PicoBoot-DX, and higher than in the 5.1 re-test. Part of that is known:
+- Payload 1 is empty, so the start-up skips its fingerprint (D17): "main() to PIO ready" is 0.4 ms, against 0.6 ms with Swiss in payload 1.
+- A release build zeroes 2 KB less `.bss` (18.2 KB), about 0.3 ms.
+
+The `0.4.0-dev` build also read 164.8 ms in this session (boot 6), against 162.7 ms in phase 4, so the rest is most likely the console's spread from one session to the next.

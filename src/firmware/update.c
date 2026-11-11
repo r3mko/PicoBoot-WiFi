@@ -128,7 +128,7 @@ update_result_t update_check_header(const uint8_t *raw, const update_env_t *env,
     h.loader = le32(raw + H_LOADER);
     h.image_size = le32(raw + H_IMAGE_SIZE);
     h.blob_size = le32(raw + H_BLOB_SIZE);
-    if (h.layout != env->layout || h.loader > env->loader) {
+    if (h.layout != env->layout || h.loader > env->loader || h.loader < UPDATE_LOADER_FLOOR) {
         return UPDATE_NEEDS_USB_INSTALL;
     }
     const bool blob = h.flags & UPDATE_FLAG_BLOB;

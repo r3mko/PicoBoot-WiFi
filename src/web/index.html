@@ -82,7 +82,7 @@ progress { width:100%; height:14px; margin-top:12px; }
 <section id="tab-status"><div class="card"><dl id="status-list"></dl></div></section>
 
 <section id="tab-pl" hidden>
-  <div id="b-usb" class="banner" hidden>This power-on booted payload 1 because it was changed over USB. It's now the choice.</div>
+  <div id="b-usb" class="banner" hidden></div>
   <div class="card"><dl id="pl-list"></dl></div>
   <div id="pl-ask" class="banner" hidden style="margin-top:12px">
     <span id="pl-ask-msg"></span>
@@ -442,6 +442,8 @@ function renderPl() {
   const p = lastStatus.payloads;
   if (!p) return;
   $("b-usb").hidden = !p.usb_install;
+  $("b-usb").textContent = "This power-on booted payload 1 because it was changed over USB." +
+    (p.chosen === "payload1" ? " It's now the choice." : "");
   const btn = (a, k, t, c) => `<button class="btn ${c || "sec"}" data-pl="${a}" data-slot="${k}">${t}</button>`;
   let h = "";
   for (const k of PLS) {
@@ -489,6 +491,17 @@ document.addEventListener("click", e => {
   }
 });
 $("pl-ask-no").onclick = () => { $("pl-ask").hidden = true; };
+
+// No backup download while an upload runs: PicoBoot answers 503, which a browser may save as the file
+document.addEventListener("click", e => {
+  const a = e.target.closest("a[download]");
+  if (!a || !uploading) return;
+  e.preventDefault();
+  let m = a.parentNode.querySelector(".dl-busy");
+  if (!m) { m = document.createElement("div"); m.className = "err dl-busy"; a.parentNode.appendChild(m); }
+  m.textContent = "Wait until the upload is done.";
+  setTimeout(() => { m.textContent = ""; }, 4000);
+});
 $("pl-ask-yes").onclick = () => { $("pl-ask").hidden = true; if (!uploading && plAct) plPost("/api/payload/delete", { slot: plAct }); };
 $("pl-ren-no").onclick = () => { $("pl-ren").hidden = true; };
 $("pl-ren-go").onclick = () => {

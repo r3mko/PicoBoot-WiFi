@@ -155,6 +155,15 @@ bool payloads_file(uint8_t slot, net_file_t *file) {
     return true;
 }
 
+// Makes a slot's payload invalid at once, before boot control says so: its first page programmed to
+// zeros (flash clears bits without an erase). A power cut in the erase that follows can then leave no
+// old header behind, which the USB rule would take for a new payload 1 (D17; phase 4 review).
+static void invalidate(uint8_t slot) {
+    static const uint8_t zeros[256];
+    storage_flash_program(slot_offset[slot], zeros, sizeof(zeros));
+    cache[slot].known = false;
+}
+
 int payloads_delete(uint8_t slot, const char **code, const char **message) {
     if (net_download_running()) {
         *code = "busy";                         // It may be this payload's backup
@@ -168,18 +177,19 @@ int payloads_delete(uint8_t slot, const char **code, const char **message) {
         *message = "that payload is the choice: choose another one first";
         return 409;
     }
-    // The name and (for payload 1) the fingerprint first, then the header: no valid payload any more
+    // The header first, then the name and (for payload 1) the fingerprint, then the erase
+    invalidate(slot);
     b.payload_name[slot][0] = '\0';
     if (slot == BOOTCTL_PAYLOAD_1) {
         b.payload1_fingerprint = 0;             // No payload: not a USB install either (D17)
     }
-    if (!storage_bootctl_store(&b)) {
+    const bool stored = storage_bootctl_store(&b);
+    storage_flash_erase(slot_offset[slot]);
+    if (!stored) {
         *code = "flash_write";
-        *message = "writing flash failed; nothing changed";
+        *message = "the payload is deleted, but writing boot control failed";
         return 500;
     }
-    storage_flash_erase(slot_offset[slot]);
-    cache[slot].known = false;
     return 200;
 }
 
@@ -225,7 +235,7 @@ static void io_sha_finish(void *ctx, uint8_t out[32]) {
 // upload into payload 1 isn't taken for a USB install at the next power-on (D17)
 static bool io_slot_emptied(void *ctx) {
     (void)ctx;
-    cache[target].known = false;
+    invalidate(target);                         // Before boot control, as in a delete
     bootctl_t b;
     storage_bootctl_load(&b);
     b.payload_name[target][0] = '\0';
@@ -271,11 +281,12 @@ static int begin(const char *path, const char *headers, uint16_t headers_len, ui
                  char *out, size_t size, size_t *len) {
     (void)path;
     upload_name[0] = '\0';
-    char name[64];
-    if (net_header(headers, headers_len, "x-name:", name, sizeof(name)) && !payloads_name_ok(name)) {
+    char name[BOOTCTL_NAME_MAX + 2];            // One more than allowed, to tell a long name
+    const int n = net_header(headers, headers_len, "x-name:", name, sizeof(name));
+    if (n >= (int)sizeof(name) || (n >= 0 && !payloads_name_ok(name))) {
         return answer_error(400, "bad_value", "X-Name is at most 24 printable ASCII characters", out, size, len);
     }
-    if (net_header(headers, headers_len, "x-name:", name, sizeof(name))) {
+    if (n > 0) {
         strcpy(upload_name, name);
     }
     bootctl_t b;

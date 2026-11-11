@@ -54,7 +54,7 @@ static void io_finish(void *ctx, uint8_t out[32]) { (void)ctx; sha_finish(&io_sh
 static bool fake_emptied(void *ctx, uint8_t slot) { (void)ctx; CHECK(slot == BOOTCTL_SLOT_B); emptied_calls++; return !emptied_fails; }
 
 static const update_io_t io = {fake_erase, fake_program, fake_read, io_start, io_update, io_finish, fake_emptied, NULL};
-static const update_env_t env = {"pico2_w", LAYOUT_VERSION, 2};
+static const update_env_t env = {"pico2_w", LAYOUT_VERSION, 4};
 
 static void reset_flash(void) {
     memset(flash, 0xA5, LAYOUT_FLASH_SIZE);     // Old contents everywhere
@@ -93,7 +93,7 @@ static file_t make_file(bool with_blob, void (*edit)(uint8_t *h)) {
     h[4] = 1; h[6] = 0; h[7] = 1;               // format 1, header size 256
     put32(h + 8, with_blob ? UPDATE_FLAG_BLOB : 0);
     put32(h + 12, LAYOUT_VERSION);
-    put32(h + 16, 2);
+    put32(h + 16, 3);
     put32(h + 20, sizeof(image));
     put32(h + 24, with_blob ? sizeof(blob) : 0);
     strcpy((char *)h + 32, "pico2_w");
@@ -182,8 +182,9 @@ static void e_header_size(uint8_t *h) { h[6] = 0; h[7] = 2; }
 static void e_board(uint8_t *h) { strcpy((char *)h + 32, "pico_w"); }
 static void e_board_unterminated(uint8_t *h) { memset(h + 32, 'b', 16); }
 static void e_layout(uint8_t *h) { put32(h + 12, LAYOUT_VERSION + 1); }
-static void e_loader_newer(uint8_t *h) { put32(h + 16, 3); }
-static void e_loader_older(uint8_t *h) { put32(h + 16, 1); }
+static void e_loader_newer(uint8_t *h) { put32(h + 16, 5); }
+static void e_loader_older(uint8_t *h) { put32(h + 16, 3); }
+static void e_before_bootctl_2(uint8_t *h) { put32(h + 16, 2); }     // A phase 3 firmware (phase 4 review)
 static void e_flags(uint8_t *h) { put32(h + 8, UPDATE_FLAG_BLOB | 2); }
 static void e_image_zero(uint8_t *h) { put32(h + 20, 0); }
 static void e_image_big(uint8_t *h) { put32(h + 20, LAYOUT_SLOT_SIZE + 1); }
@@ -202,6 +203,7 @@ static void test_header_refusals(void) {
         {e_board_unterminated, UPDATE_BAD_HEADER},
         {e_layout, UPDATE_NEEDS_USB_INSTALL},
         {e_loader_newer, UPDATE_NEEDS_USB_INSTALL},
+        {e_before_bootctl_2, UPDATE_NEEDS_USB_INSTALL},
         {e_flags, UPDATE_BAD_HEADER},
         {e_image_zero, UPDATE_BAD_HEADER},
         {e_image_big, UPDATE_BAD_HEADER},

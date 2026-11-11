@@ -133,7 +133,8 @@ static const char *message(update_result_t r) {
         case UPDATE_UNSUPPORTED_FORMAT: return "this update file has a format this firmware doesn't know";
         case UPDATE_BAD_HEADER: return "the update file's header is damaged";
         case UPDATE_WRONG_BOARD: return "this update is for another board";
-        case UPDATE_NEEDS_USB_INSTALL: return "this update needs a newer loader or another flash layout: install it over USB";
+        case UPDATE_NEEDS_USB_INSTALL: return "this update needs a newer loader or another flash layout, or it's a "
+                                              "firmware from before phase 4 that can't read this boot control: install it over USB";
         case UPDATE_BAD_SIZE: return "the upload's length doesn't match the update file's header";
         case UPDATE_NEEDS_BLOB: return "this update file has no Wi-Fi blob, and the one in flash doesn't match";
         case UPDATE_BAD_IMAGE: return "the firmware image doesn't match its SHA-256 (damaged file or flash)";

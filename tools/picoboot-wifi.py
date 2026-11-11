@@ -551,8 +551,11 @@ def cmd_payload_upload(args):
         # The whole payload may have gone through with only the answer lost: ask the Pico what it holds
         sys.stderr.write("No answer from the Pico; checking what happened...\n")
         st = wait_for_pico(args)
-        slot = (st.get("payloads") or {}).get(target) or {}
-        if slot.get("valid") and slot.get("sha256") == digest:
+        pl_after = st.get("payloads") or {}
+        slot = pl_after.get(target) or {}
+        # It also became the choice: the same payload there already, with the upload cut off before
+        # anything was erased, would match too (phase 4 review)
+        if slot.get("valid") and slot.get("sha256") == digest and pl_after.get("chosen") == target:
             print(f"The upload went through: {slot_label(target)} holds it.\nSHA-256: {digest}")
             return
         raise Refused(f"the upload's answer was lost, and {slot_label(target)} doesn't hold this payload: "

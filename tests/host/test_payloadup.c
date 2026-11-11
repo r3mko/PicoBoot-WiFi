@@ -232,10 +232,13 @@ static void test_fingerprint(void) {
     put_be32((uint8_t *)region + 8, 4096);
     const uint32_t a = payload_fingerprint(region, sizeof(region));
     CHECK(a != 0);
-    ((uint8_t *)region)[100] ^= 1;                                   // In the first 256 bytes
+    ((uint8_t *)region)[128] ^= 1;                                   // A sampled word (32 of 1024)
     CHECK(payload_fingerprint(region, sizeof(region)) != a);
-    ((uint8_t *)region)[100] ^= 1;
-    ((uint8_t *)region)[2000] ^= 1;                                  // Elsewhere: not covered (D17)
+    ((uint8_t *)region)[128] ^= 1;
+    ((uint8_t *)region)[4000] ^= 1;                                  // In the last 256 bytes
+    CHECK(payload_fingerprint(region, sizeof(region)) != a);
+    ((uint8_t *)region)[4000] ^= 1;
+    ((uint8_t *)region)[2000] ^= 1;                                  // Between the samples: not covered (D17)
     CHECK(payload_fingerprint(region, sizeof(region)) == a);
 }
 

@@ -165,7 +165,7 @@ static int get_status(char *out, size_t size, size_t *len) {
     json_bool(&j, "password_is_default", settings_default_password(wifi_settings()));
     json_bool(&j, "reverted", wifi_reverted());
     json_object_end(&j);
-    payloads_status(&j, r->payload_usb_install);
+    payloads_status(&j, r->payload_usb_install && r->result != INJECTION_SKIPPED);   // It booted payload 1
     json_object_end(&j);
     return finish(&j, out, size, len);
 }

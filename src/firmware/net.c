@@ -537,10 +537,10 @@ bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_a
     return ap_bss_up();
 }
 
-bool net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size) {
+int net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size) {
     const char *end, *v = header_value(headers, headers_len, name, &end);
-    if (!v || out_size == 0) {
-        return false;
+    if (!v) {
+        return -1;
     }
     size_t n = 0;
     while (v + n < end && v[n] && v[n] != '\r' && v[n] != '\n') {
@@ -549,12 +549,11 @@ bool net_header(const char *headers, uint16_t headers_len, const char *name, cha
     while (n && v[n - 1] == ' ') {
         n--;
     }
-    if (n >= out_size) {
-        return false;
+    if (n < out_size) {
+        memcpy(out, v, n);
+        out[n] = '\0';
     }
-    memcpy(out, v, n);
-    out[n] = '\0';
-    return true;
+    return (int)n;
 }
 
 bool net_upload_running(void) {

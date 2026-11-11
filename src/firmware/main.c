@@ -49,6 +49,8 @@
 #define FIRST_CS_TIMEOUT_US  (3 * 1000 * 1000)      // No CS by then: no console (bench)
 #define INJECTION_TIMEOUT_US (10 * 1000 * 1000)     // Swiss (1.3 MB) takes about 0.4 s
 #define WATCHDOG_MS          8000                   // A hang becomes a reboot the loader counts (D12)
+#define SKIPPED_IPL_WAIT_MS  1500                   // "Original IPL once": the console's own IPL read is
+                                                    // over by then (Swiss's injection ends ~0.6 s in)
 
 #ifndef PICOBOOT_WIFI_TEST_CRASH
 #define PICOBOOT_WIFI_TEST_CRASH 0                  // Test builds that crash on purpose (plan step 3.7)
@@ -98,17 +100,16 @@ static void read_boot_info(void) {
     }
 }
 
-// The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid
-static injection_payload_t choose_payload(const bootctl_t *b) {
+// The payload boot control asks for (design D15), or the built-in IPL if that one isn't valid. `stored`:
+// boot control was read from flash, not the defaults.
+static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
     injection_payload_t payload = {0};
     // D17: payload 1 changed since it was recorded, so a USB install wrote it: it boots, whatever the
     // choice. A short fingerprint, quick enough before the injection (C1).
     report.payload1_fingerprint = payload_fingerprint(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE);
-    uint8_t chosen = b->active_payload;
-    if (report.payload1_fingerprint && report.payload1_fingerprint != b->payload1_fingerprint) {
-        chosen = BOOTCTL_PAYLOAD_1;
-        report.payload_usb_install = true;
-    }
+    bool usb_install;
+    const uint8_t chosen = payload_choose(b, stored, report.payload1_fingerprint, &usb_install);
+    report.payload_usb_install = usb_install;
     report.payload_chosen = chosen;
     if (chosen == BOOTCTL_PAYLOAD_1) {
         payload = (injection_payload_t){PAYLOAD1, payload_check(PAYLOAD1, LAYOUT_PAYLOAD1_SIZE), true};
@@ -306,15 +307,21 @@ int main(void) {
     report.payload_chosen = BOOTCTL_NONE;
     if (report.power_on) {
         bootctl_t bootctl;
-        storage_bootctl_load(&bootctl);
+        const bool stored = storage_bootctl_load(&bootctl);
 #if PICOBOOT_WIFI_TEST_BUILD
         report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
 #endif
-        const injection_payload_t payload = choose_payload(&bootctl);
+        const injection_payload_t payload = choose_payload(&bootctl, stored);
         if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {
             // "Original IPL once" (D22): no injection, so the console starts its own IPL (to set
-            // its clock or language); cleared below, once the injection's time is over
+            // its clock or language); cleared below. Nothing goes to the console, so the report names
+            // no payload (docs/api.md); and Wi-Fi waits until the console's own IPL read is over, as
+            // it waits for an injection (D9: the radio's start-up current; phase 4 review).
             report.result = INJECTION_SKIPPED;
+            report.payload = PAYLOAD_SOURCE_NONE;
+            report.payload_chosen = BOOTCTL_NONE;
+            report.payload_words = 0;
+            sleep_ms(SKIPPED_IPL_WAIT_MS);
         } else {
             TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
                   report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
@@ -322,27 +329,10 @@ int main(void) {
             TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
                   (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
         }
-        // D17 and "original IPL once" into boot control, now that flash may be written
-        bool changed = false;
-        if (report.payload_usb_install) {
-            // Payload 1 stays the choice, its name unknown. Its fingerprint is recorded only after a
-            // complete injection (D17): the drag-and-drop reboots the Pico on USB power, without a
-            // console, and until a console took it each power-on counts as the first after the USB
-            // install, so the page says so at the one the user sees. A choice, a rename or an upload
-            // over Wi-Fi records it too (payloads.c).
-            if (bootctl.active_payload != BOOTCTL_PAYLOAD_1 || bootctl.payload_name[BOOTCTL_PAYLOAD_1][0]) {
-                bootctl.active_payload = BOOTCTL_PAYLOAD_1;
-                bootctl.payload_name[BOOTCTL_PAYLOAD_1][0] = '\0';
-                changed = true;
-            }
-            if (report.result == INJECTION_COMPLETE) {
-                bootctl.payload1_fingerprint = report.payload1_fingerprint;
-                changed = true;
-            }
-        } else if (report.payload1_fingerprint != bootctl.payload1_fingerprint) {
-            bootctl.payload1_fingerprint = report.payload1_fingerprint;     // Payload 1 isn't valid any more
-            changed = true;
-        }
+        // D17 and "original IPL once" into boot control, now that flash may be written. A choice, a
+        // rename or an upload over Wi-Fi settles a USB install too (payloads.c).
+        bool changed = payload_record(&bootctl, report.payload1_fingerprint, report.payload_usb_install,
+                                      report.result == INJECTION_COMPLETE);
         if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {
             bootctl.flags &= (uint8_t)~BOOTCTL_FLAG_ORIGINAL_IPL_ONCE;
             changed = true;

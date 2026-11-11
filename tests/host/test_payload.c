@@ -83,7 +83,78 @@ static void test_upload_target(void) {
     CHECK(payload_upload_target(77) == BOOTCTL_PAYLOAD_2);
 }
 
+static void test_fingerprint(void) {
+    make(4000);
+    const uint32_t a = payload_fingerprint(region, REGION_WORDS * 4);
+    CHECK(a != 0);
+    region[500] ^= 1;                       // A sampled word: index 32 * 1000 / 64
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) != a);
+    region[500] ^= 1;
+    region[990] ^= 1;                       // In the last 256 bytes
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) != a);
+    region[990] ^= 1;
+    region[100] ^= 1;                       // In the first 256 bytes, past the header, not sampled
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) == a);
+    region[100] ^= 1;
+    make(3996);                             // Another size
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) != a);
+    make(36);                               // The smallest payload
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) != 0);
+    make(4000);
+    region[999] = 0;                        // No footer: not a payload
+    CHECK(payload_fingerprint(region, REGION_WORDS * 4) == 0);
+}
+
+// D17 over a sequence of power-ons: payload_choose(), the injection, payload_record()
+static uint8_t power_on(bootctl_t *b, bool stored, uint32_t fingerprint, bool complete, bool *usb) {
+    const uint8_t chosen = payload_choose(b, stored, fingerprint, usb);
+    payload_record(b, fingerprint, *usb, complete);
+    return chosen;
+}
+
+static void test_usb_rule(void) {
+    bootctl_t b;
+    memset(&b, 0, sizeof(b));
+    bool usb;
+
+    // Recorded payload 1, payload 2 chosen: nothing to do
+    b.payload1_fingerprint = 111;
+    b.active_payload = BOOTCTL_PAYLOAD_2;
+    strcpy(b.payload_name[0], "Swiss");
+    CHECK(power_on(&b, true, 111, true, &usb) == BOOTCTL_PAYLOAD_2 && !usb);
+
+    // A USB install: the drag-and-drop's reboot on USB power (no console), then the console's power-on
+    CHECK(power_on(&b, true, 222, false, &usb) == BOOTCTL_PAYLOAD_1 && usb);
+    CHECK(b.active_payload == BOOTCTL_PAYLOAD_1 && b.payload_name[0][0] == '\0' && b.payload1_fingerprint == 111);
+    CHECK(power_on(&b, true, 222, true, &usb) == BOOTCTL_PAYLOAD_1 && usb);     // The page says so here
+    CHECK(b.payload1_fingerprint == 222);
+    CHECK(power_on(&b, true, 222, true, &usb) == BOOTCTL_PAYLOAD_1 && !usb);    // Settled
+
+    // Original IPL once (not complete) keeps it pending
+    CHECK(power_on(&b, true, 333, false, &usb) == BOOTCTL_PAYLOAD_1 && usb && b.payload1_fingerprint == 222);
+    CHECK(power_on(&b, true, 333, true, &usb) == BOOTCTL_PAYLOAD_1 && usb && b.payload1_fingerprint == 333);
+
+    // A choice over Wi-Fi while one is pending settles it (payloads.c records the fingerprint)
+    CHECK(power_on(&b, true, 444, false, &usb) == BOOTCTL_PAYLOAD_1 && usb);
+    b.active_payload = BOOTCTL_PAYLOAD_2;
+    b.payload1_fingerprint = 444;
+    CHECK(power_on(&b, true, 444, true, &usb) == BOOTCTL_PAYLOAD_2 && !usb);
+
+    // Payload 1 deleted or cut off (fingerprint 0): no USB install; 0 is recorded
+    CHECK(power_on(&b, true, 0, true, &usb) == BOOTCTL_PAYLOAD_2 && !usb && b.payload1_fingerprint == 0);
+    CHECK(power_on(&b, true, 0, true, &usb) == BOOTCTL_PAYLOAD_2 && !usb);
+
+    // Blank boot control (a USB install of the firmware): payload 1 is the default choice, recorded
+    // without a USB-install notice (phase 4 review)
+    memset(&b, 0, sizeof(b));
+    CHECK(power_on(&b, false, 555, true, &usb) == BOOTCTL_PAYLOAD_1 && !usb && b.payload1_fingerprint == 555);
+    CHECK(power_on(&b, true, 555, true, &usb) == BOOTCTL_PAYLOAD_1 && !usb);
+    CHECK(!payload_record(&b, 555, false, true));                               // Nothing to store
+}
+
 int main(void) {
+    test_fingerprint();
+    test_usb_rule();
     test_upload_target();
     test_valid_payloads_are_rounded_up_to_whole_transfers();
     test_sizes_that_dont_fit_are_refused();

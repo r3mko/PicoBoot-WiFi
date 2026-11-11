@@ -99,7 +99,7 @@ What the status page shows (D22).
 | `chosen` | What the next power-on injects: `payload1`, `payload2` or `builtin` (the built-in gekkoboot, which also boots when the chosen payload isn't valid) |
 | `upload_target` | Where the next upload goes: the payload slot that isn't the choice; payload 2 while the built-in is the choice (D42) |
 | `original_ipl_once` | The next power-on boots the console's own IPL, then this clears itself |
-| `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17). Every power-on says so until a complete injection, or a choice, rename or upload over Wi-Fi, records the new payload 1 |
+| `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17). Every power-on says so until a complete injection, or a choice, rename or upload over Wi-Fi, records the new payload 1. Not on an "original IPL once" boot, which boots nothing |
 | `payloadN.valid` | It holds a payload with a good header, size and footer |
 | `payloadN.name` | The name you gave it (D42); `""` for none, e.g. after a USB install |
 | `payloadN.sha256` | Of the payload's own bytes; `null` while an upload runs and it isn't known yet |
@@ -197,7 +197,7 @@ The last boot and the boot log (D22, D39).
 | `cs_high_at_ready` | CS level at "PIO ready" |
 | `cs_pulldown_test` | The boot ran in the CS pull-down test mode |
 | `chip_stepping`, `rom` | As in the status |
-| `payload_usb_install` | Payload 1 had changed since it was recorded, so it booted (D17) |
+| `payload_usb_install` | Payload 1 had changed since it was recorded, as a USB install changes it, so it booted (D17); on a `skipped` boot, it boots at the next power-on |
 | `loader` | The loader's version |
 | `trial` | The loader started this slot on trial (D12) |
 | `trial_failed` | The other slot's trial failed in this session: it crashed, or held no image |
@@ -228,18 +228,20 @@ An over-the-air update (D11). The body is an update file ([update-format.md](upd
 
 ## POST /api/boot
 
-The firmware page's choices (D12, D13). The body holds exactly one of:
+The boot choices: the firmware slots (D12, D13), the payload (D15) and the console's own IPL once (D22). The body holds exactly one of:
 
 | Body | What it does | Answer |
 |---|---|---|
 | `{"keep": true}` | Keeps the running firmware, which is on trial: it becomes the active one (D12) | `{"kept": true}`; 409 `not_on_trial` if it isn't on trial |
 | `{"slot": "A"}` or `"B"` | Boots that slot (D13) | `{"rebooting": true}`, then a warm reboot half a second later; `{"rebooting": false}` if it's the running slot already; 409 `not_bootable` if it's empty or holds no PicoBoot-WiFi firmware |
+| `{"payload": "payload1"}`, `"payload2"` or `"builtin"` | The payload for the next power-ons (D15) | `{"payload": ...}`; 409 `not_valid` if that slot holds no valid payload |
+| `{"original_ipl_once": true}` (or `false`) | The next power-on boots the console's own IPL, e.g. to set its clock or language; then it clears itself | `{"original_ipl_once": true}` |
+
+The slot choices:
 
 - **Back to the active slot from a firmware on trial:** the trial is abandoned. That slot stays unkept and is never a fallback.
 - **To a kept slot:** it becomes the active one. A running firmware from a USB install counts as kept from then on.
 - **To any other slot with a firmware** (from a USB install, on trial, unkept or failed): it goes on trial (D12). After a USB install the other slot may hold anything, so it's never made active straight away.
-| `{"payload": "payload1"}`, `"payload2"` or `"builtin"` | The payload for the next power-ons (D15) | `{"payload": ...}`; 409 `not_valid` if that slot holds no valid payload |
-| `{"original_ipl_once": true}` (or `false`) | The next power-on boots the console's own IPL, e.g. to set its clock or language; then it clears itself | `{"original_ipl_once": true}` |
 
 Payload choices take effect at the next power-on; nothing reboots.
 
@@ -254,7 +256,7 @@ A payload upload (D15, D16, D42). The body is a payload UF2 (any family: the Pic
 {"installed": true, "slot": "payload2", "name": "Swiss r2119", "size": 1349956, "sha256": "9f2c…"}
 ```
 
-- **Refusals** answer 400: `not_a_payload` (neither format, no payload blocks at `0x10080000`, e.g. the USB install file), `bad_uf2` (a broken block, or the payload's blocks not in order), `too_large` (more than the slot: 1.5 MB for payload 1, 1.5 MB − 4 KB for payload 2), `bad_payload` (the size or footer, or cut short), `bad_readback`, `incomplete`, `bad_value` (the name). The ones from the header come before any flash is touched; the rest leave the slot without a valid payload, and the choice unchanged. Also 500 `flash_write`, 503 `busy`, 415 as for the firmware upload.
+- **Refusals** answer 400: `not_a_payload` (neither format, no payload blocks at `0x10080000`, e.g. the USB install file), `bad_uf2` (a broken block, or the payload's blocks not in order), `too_large` (more than the slot: 1.5 MB for payload 1, 1.5 MB − 4 KB for payload 2), `bad_payload` (the size or footer, or cut short), `bad_readback`, `incomplete`, `bad_value` (the name). Refusals within the first 4 KB of the payload (the header's among them) come before any flash is touched: the slot and its name stay as they were. Later ones leave the slot without a valid payload, and the choice unchanged. Also 500 `flash_write`, 503 `busy`, 415 as for the firmware upload.
 
 ## POST /api/payload/name and /api/payload/delete
 

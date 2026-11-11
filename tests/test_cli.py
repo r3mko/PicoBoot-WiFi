@@ -674,7 +674,10 @@ class PayloadUploadTest(CliTestCase):
         patcher = mock.patch.object(cli, "UPLOAD_READ_TIMEOUT", 0.3)
         patcher.start()
         self.addCleanup(patcher.stop)
-        for after in (payload_status(), payload_status("payload1", "payload2", p2=slot_of(b"other", "Other"))):
+        # Nothing there; another payload there; the same payload there already but not chosen, as when the
+        # upload was cut off before anything was erased (phase 4 review)
+        for after in (payload_status(), payload_status("payload1", "payload2", p2=slot_of(b"other", "Other")),
+                      payload_status("payload1", "payload2", p2=slot_of(PAYLOAD, "A"))):
             self.pico.route("POST", "/api/payload", ("hang",))
             self.pico.route("GET", "/api/status", (200, payload_status()), (200, after))
             code, _, err = self.cli("--timeout", "0.5", "payload", "upload", self.write(PAYLOAD, "a.bin"), "--yes")

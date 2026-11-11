@@ -69,9 +69,9 @@ bool net_start(const net_ap_t *ap, net_page_fn page, net_action_fn action, net_a
                const net_upload_t *const *uploads, const net_download_t *download);
 
 // The value of a request header (`name` in lower case with its colon, e.g. "x-name:") from the
-// headers a net_upload_t's begin() gets, without spaces around it; false if there's none or it
-// doesn't fit out_size
-bool net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size);
+// headers a net_upload_t's begin() gets, without spaces around it. Returns its length, or -1 if there
+// is no such header; the value is copied into out only if it fits (length < out_size).
+int net_header(const char *headers, uint16_t headers_len, const char *name, char *out, size_t out_size);
 
 // Restarts the access point with other settings (design D41); every client drops off. The HTTP
 // server keeps running. Call from the main loop, not from an lwIP callback. Returns false if the

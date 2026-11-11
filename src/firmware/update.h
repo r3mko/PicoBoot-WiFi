@@ -19,6 +19,10 @@
 #define UPDATE_BOARD_MAX        15u             // Characters; the field is 16 bytes, zero-padded
 #define UPDATE_VERSION_MAX      31u             // Characters; the field is 32 bytes, zero-padded
 #define UPDATE_HEADER_HASHED    224u            // The header's SHA-256 covers bytes 0 to 223, and follows them
+// The oldest firmware an update may bring, by its loader requirement: loader 3 came with boot control
+// format 2 (D42), and a firmware built for an older loader reads only format 1, so it would run on
+// the defaults (phase 4 review). Later formats only add fields, so this stays 3.
+#define UPDATE_LOADER_FLOOR     3u
 
 // The outcome, as docs/update-format.md names them
 typedef enum {

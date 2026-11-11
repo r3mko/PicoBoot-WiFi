@@ -30,11 +30,17 @@ jobs:
           test -f "docs/releases/$version.md" || { echo "docs/releases/$version.md is missing"; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
+      # The runners' DNS (Azure, 168.63.129.16) didn't resolve Ubuntu's package servers, so apt in the
+      # image build found no packages (2026-11-11): Docker gets public resolvers, which the image build
+      # uses too
+      - name: Public DNS for Docker
+        run: |
+          echo '{"dns": ["8.8.8.8", "1.1.1.1"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
       # The same image as local builds and build.yml: SDK 2.3.1, picotool 2.3.1, GCC 14.2
       - name: Build the build image
-        # On the host's network: in the first CI run, the image build's own network couldn't resolve
-        # archive.ubuntu.com, so apt found no packages
-        run: docker build --network host -t picoboot-wifi-build docker/
+        run: docker build -t picoboot-wifi-build docker/
 
       - name: Build
         run: >

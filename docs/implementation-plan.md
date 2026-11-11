@@ -368,6 +368,24 @@ docs/                       design, plan, research, API, update-file format
 | 5.4 | **Acceptance** on the DOL-001: fresh install, upgrade from PicoBoot-DX, OTA from a 0.4.0-dev build to 1.0.0 | Owner | Passed |
 | 5.5 | **Merge and tag 1.0.0** | Owner | Released |
 
+**Security review** (step 5.1, Fable 5.2, 2026-11-11):
+- **Overall:** no critical, high or medium findings; seven low and five informational. The upload parsers, the flash writers, the header and JSON parsers, the records and the DNS and DHCP servers were fuzzed on the host (about 20 million inputs, with AddressSanitizer and UndefinedBehaviorSanitizer). The fixes are in `360d8dd`.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| L1 | A page a client opened elsewhere can read the GET answers through DNS rebinding (httpd gives the GET path no headers for a Host check) | Accepted by the owner: no GET answer holds a secret; documented in `docs/api.md`, D19 and the README |
+| L2 | A failed `malloc` panicked (the SDK's default), a crash D12 counts; the 503 paths never ran | `PICO_MALLOC_PANIC=0` |
+| L3 | The DHCP option search could read past the message | A minimum length per option, and the search stays within the bytes received |
+| L4 | Eight made-up MAC addresses held all DHCP leases for a day | 10-minute leases; an expired one is taken over by a request too |
+| L5 | Restoring a crafted settings file could set a password the owner doesn't know | The page and the CLI refuse a file that sets a password |
+| L6 | The CLI saved a backup under any name the device sent (a dotfile, a script) | Only a plain name with the expected extension, else the default. CLI test |
+| L7 | The page could be framed by another site, for a tricked click | `X-Frame-Options: DENY`, `frame-ancestors 'none'` |
+| I1 | What D11 implies: anyone with the password can install any firmware, which could also write the OTP | Documented in D19 and the README |
+| I2 | Repeated stores could wear the record sectors | A store that changes nothing writes nothing; the rest is accepted (it needs the password) |
+| I3 | A cut-off blob could leave a Wi-Fi area that looks whole | The Wi-Fi area's first sector, then the image's, programmed last of all. Host test |
+| I4 | The POST answer files (`/.api`, …) answered a plain GET | Served only right after a POST |
+| I5 | The DHCP lease expiry shifted a 16-bit value as `int` | A 32-bit cast |
+
 ## Local builds and CI
 
 - **Local:** Opus builds in Docker (`docker/Dockerfile`: Ubuntu, SDK 2.3.1, picotool 2.3.1, arm-none-eabi-gcc), the same setup the size research used ([sizes.md](research/sizes.md)). Test UF2s go to the owner from there or from CI.

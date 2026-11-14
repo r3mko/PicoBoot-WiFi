@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.10, 2026-11-14 |
+| **Status** | Approved v1.10, 2026-11-14; draft v1.11 (release 1.0.1 as built) for approval at the end of release 1.0.1 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -22,6 +22,7 @@
 | v1.8 | 2026-11-14 | Approved by the owner. For later releases: a fourth wire for the console's data to U10 (the CubeSB board's GPX pad), an option the owner has. |
 | v1.9 | 2026-11-14 | Approved by the owner. Step 5.3: the `v1.0.0` tag's run of the release workflow replaces the fork test. |
 | v1.10 | 2026-11-14 | Approved by the owner. Release 1.0.1, a tidy end to the injection, from the research in [injection-end.md](research/injection-end.md): the owner chose DATA's input off as well, and a focused re-test. |
+| v1.11 draft | 2026-11-14 | Release 1.0.1 as built so far: its code review, and the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps). |
 
 ## How this plan works
 
@@ -434,8 +435,22 @@ docs/                       design, plan, research, API, update-file format
 | R1 | **The code:**<br>• `counters_stop()` right after the counters' snapshot, in `inject()`;<br>• in `injection_finish()`, the bus priority back to 0 once the DMA is done, and DATA's input off once the state machines are disabled | Opus | Host tests, the layout check and CI pass |
 | R2 | **Version and notes:** `CMakeLists.txt` at `1.0.1`, the release notes in `docs/releases/1.0.1.md`. As in phase 5, every build reads `1.0.1`, so builds are named by their SHA-256 | Opus | The owner approved the notes |
 | R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
-| R4 | **Focused re-test** on the DOL-001, on the build after R3:<br>• on 1.0.0 first, note the Diagnostics page's "DMA 64 KB" figure;<br>• update over Wi-Fi from 1.0.0;<br>• 10 cold console boots, each complete, with its margin;<br>• on USB power without the console: "no console seen", Wi-Fi up;<br>• the page up, and the "DMA 64 KB" figure compared;<br>• optional, with a multimeter: the DATA line's idle voltage in a game, on 1.0.0 and on 1.0.1 | Owner | Passed; results in `docs/research/release-1.0.1-results.md` |
+| R4 | **Focused re-test** on the DOL-001, on the build after R3:<br>• update over Wi-Fi from 1.0.0;<br>• 10 cold console boots, each complete, with its margin;<br>• on USB power without the console: "no console seen", Wi-Fi up;<br>• the page up;<br>• optional, with a multimeter: the DATA line's idle voltage in a game, on 1.0.0 and on 1.0.1 | Owner | Passed; results in `docs/research/release-1.0.1-results.md` |
 | R5 | **Merge and tag `v1.0.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**As built so far:** R1 in `c6187ad`; R2 in `5541d0b`, and the owner approved the release notes.
+
+**Code review of release 1.0.1** (a fresh Opus 5.5 reviewer, 2026-11-14):
+- **Overall:** no defects in the code. Checked against SDK 2.3.1: the three register writes touch nothing else, and their order is safe on every path through `injection_finish()`. Nothing after them reads DATA, the counters or the bus priority. Wi-Fi's PIO, DMA and clock aren't affected. After its input goes off, the DATA pad is in its reset state, as after every warm reboot of 1.0.0.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Medium:** R4 compared a "DMA 64 KB" figure that only test builds show, on their `/test` page; the Diagnostics tab doesn't have it | Dropped from R4, the owner's choice: the priority reset comes after the console has its payload, and the write has no side effect |
+| 2 | **Low:** the research note called E9's 2.2 V a phase 0 measurement; it's the erratum's figure | Fixed in the note |
+| 3 | **Low:** no test covers the new steps: the host tests don't compile `counters.c` or `injection.c`, and the PIO simulator doesn't model `counters_stop()` | Accepted by the owner: three register writes, checked against the SDK by the review |
+| 4 | **Note:** the code comment called priority 0 "the SDK's"; it's the register's reset value, and the SDK never sets it | Fixed |
+| 5 | **Note:** starting the counters again later also needs their IRQ flags cleared | Added to the note |
+| 6 | **Note:** R4's incomplete path is the no-console case, which runs the same new lines as a stall | No change |
 
 ## Local builds and CI
 

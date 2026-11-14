@@ -24,7 +24,7 @@ Design D31 says the counter "counts every CS pulse until the injection ends": th
 - **Wi-Fi's PIO:** `pio_claim_free_sm_and_add_program_for_gpio_range()` searches the PIO blocks from the last one down (`while (pio_num--)`), so the driver lands in pio2, which nothing else uses. Freeing pio0 or pio1 doesn't move it.
 - **Wi-Fi's DMA:** two channels, claimed without a preference, paced by its PIO.
 - **Bus priority:** with "DMA first", the CPU waits when it and the DMA reach for the same memory at once. At the SPI link's rate that's rare, so no visible effect is expected either way. Priority 0 is the SDK's default, where they take turns.
-- **One figure may move:** the Diagnostics page's "DMA 64 KB" time (`flash_dma_64k_us()`) is measured after the injection, so far under "DMA first". The re-test compares it with 1.0.0's.
+- **One figure may move:** the "DMA 64 KB" time (`flash_dma_64k_us()`) is measured after the injection, so far under "DMA first". Only test builds show it, on their `/test` page, so the re-test leaves it out (the code review, the owner's choice).
 
 ## 3. The CS counters
 
@@ -35,11 +35,11 @@ Design D31 says the counter "counts every CS pulse until the injection ends": th
   - gekkoboot relies on this: holding reset or D-Pad Left turns a Qoob modchip off and returns from `main()`, which "reboots into the original IPL". That only works if a hot reset reads the IPL from U10 again.
   - So after a reset the counters should see a new burst, probably like a boot's 1,544 CS edges (phase 0). Not measured.
 - **The count alone can't tell a reset apart:** after boot the console also uses U10 for its fonts (large ROM reads), the clock and SRAM. gekkoboot itself writes to U10's EXI device on every boot (address `0xC0000000`, the Qoob's off switch). A reset shows clearly only in the burst's timing, or in the addresses on a fourth wire (the plan's later-releases item: reads from the start of the ROM).
-- **Stopping them closes nothing:** a later feature can start the counters again (`counters_start()`).
+- **Stopping them closes nothing:** a later feature can start the counters again with `counters_start()`, after clearing their PIO IRQ flags 2 and 3, which stay set (otherwise `counters_first_*_seen()` is true at once).
 
 ## 4. The DATA pin after its release
 
-- **Today:** the DATA pad keeps its input enabled, with the reset pull-down. When no EXI device drives the line, RP2350-E9 (A2 chips, the owner's) could hold it at about 2.2 V through a ~120 µA leakage the pull-down can't overcome, as phase 0 measured on CS.
+- **Today:** the DATA pad keeps its input enabled, with the reset pull-down. When no EXI device drives the line, RP2350-E9 (A2 chips, the owner's) could hold it at about 2.2 V through a ~120 µA leakage the pull-down can't overcome. Those figures are the erratum's (datasheet Appendix D.5.1, quoted in phase 0); phase 1 saw its effect on CS, which read high, but no voltage was measured.
 - **Harmless:** whichever device the console selects drives the line easily. PicoBoot and PicoBoot-DX have always left the pad like this.
 - **Turning the input off** (`gpio_set_input_enabled(INJECTION_PIN_DATA, false)`) removes that leakage path. Nothing reads DATA after the injection: `injection_complete()` reads the state machine's program counter, not the pin.
 - **Optional check:** with a multimeter, the DATA line's idle voltage with the console in a game, on 1.0.0 and on 1.0.1.
@@ -51,4 +51,4 @@ The owner's choices (2026-11-14): the tidy end with DATA's input off, and a focu
 1. **Stop the counters right after their snapshot** (`counters_stop()`, from `inject()` in `main.c`). It brings the code in line with D31.
 2. **In `injection_finish()`:** set the bus priority back to 0 once the DMA is done, and turn DATA's input off once the state machines are disabled.
 3. **Left as they are:** the loaded programs, the claimed state machines and DMA channel, the CS pull-up, and DATA's slew, drive strength and pull-down. They have no effect, and leaving them keeps the change small.
-4. **The re-test** covers both paths through `injection_finish()`: a complete injection (a console boot) and an incomplete one (the Pico on USB alone: "no console seen"), plus Wi-Fi and the "DMA 64 KB" figure.
+4. **The re-test** covers both paths through `injection_finish()`: a complete injection (a console boot) and an incomplete one (the Pico on USB alone: "no console seen"), plus Wi-Fi and the page.

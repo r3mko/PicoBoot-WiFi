@@ -126,7 +126,7 @@ void injection_finish(void) {
         pio_sm_set_consecutive_pindirs(pio, clocked_output_sm, INJECTION_PIN_DATA, 1, false);
     }
 
-    // The DMA is done: back to the SDK's equal bus priority
+    // The DMA is done: back to equal bus priority, the register's reset value (the SDK never sets it)
     bus_ctrl_hw->priority = 0;
 
     // Back to the SDK's clock (150MHz), the same as on warm boots: the boost is no longer needed

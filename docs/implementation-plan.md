@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.10, 2026-11-14; draft v1.11 (release 1.0.1 as built) for approval at the end of release 1.0.1 |
+| **Status** | Approved v1.10, 2026-11-14; draft v1.11 (release 1.0.1 as built), waiting for the owner's approval |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -22,7 +22,7 @@
 | v1.8 | 2026-11-14 | Approved by the owner. For later releases: a fourth wire for the console's data to U10 (the CubeSB board's GPX pad), an option the owner has. |
 | v1.9 | 2026-11-14 | Approved by the owner. Step 5.3: the `v1.0.0` tag's run of the release workflow replaces the fork test. |
 | v1.10 | 2026-11-14 | Approved by the owner. Release 1.0.1, a tidy end to the injection, from the research in [injection-end.md](research/injection-end.md): the owner chose DATA's input off as well, and a focused re-test. |
-| v1.11 draft | 2026-11-14 | Release 1.0.1 as built so far: its code review, and the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps). |
+| v1.11 draft | 2026-11-14 | Release 1.0.1 as built (see its "As built" note): its code review, the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps), and the re-test, which passed. |
 
 ## How this plan works
 
@@ -438,7 +438,7 @@ docs/                       design, plan, research, API, update-file format
 | R4 | **Focused re-test** on the DOL-001, on the build after R3:<br>• update over Wi-Fi from 1.0.0;<br>• 10 cold console boots, each complete, with its margin;<br>• on USB power without the console: "no console seen", Wi-Fi up;<br>• the page up;<br>• optional, with a multimeter: the DATA line's idle voltage in a game, on 1.0.0 and on 1.0.1 | Owner | Passed; results in `docs/research/release-1.0.1-results.md` |
 | R5 | **Merge and tag `v1.0.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
-**As built so far:** R1 in `c6187ad`; R2 in `5541d0b`, and the owner approved the release notes.
+**As built (2026-11-14):** R1 in `c6187ad`; R2 in `5541d0b`, and the owner approved the release notes; R3's fixes in `f6aa5e8`, which left the build byte-identical. R4 passed on that build: the update over Wi-Fi from 1.0.0, 10 cold boots, all complete with a margin of 165.7–166.1 ms (mean 165.9 ms, 1.0.0's with the same payload), the trial kept, and "no console seen" on USB power with Wi-Fi up. Results and SHA-256s in [release-1.0.1-results.md](research/release-1.0.1-results.md).
 
 **Code review of release 1.0.1** (a fresh Opus 5.5 reviewer, 2026-11-14):
 - **Overall:** no defects in the code. Checked against SDK 2.3.1: the three register writes touch nothing else, and their order is safe on every path through `injection_finish()`. Nothing after them reads DATA, the counters or the bus priority. Wi-Fi's PIO, DMA and clock aren't affected. After its input goes off, the DATA pad is in its reset state, as after every warm reboot of 1.0.0.

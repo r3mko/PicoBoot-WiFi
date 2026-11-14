@@ -126,10 +126,17 @@ void injection_finish(void) {
         pio_sm_set_consecutive_pindirs(pio, clocked_output_sm, INJECTION_PIN_DATA, 1, false);
     }
 
+    // The DMA is done: back to the SDK's equal bus priority
+    bus_ctrl_hw->priority = 0;
+
     // Back to the SDK's clock (150MHz), the same as on warm boots: the boost is no longer needed
     set_sys_clock_khz(SYS_CLK_KHZ, true);
 
     // Stop PIO state machines
     pio_sm_set_enabled(pio, transfer_start_sm, false);
     pio_sm_set_enabled(pio, clocked_output_sm, false);
+
+    // Nothing reads DATA any more: with its input off, RP2350-E9 can't hold the released line at
+    // about 2.2 V (docs/research/injection-end.md)
+    gpio_set_input_enabled(INJECTION_PIN_DATA, false);
 }

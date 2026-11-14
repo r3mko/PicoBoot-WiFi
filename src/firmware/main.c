@@ -163,6 +163,7 @@ static void inject(const injection_payload_t *payload, bool cs_pullup) {
     }
 
     counters_snapshot(&report.cs_raw, &report.cs_clocked);
+    counters_stop();
     report.words_delivered = (uint32_t)(payload->count - injection_words_left());
     injection_finish();
 }

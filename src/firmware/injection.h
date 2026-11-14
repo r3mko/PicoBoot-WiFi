@@ -33,6 +33,7 @@ bool injection_complete(void);
 // Words the DMA hasn't fed yet
 uint32_t injection_words_left(void);
 
-// Ends the injection: lowers the clock and stops the state machines, as PicoBoot-DX does.
-// If the injection didn't complete, it also stops the DMA and releases the data line.
+// Ends the injection: lowers the clock and stops the state machines, as PicoBoot-DX does, puts the
+// bus priority back and turns the data pin's input off. If the injection didn't complete, it first
+// stops the DMA and releases the data line.
 void injection_finish(void);

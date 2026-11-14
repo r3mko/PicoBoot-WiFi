@@ -64,7 +64,19 @@ Install `picoboot-wifi-X.Y.Z.uf2` as above. The wiring stays the same, and the p
 2. **Change the password** on the Settings tab. A banner reminds you until you do. The Wi-Fi password is the only protection: anyone who knows it can change the firmware and the payloads.
 3. **The Wi-Fi turns off** 10 minutes after the last client leaves (Settings: 2, 5, 10 or 30 minutes, or always on). Switch the console off and on to bring it back.
 
+<table>
+  <tr>
+    <td align="center"><img src="assets/images/Status.png" alt="The Status tab" width="400"/><br/>Status</td>
+    <td align="center"><img src="assets/images/Payloads.png" alt="The Payloads tab" width="400"/><br/>Payloads</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/images/Diagnostics.png" alt="The Diagnostics tab" width="400"/><br/>Diagnostics</td>
+    <td align="center"><img src="assets/images/Firmware.png" alt="The Firmware tab" width="400"/><br/>Firmware</td>
+  </tr>
+</table>
+
 **The tabs:**
+- **Status:** the running firmware and the other slot, the chip, what boots next, the uptime, the temperature, and the Wi-Fi name and its clients.
 - **Payloads:**
   - **Upload:** a `.dol`, a payload `.uf2` (from any Pico family) or a raw payload. It goes into the slot that isn't chosen, replacing what's there, and boots at the next power-on.
   - **Per payload:** choose it, rename it, delete it (not the chosen one), or download a backup.

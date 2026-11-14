@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.8, 2026-11-14 |
+| **Status** | Approved v1.9, 2026-11-14 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -20,6 +20,7 @@
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 5. Phase 5 as built (see its "As built" note): the security review of step 5.1, its fixes and their re-test in the console; the release workflow; the acceptance, its two fixes, and a rule for later releases from them; the code review and its two fixes; the owner's choices (the logo and the device's name, the fork test for the next release). |
 | v1.7 | 2026-11-14 | Approved by the owner. For later releases: a tidy end to the injection (the CS counters and the bus priority), the owner's choice after the release. |
 | v1.8 | 2026-11-14 | Approved by the owner. For later releases: a fourth wire for the console's data to U10 (the CubeSB board's GPX pad), an option the owner has. |
+| v1.9 | 2026-11-14 | Approved by the owner. Step 5.3: the `v1.0.0` tag's run of the release workflow replaces the fork test. |
 
 ## How this plan works
 
@@ -377,7 +378,7 @@ docs/                       design, plan, research, API, update-file format
 |---|---|---|
 | 5.1 | The security review by Fable 5.2 (the plan named 5.1, the model then current), below; its fixes in `360d8dd`, re-tested in the console | L1 accepted and documented |
 | 5.2 | The README for release 1.0: installing, upgrading from PicoBoot-DX, the wiring with D38's 5 V, the default password, security, recovery, the DOL-101 note. `docs/api.md` final, the release notes in `docs/releases/1.0.0.md` | Reviewed: PicoBoot-DX's logo added to the README; the device named PicoBoot-WiFi on the page, in its messages and in the README (`c468ee9`), not "PicoBoot", which could be taken for upstream; the Wi-Fi name stays `PicoBoot-XXXX` (D30); the selects' arrow inset from the edge (`527823a`); the release notes approved |
-| 5.3 | `.github/workflows/release.yml` (D24): on a tag `vX.Y.Z` that matches `CMakeLists.txt` and has release notes, it builds, tests, checks the built version and makes a draft release with the install UF2, the update file, the CLI and `SHA256SUMS`. A release's version has no git hash. A host test took only test-build versions, so a real tag would have failed: fixed in `25da3ce`. The release build is byte-identical from a clean checkout | The fork test is for the next release: the `v1.0.0` tag is the workflow's first run, which only makes a draft. Instead, its steps up to the draft were run on a clean checkout, and gave the files of the acceptance |
+| 5.3 | `.github/workflows/release.yml` (D24): on a tag `vX.Y.Z` that matches `CMakeLists.txt` and has release notes, it builds, tests, checks the built version and makes a draft release with the install UF2, the update file, the CLI and `SHA256SUMS`. A release's version has no git hash. A host test took only test-build versions, so a real tag would have failed: fixed in `25da3ce`. The release build is byte-identical from a clean checkout | The fork test was left for the next release: the `v1.0.0` tag would be the workflow's first run, which only makes a draft. Instead, its steps up to the draft were run on a clean checkout, and gave the files of the acceptance. The `v1.0.0` tag's run (43059931867, 2026-11-11) then made the draft with all four files, uploaded by `github-actions[bot]`, and its `SHA256SUMS` match the acceptance's files. That run replaces the fork test |
 | 5.4 | Passed on the third build of 1.0.0, with a margin of 165.2 ms, 0.3 ms below PicoBoot-DX. The first two runs found two bugs, both from review fixes:<br>• the DHCP server ignored renewals, so with 5.1's 10-minute leases every client lost its address at 10 minutes (`9a3b17b`, with a host test);<br>• `invalidate()`, from the phase 4 review, programmed flash from a `const` array in flash, so every payload upload and delete hung until the watchdog reset the Pico (`df962b8`) | |
 | 5.5 | Merged into `main` on 2026-11-11. The owner tags `v1.0.0` and publishes the workflow's draft once its checksums match the release build's ([phase5-results.md](research/phase5-results.md)) | |
 

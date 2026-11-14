@@ -14,6 +14,9 @@
 void counters_init(void);
 void counters_start(void);
 
+// Stops both counters once their counts are read: they count until the injection ends (design D31)
+void counters_stop(void);
+
 // True once the first CS falling edge (raw) / the first real, clocked transfer has been seen
 bool counters_first_raw_seen(void);
 bool counters_first_clocked_seen(void);

@@ -44,6 +44,10 @@ void counters_start(void) {
     pio_set_sm_mask_enabled(counter_pio, (1u << raw_sm) | (1u << clocked_sm), true);
 }
 
+void counters_stop(void) {
+    pio_set_sm_mask_enabled(counter_pio, (1u << raw_sm) | (1u << clocked_sm), false);
+}
+
 bool counters_first_raw_seen(void) {
     return pio_interrupt_get(counter_pio, FLAG_RAW);
 }

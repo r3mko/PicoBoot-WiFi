@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.7, 2026-11-14 |
+| **Status** | Approved v1.8, 2026-11-14 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -19,6 +19,7 @@
 | v1.5 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4 as built (see its "As built" note), with the owner's choices made during the phase (design D42, D43), its code review, and the `.bss` budget for phase 5. |
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 5. Phase 5 as built (see its "As built" note): the security review of step 5.1, its fixes and their re-test in the console; the release workflow; the acceptance, its two fixes, and a rule for later releases from them; the code review and its two fixes; the owner's choices (the logo and the device's name, the fork test for the next release). |
 | v1.7 | 2026-11-14 | Approved by the owner. For later releases: a tidy end to the injection (the CS counters and the bus priority), the owner's choice after the release. |
+| v1.8 | 2026-11-14 | Approved by the owner. For later releases: a fourth wire for the console's data to U10 (the CubeSB board's GPX pad), an option the owner has. |
 
 ## How this plan works
 
@@ -413,6 +414,12 @@ docs/                       design, plan, research, API, update-file format
 - **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it.
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi.
+- **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
+  - starting the injection on the IPL's address, instead of counting 224 CS pulses;
+  - a channel from the console to the Pico: a boot menu, homebrew over Wi-Fi, debug output;
+  - the fourth wire a U10 replacement would need.
+
+  The first step is a passive build that records the commands and their timing.
 
 ## Local builds and CI
 

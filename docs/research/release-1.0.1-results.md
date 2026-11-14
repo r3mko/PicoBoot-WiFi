@@ -2,7 +2,7 @@
 
 The focused re-test of release 1.0.1 (the plan's step R4), run by the owner on 2026-11-14.
 
-**Status:** R4 passed.
+**Status:** R4 passed. Approved by the owner with plan v1.11; release 1.0.1 merged into `main` on 2026-11-14.
 
 **Setup:** the Pico 2 W from phases 0 to 5 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3, running 1.0.0 in slot A. No payloads stored, so every boot sends the built-in gekkoboot (60 transfers). Boot numbers are the boot log's.
 

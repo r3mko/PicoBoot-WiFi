@@ -23,10 +23,10 @@ KEYSTREAM_700_760 = bytes.fromhex(
 
 # SHA-256 of the ipl.h that `python3 tools/process_ipl.py assets/ipl/gekkoboot_r9_4.dol <out>`
 # produces (the same command the firmware build uses). Update this on purpose when the bundled
-# DOL or the output format changes. It differs from PicoBoot-DX's golden hash only because the
-# header's comment names the input file (PicoBoot-DX passes the iplboot.dol symlink); the array
-# itself is byte-identical.
-GOLDEN_IPL_H_SHA256 = "9bb9a785967a3dbea2cc52104bb75d06f838cc0839cb82f07d540c2c1cea18b3"
+# DOL or the output format changes. Release 1.0.3 changed the DOL to gekkoboot r9.4's release
+# build, rebuilt by tools/gekkoboot_dol.py (docs/research/gekkoboot-dol.md), so this no longer
+# matches PicoBoot-DX's, which bundles a CI build of the same source.
+GOLDEN_IPL_H_SHA256 = "d5ffb03cce3295f53a0fb6400039db876688a2c1d6a7c8a4419b69250510adab"
 
 
 class ScrambleTest(unittest.TestCase):

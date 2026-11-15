@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.11, 2026-11-14 |
+| **Status** | Approved v1.12, 2026-11-15 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -23,6 +23,7 @@
 | v1.9 | 2026-11-14 | Approved by the owner. Step 5.3: the `v1.0.0` tag's run of the release workflow replaces the fork test. |
 | v1.10 | 2026-11-14 | Approved by the owner. Release 1.0.1, a tidy end to the injection, from the research in [injection-end.md](research/injection-end.md): the owner chose DATA's input off as well, and a focused re-test. |
 | v1.11 | 2026-11-14 | Approved by the owner. Release 1.0.1 as built (see its "As built" note): its code review, the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps), and the re-test, which passed. |
+| v1.12 | 2026-11-15 | Approved by the owner. Release 1.0.2, flash programmed from RAM only, from the research in [flash-from-ram.md](research/flash-from-ram.md). The owner chose a copy through a 256-byte RAM page, the zeros back in flash so that a payload upload or delete goes through it, and a re-test of every write path. |
 
 ## How this plan works
 
@@ -414,7 +415,7 @@ docs/                       design, plan, research, API, update-file format
 
 **For later releases:**
 - **A review fix is re-tested on the Pico along every path it touches,** not only by the host tests. Both bugs of the acceptance came from review fixes that passed the host tests, on paths no re-test had run: a payload upload and a delete (phase 4), and a client joined for 10 minutes (phase 5).
-- **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it.
+- **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it. Taken up in release 1.0.2 (below), as a copy through a RAM page.
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
@@ -451,6 +452,20 @@ docs/                       design, plan, research, API, update-file format
 | 4 | **Note:** the code comment called priority 0 "the SDK's"; it's the register's reset value, and the SDK never sets it | Fixed |
 | 5 | **Note:** starting the counters again later also needs their IRQ flags cleared | Added to the note |
 | 6 | **Note:** R4's incomplete path is the no-console case, which runs the same new lines as a stall | No change |
+
+## Release 1.0.2: flash programmed from RAM only
+
+**Branch:** `release-1.0.2`. **Research:** [flash-from-ram.md](research/flash-from-ram.md). **Done when:** the re-test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-15):** data that isn't in RAM is copied through a 256-byte RAM page; the zeros go back to flash, so that a payload upload or delete goes through the copy; a re-test of every write path (later-releases item 1). The other later-releases items aren't in 1.0.2. The design doesn't change: C6 already says that XIP reads fault while flash is written, and the copy is how `storage.c` keeps to it.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The code:**<br>• in `program()` (`storage.c`), data wholly in SRAM (`SRAM_BASE`–`SRAM_END`) is programmed as now. Other data is copied a page at a time into a 256-byte RAM buffer before interrupts go off, then programmed from it;<br>• `invalidate()` (`payloads.c`) programs its zeros from `static const uint8_t zeros[256]` again, as before phase 5's fix, so they're in flash. Net RAM: the same (the RAM zeros go, the page buffer comes);<br>• the comments in `storage.h` and `payloads.c` updated | Opus | Host tests, the layout check and CI pass. In the build (`arm-none-eabi-nm`), `zeros` is in flash and the page buffer in RAM |
+| R2 | **Version and notes:** `CMakeLists.txt` at `1.0.2`, the release notes in `docs/releases/1.0.2.md`. As before, every build reads `1.0.2`, so builds are named by their SHA-256 | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Re-test of every write path** on the DOL-001, on the build after R3:<br>• update over Wi-Fi from 1.0.1; a cold console boot keeps the trial (the update writer, boot control);<br>• a payload upload, then 3 cold boots of that payload (the copy, the payload writer, the boot log);<br>• a settings save, for example the Tx power, read back after a cold boot, then set back (the record writer);<br>• a payload delete, then a cold boot of the built-in gekkoboot (the copy again);<br>• every boot complete, with its margin. No watchdog reset during the upload or the delete: the uptime on the Status tab keeps counting;<br>• the page up, and the Diagnostics tab's boot log showing each boot | Owner | Passed; results in `docs/research/release-1.0.2-results.md` |
+| R5 | **Merge and tag `v1.0.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
 ## Local builds and CI
 

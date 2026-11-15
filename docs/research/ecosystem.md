@@ -8,6 +8,11 @@ Research done on 2026-11-08 for PicoBoot-WiFi (Pico 2 W only). **[inf]** marks a
   - Latest release is v0.5.0 (2025-05-18), with Pico W, Pico 2 and Pico 2 W support; last commit 2025-11-09.
   - The payload format is the one PicoBoot-DX uses: `IPLBOOT ` + size header, scrambled image, `PICO` footer, at `0x10080000` with a 1.5 MiB area.
   - Wi-Fi exists only as open issues. #65 asks for a web status/config page, with authentication and showing the upload's SHA. On 2025-10-28 webhdx wrote: "WiFi and BT will be definitely utilized".
+  - **The CS glitch of phase 0 (checked 2026-11-15, `main` at `d6f5230`):** upstream has the weakness behind boot 12's blue screen ([phase0-results.md](phase0-results.md)), on both counts. Its PIO hasn't changed since 2022 apart from the copyright year (`7ca4f5e`, v0.5.0).
+    - **The count:** `on_transfer` (`src/picoboot.pio`) counts every CS falling edge (`wait 1 gpio PIN_CS`, `wait 0 gpio PIN_CS`, `jmp x-- start`), with X at 224 (`src/picoboot.c`). It never checks CLK, so one spurious edge before the IPL read sends the payload one transfer early. The `wait 1 gpio PIN_CLK` in its later loop comes after the count is done.
+    - **The pad:** `src/pio.c` only calls `pio_gpio_init()`, and nothing in `src/` sets a pull. So CS keeps the reset pull-down, which holds the undriven line low during the console's first ~42 ms, and a moment the console lets go of it reads as an extra falling edge. On Pico 2 boards with an A2 chip, RP2350-E9 can hold an undriven pad at about 2.2 V against the pull-down, so the idle level there is unpredictable [inf; not tested].
+    - **PicoBoot-DX** has both fixes (`gpio_pull_up()` on CS, and a CLK-qualified count with a `jmp pin` CS check), with the same remaining gap that D36 accepts: a glitch just before the 225th transfer, or between payload transfers.
+    - **Issues:** reports of boots that only sometimes work (#37, #75, #120, #137) are put down to the power supply (5 V into VSYS fixed several, as in D38), wire length or USB-C Pico clones; one user has to re-plug an HDMI adapter every time (#75). Upstream has no CS counter, so a glitch can't be told apart from those causes there; none of the reports is identified as one [inf].
 - **Forks:**
   - **NeoPicoBoot:** Pico W access point with a captive portal inside the console; open SSID `GC_RGB`, fed from 5 V through VSYS. It configures a video mod; no firmware OTA.
   - **PicoBootW** (maxbit89): says "with wifi", but nothing in it shows that.
@@ -96,7 +101,7 @@ Read from the release UF2 files (`IPLBOOT` size field, checked with our own UF2 
 
 ## Sources
 
-- [webhdx/PicoBoot](https://github.com/webhdx/PicoBoot) (releases, issues #57, #65, #66, #74), [NeoPicoBoot](https://github.com/paulmreese/NeoPicoBoot)
+- [webhdx/PicoBoot](https://github.com/webhdx/PicoBoot) (releases, issues #37, #57, #65, #66, #74, #75, #120, #137; `src/picoboot.pio`, `src/picoboot.c`, `src/pio.c` at `d6f5230`), [NeoPicoBoot](https://github.com/paulmreese/NeoPicoBoot)
 - [Swiss releases](https://github.com/emukidid/swiss-gc/releases) r2018, r2092, r2119; [gekkoboot](https://github.com/redolution/gekkoboot) r9.4, PR #53, `buildtools/dol2ipl.py`
 - [pico-examples](https://github.com/raspberrypi/pico-examples) `pico_w/wifi/ota_update`, `access_point`, `httpd`
 - [pico_fota_bootloader](https://github.com/JZimnol/pico_fota_bootloader), [picowota](https://github.com/usedbytes/picowota), [arduino-pico](https://github.com/earlephilhower/arduino-pico)

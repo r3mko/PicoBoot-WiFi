@@ -2,7 +2,7 @@
 
 The focused re-test of release 1.0.3 (the plan's step R4), run by the owner on 2026-11-15.
 
-**Status:** R4 passed. For the owner's approval with plan v1.15.
+**Status:** R4 passed. Approved by the owner with plan v1.15; release 1.0.3 merged into `main` on 2026-11-15.
 
 **Setup:** the Pico 2 W from phases 0 to 5 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3, with the SD2SP2 holding Swiss as `ipl.dol`. It ran 1.0.2 in slot A. Payload 1 held Swiss (1319 transfers) and payload 2 a payload of 307 transfers; the built-in gekkoboot was the choice. Boot numbers are the boot log's, which held boots 65–92 when it was read.
 

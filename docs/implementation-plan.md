@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.14, 2026-11-15; draft v1.15 (release 1.0.3 as built) for approval at the end of release 1.0.3 |
+| **Status** | Approved v1.15, 2026-11-15 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -26,7 +26,7 @@
 | v1.12 | 2026-11-15 | Approved by the owner. Release 1.0.2, flash programmed from RAM only, from the research in [flash-from-ram.md](research/flash-from-ram.md). The owner chose a copy through a 256-byte RAM page, the zeros back in flash so that a payload upload or delete goes through it, and a re-test of every write path. |
 | v1.13 | 2026-11-15 | Approved by the owner. Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
 | v1.14 | 2026-11-15 | Approved by the owner. Release 1.0.3, the official gekkoboot r9.4, from the research in [gekkoboot-dol.md](research/gekkoboot-dol.md): the built-in gekkoboot was a CI build of r9.4 (version `undefined`), not the release's. The owner chose a DOL rebuilt from the release, a tool that rebuilds it and a local test that ties it to the release, and a focused re-test. |
-| v1.15 draft | 2026-11-15 | Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
+| v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
 
 ## How this plan works
 
@@ -516,7 +516,7 @@ The other later-releases items aren't in 1.0.3. The design doesn't change: it na
 - the update over Wi-Fi from 1.0.2, from the Firmware tab, kept by a power-on;
 - 9 power-ons of the built-in, all complete, with margins of 165.4–166.0 ms (mean 165.6 ms, 1.0.1's with a built-in of the same size). One showed "gekkoboot r9.4" with D-Pad Down, and the built-in started Swiss from the SD2SP2.
 
-Results and SHA-256s in [release-1.0.3-results.md](research/release-1.0.3-results.md).
+Results and SHA-256s in [release-1.0.3-results.md](research/release-1.0.3-results.md). R5: merged into `main` on 2026-11-15; the owner had it pushed and tagged `v1.0.3`.
 
 **Code review of release 1.0.3** (a fresh Opus 5.5 reviewer, 2026-11-15):
 - **Overall:** no defects in the code. Checked:

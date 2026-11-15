@@ -24,7 +24,7 @@
 | v1.10 | 2026-11-14 | Approved by the owner. Release 1.0.1, a tidy end to the injection, from the research in [injection-end.md](research/injection-end.md): the owner chose DATA's input off as well, and a focused re-test. |
 | v1.11 | 2026-11-14 | Approved by the owner. Release 1.0.1 as built (see its "As built" note): its code review, the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps), and the re-test, which passed. |
 | v1.12 | 2026-11-15 | Approved by the owner. Release 1.0.2, flash programmed from RAM only, from the research in [flash-from-ram.md](research/flash-from-ram.md). The owner chose a copy through a 256-byte RAM page, the zeros back in flash so that a payload upload or delete goes through it, and a re-test of every write path. |
-| v1.13 draft | 2026-11-15 | Release 1.0.2 as built so far: its code review, and the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept). |
+| v1.13 draft | 2026-11-15 | Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
 
 ## How this plan works
 
@@ -468,7 +468,13 @@ docs/                       design, plan, research, API, update-file format
 | R4 | **Re-test of every write path** on the DOL-001, on the build after R3:<br>• update over Wi-Fi from 1.0.1; a cold console boot keeps the trial (1.0.1's update writer, 1.0.2's boot control);<br>• the same 1.0.2 update again over Wi-Fi, from 1.0.2 into the other slot; a cold boot keeps it (1.0.2's update writer);<br>• a payload upload, then 3 cold boots of that payload (the copy, the payload writer, the boot log);<br>• a settings save, for example the Tx power, read back after a cold boot, then set back (the record writer);<br>• a payload delete, with the built-in chosen first (a delete is refused while that payload is the choice): the Payloads tab shows the slot empty, then a cold boot of the built-in gekkoboot, and the slot still empty (the copy again);<br>• every boot complete, with its margin. No watchdog reset during the upload or the delete: the uptime on the Status tab keeps counting;<br>• the page up, and the Diagnostics tab's boot log showing each boot | Owner | Passed; results in `docs/research/release-1.0.2-results.md` |
 | R5 | **Merge and tag `v1.0.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
-**As built so far:** R1 in `7b1678a`, and its CI run passed; R2 in `52cb416`, and the owner approved the release notes, then their rewording after R3.
+**As built (2026-11-15):** R1 in `7b1678a`, and its CI run passed; R2 in `52cb416`, and the owner approved the release notes, then their rewording after R3; R3's fixes in `405fc62`, which changed no code. R4 passed on that build:
+- both updates over Wi-Fi, from 1.0.1 and then 1.0.2 from 1.0.2, each kept by a power-on;
+- Swiss uploaded from the page, then deleted, with no reset either time;
+- the Tx power saved and read back after a cold boot;
+- 7 power-ons, all complete, with margins of 160.2–164.2 ms. That is within the console's spread: the firmware's start-up is unchanged (389 µs).
+
+Results and SHA-256s in [release-1.0.2-results.md](research/release-1.0.2-results.md).
 
 **Code review of release 1.0.2** (a fresh Opus 5.5 reviewer, 2026-11-15):
 - **Overall:** no defects in the code. The RAM path's instructions are the same as 1.0.1's, and `zeros` is in flash (`.rodata`), so uploads and deletes go through the copy. Checked: every writer's buffer and length, the SRAM range (the scratch banks and the stack inside it), no interrupt handlers or second core to re-enter `program()`, and nothing read from flash between interrupts off and XIP off besides `program()`'s own code, as in 1.0.1. The SDK's flash code is byte-identical to 1.0.1's.

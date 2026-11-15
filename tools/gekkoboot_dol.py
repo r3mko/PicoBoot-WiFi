@@ -86,11 +86,11 @@ def main():
     p.add_argument("apploader", help="The release's swiss_igr/swiss/patches/apploader.img")
     p.add_argument("output", help="The .dol to write")
     args = p.parse_args()
-    with open(args.apploader, "rb") as f:
-        data = f.read()
     try:
+        with open(args.apploader, "rb") as f:
+            data = f.read()
         dol = dol_from_image(image_from_apploader(data))
-    except ValueError as e:
+    except (OSError, ValueError) as e:
         print(f"{args.apploader}: {e}", file=sys.stderr)
         return 1
     with open(args.output, "wb") as f:

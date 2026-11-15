@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.12, 2026-11-15; draft v1.13 (release 1.0.2 as built) for approval at the end of release 1.0.2 |
+| **Status** | Approved v1.13, 2026-11-15 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -24,7 +24,7 @@
 | v1.10 | 2026-11-14 | Approved by the owner. Release 1.0.1, a tidy end to the injection, from the research in [injection-end.md](research/injection-end.md): the owner chose DATA's input off as well, and a focused re-test. |
 | v1.11 | 2026-11-14 | Approved by the owner. Release 1.0.1 as built (see its "As built" note): its code review, the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps), and the re-test, which passed. |
 | v1.12 | 2026-11-15 | Approved by the owner. Release 1.0.2, flash programmed from RAM only, from the research in [flash-from-ram.md](research/flash-from-ram.md). The owner chose a copy through a 256-byte RAM page, the zeros back in flash so that a payload upload or delete goes through it, and a re-test of every write path. |
-| v1.13 draft | 2026-11-15 | Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
+| v1.13 | 2026-11-15 | Approved by the owner. Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
 
 ## How this plan works
 
@@ -474,7 +474,7 @@ docs/                       design, plan, research, API, update-file format
 - the Tx power saved and read back after a cold boot;
 - 7 power-ons, all complete, with margins of 160.2–164.2 ms. That is within the console's spread: the firmware's start-up is unchanged (389 µs).
 
-Results and SHA-256s in [release-1.0.2-results.md](research/release-1.0.2-results.md).
+Results and SHA-256s in [release-1.0.2-results.md](research/release-1.0.2-results.md). R5: merged into `main` on 2026-11-15; the owner had it pushed and tagged `v1.0.2`.
 
 **Code review of release 1.0.2** (a fresh Opus 5.5 reviewer, 2026-11-15):
 - **Overall:** no defects in the code. The RAM path's instructions are the same as 1.0.1's, and `zeros` is in flash (`.rodata`), so uploads and deletes go through the copy. Checked: every writer's buffer and length, the SRAM range (the scratch banks and the stack inside it), no interrupt handlers or second core to re-enter `program()`, and nothing read from flash between interrupts off and XIP off besides `program()`'s own code, as in 1.0.1. The SDK's flash code is byte-identical to 1.0.1's.

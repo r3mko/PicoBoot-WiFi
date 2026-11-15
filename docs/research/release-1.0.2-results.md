@@ -2,7 +2,7 @@
 
 The re-test of every write path for release 1.0.2 (the plan's step R4), run by the owner on 2026-11-15.
 
-**Status:** R4 passed. For the owner's approval with plan v1.13.
+**Status:** R4 passed. Approved by the owner with plan v1.13; release 1.0.2 merged into `main` on 2026-11-15.
 
 **Setup:** the Pico 2 W from phases 0 to 5 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3, running 1.0.1 in slot B. Payload 2 held a payload of 1319 transfers, Swiss's size, and was the choice. Boot numbers are the boot log's.
 

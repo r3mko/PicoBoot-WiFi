@@ -181,8 +181,9 @@ class PayloadFileInteropTest(unittest.TestCase):
                     result = self.feed(f.read())
                 self.assertEqual((result[0], result[2]), ("ok", str(size)))
         # Our converter frames and scrambles as these projects do: a release payload, descrambled and
-        # wrapped as a .dol (as PicoBoot-DX's uf2dol.py does), comes back byte for byte. (Their .dol
-        # files aren't the builds in these UF2s, so the round trip is the comparison there is.)
+        # wrapped as a .dol (as PicoBoot-DX's uf2dol.py does), comes back byte for byte. (Swiss's .dol
+        # isn't the build in its UF2; for gekkoboot, test_gekkoboot_dol.py also checks that the
+        # bundled .dol is the build in gekkoboot_pico.uf2.)
         import struct
         for name in ("gekkoboot_pico.uf2", "swiss_r2119.uf2"):
             with self.subTest(name), open(os.path.join(folder, name), "rb") as f:

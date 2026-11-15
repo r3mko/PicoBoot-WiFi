@@ -40,7 +40,8 @@ set_source_files_properties(${FIRMWARE_SOURCES} PROPERTIES
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/injection.pio)
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/counters.pio)
 
-# Built-in IPL (gekkoboot r9.4), scrambled into ipl.h as in PicoBoot-DX; used when there is no
+# Built-in IPL: gekkoboot r9.4's release build, rebuilt from the release by tools/gekkoboot_dol.py
+# (docs/research/gekkoboot-dol.md), scrambled into ipl.h as in PicoBoot-DX; used when there is no
 # valid payload
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(IPL_DOL ${CMAKE_SOURCE_DIR}/assets/ipl/gekkoboot_r9_4.dol)

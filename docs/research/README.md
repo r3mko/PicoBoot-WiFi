@@ -11,6 +11,7 @@ The research behind [the design](../architecture.md), as the design cycle asks: 
 | [ecosystem.md](ecosystem.md) | 2026-11-08 | Payload sizes, upstream and forks, OTA projects, web building blocks, lessons |
 | [injection-end.md](injection-end.md) | 2026-11-14 | What runs on after the injection, Wi-Fi's PIO and DMA, the CS counters and a console reset, DATA and RP2350-E9 (release 1.0.1) |
 | [flash-from-ram.md](flash-from-ram.md) | 2026-11-15 | Reading flash during a program or erase (the chip, the QMI, the XIP cache), the phase 5 hang, a check in `storage.c` (release 1.0.2) |
+| [gekkoboot-dol.md](gekkoboot-dol.md) | 2026-11-15 | The built-in gekkoboot: a CI build of r9.4, not the release's; rebuilding the official DOL from the release (release 1.0.3) |
 
 ## What we already run: PicoBoot-DX v0.10
 

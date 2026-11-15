@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.13, 2026-11-15 |
+| **Status** | Approved v1.15, 2026-11-15 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -25,6 +25,8 @@
 | v1.11 | 2026-11-14 | Approved by the owner. Release 1.0.1 as built (see its "As built" note): its code review, the owner's choices from it (the "DMA 64 KB" figure out of the re-test, no test for the new steps), and the re-test, which passed. |
 | v1.12 | 2026-11-15 | Approved by the owner. Release 1.0.2, flash programmed from RAM only, from the research in [flash-from-ram.md](research/flash-from-ram.md). The owner chose a copy through a 256-byte RAM page, the zeros back in flash so that a payload upload or delete goes through it, and a re-test of every write path. |
 | v1.13 | 2026-11-15 | Approved by the owner. Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
+| v1.14 | 2026-11-15 | Approved by the owner. Release 1.0.3, the official gekkoboot r9.4, from the research in [gekkoboot-dol.md](research/gekkoboot-dol.md): the built-in gekkoboot was a CI build of r9.4 (version `undefined`), not the release's. The owner chose a DOL rebuilt from the release, a tool that rebuilds it and a local test that ties it to the release, and a focused re-test. |
+| v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
 
 ## How this plan works
 
@@ -489,6 +491,54 @@ Results and SHA-256s in [release-1.0.2-results.md](research/release-1.0.2-result
 | 6 | **Note:** the vector table is in RAM, so the second fault is the handler's first instruction; if the handler were cached, it would reboot at once | Added to the note |
 | 7 | **Note:** `from + length <= SRAM_END` could wrap only for a pointer just below `0xFFFFFFFF`, which no buffer can be | No change, the owner's choice |
 | 8 | **Note:** the copy loop assumes whole pages, as the ROM does on the RAM path; every caller passes whole pages. Its second and later pages never run in 1.0.2 (the only copy is one page) | No change; checked by reading |
+
+## Release 1.0.3: the official gekkoboot r9.4
+
+**Branch:** `release-1.0.3`. **Research:** [gekkoboot-dol.md](research/gekkoboot-dol.md). **Done when:** the re-test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-15):**
+- the built-in gekkoboot becomes the DOL rebuilt from the r9.4 release;
+- a tool that rebuilds it, and a local test that ties it to the release;
+- a focused re-test.
+
+The other later-releases items aren't in 1.0.3. The design doesn't change: it names the built-in gekkoboot, not a build of it.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The code:**<br>• `tools/gekkoboot_dol.py` rebuilds a DOL from a gekkoboot release's `apploader.img`. The stub section runs up to the xz stream, and the data section holds the rest, at `0x81300000`, with that entry. The BSS comes from the packer's `crt0`, checked against the image's end. It refuses an image that doesn't fit that layout;<br>• `assets/ipl/gekkoboot_r9_4.dol` replaced by its output for the r9.4 release (SHA-256 `6172f4a8…`);<br>• tests: the tool on made-up images (layout, BSS, refusals); with `PICOBOOT_PAYLOAD_DIR` (local, like the other payload tests), the asset's payload equals `gekkoboot_pico.uf2`'s, and the tool rebuilds the asset from the release's `apploader.img`;<br>• `GOLDEN_IPL_H_SHA256` in `tests/test_process_ipl.py` updated on purpose, with its comment | Opus | Host tests, the layout check and CI pass. In the build, the built-in IPL is the same size as before. gekkoboot's own `dol2ipl.py` turns the asset into the release's three files byte for byte (recorded in the research note) |
+| R2 | **Version and notes:** `CMakeLists.txt` at `1.0.3`, the release notes in `docs/releases/1.0.3.md`. As before, every build reads `1.0.3`, so builds are named by their SHA-256 | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Focused re-test** on the DOL-001, on the build after R3:<br>• on 1.0.2 first, with the built-in chosen: a power-on holding D-Pad Down shows "gekkoboot undefined";<br>• update over Wi-Fi from 1.0.2; a power-on keeps it;<br>• 5 cold boots of the built-in, each complete, with its margin. One of them holds D-Pad Down and shows "gekkoboot r9.4";<br>• the built-in gekkoboot starts `ipl.dol` (Swiss) from the SD2SP2;<br>• the page up | Owner | Passed; results in `docs/research/release-1.0.3-results.md` |
+| R5 | **Merge and tag `v1.0.3`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**As built (2026-11-15):** R1 in `eb29622`, and its CI run passed; R2 in `1c4d903`, and the owner approved the release notes, then one sentence reworded after R3; R3's fixes in `59cbc84`, which changed no firmware code. R4 passed on that build:
+- on 1.0.2, the old built-in showed "gekkoboot undefined";
+- the update over Wi-Fi from 1.0.2, from the Firmware tab, kept by a power-on;
+- 9 power-ons of the built-in, all complete, with margins of 165.4–166.0 ms (mean 165.6 ms, 1.0.1's with a built-in of the same size). One showed "gekkoboot r9.4" with D-Pad Down, and the built-in started Swiss from the SD2SP2.
+
+Results and SHA-256s in [release-1.0.3-results.md](research/release-1.0.3-results.md). R5: merged into `main` on 2026-11-15; the owner had it pushed and tagged `v1.0.3`.
+
+**Code review of release 1.0.3** (a fresh Opus 5.5 reviewer, 2026-11-15):
+- **Overall:** no defects in the code. Checked:
+  - the release zips, downloaded again, match the files used;
+  - the tool rebuilds the asset byte for byte from r9.4's `apploader.img`, and r9.3's files from r9.3's;
+  - the header's layout, crt0's opcodes, r13 and the `.sbss` (`0x8130EC60`, 0x7820 bytes, the image's end);
+  - the packer clears its own `.sbss` (`__eabi`, then `memzero`), so the BSS that `process_ipl.py` ignores is cleared as before;
+  - the built-in IPL in the build is 61,440 B, as before, and `ipl.h` matches a fresh conversion of the asset.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Low:** nothing in CI tied the asset's header to the tool or to its SHA-256. `process_ipl.py` ignores the BSS and the section split, so the golden `ipl.h` doesn't cover them | Fixed: a test in CI checks the asset's SHA-256, and that the tool rebuilds it from its own image |
+| 2 | **Low:** `ecosystem.md` said upstream's PIO only changed its copyright year since 2022; `e9f420b` (2024) reworked the output side | Fixed in the note. The CS count only had its pins renamed, so the conclusion stands |
+| 3 | **Low:** the research note called the code-layout difference mostly branch offsets; most of it is the same code in a different place | Fixed in the note |
+| 4 | **Low:** the note said three release files confirm the rebuild. With the IPL ROM gekkoboot's CI fetches, the Qoob Pro pair do too, and the tool rebuilds the old CI asset (`elf2dol`'s output) from its own image | Fixed in the note: five files, and the `elf2dol` header match |
+| 5 | **Low:** the note said the zip was uploaded two days after the release was created; that date is the tagged commit's, and the upload came 40 s after publishing | Fixed in the note |
+| 6 | **Note:** gaps in the tool's tests: an empty `.sbss`, crt0 without its r13 set-up, and a regex that matched two messages | Fixed: two tests, and the regex tightened. Each new test fails when its check is taken out of the tool |
+| 7 | **Note:** the release test's docstring gave the release's path for `apploader.img`; the test reads it from the folder's top | Fixed |
+| 8 | **Note:** the note didn't say how its 16-byte shares were counted | Fixed: windows at 4-byte steps, which give 94.8% and 39.1% |
+| 9 | **Note:** the tool refuses a packer linked at `0x81300000`, a missing input gave a traceback, and the xz magic isn't checked further | The missing input fixed, with a test. The other two kept: a refusal is the tool's answer to a layout it doesn't know, and it copies the image as it is, so a false match can't change what the Pico sends |
+| 10 | **Note:** "stub" also names gekkoboot's `stub/` | "The packer" in the note |
+| 11 | **Note:** the release notes said the built-in "makes" the release's UF2, and "Tested on a DOL-001" came before R4 | Reworded, with the owner's approval: gekkoboot's own tool turns it into the release's UF2. "Tested" kept, as R4 makes it true before publishing |
 
 ## Local builds and CI
 

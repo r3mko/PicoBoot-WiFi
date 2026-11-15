@@ -27,7 +27,7 @@ Three details:
   - So anything already in the cache (8-byte lines) can still be read during a write. This comes from the code and the datasheet; it wasn't tried.
 - **Between the ROM's status polls:**
   - The ROM turns direct mode on only while it sends a command: `s_native_crit_flash_put_get()` sets DIRECT_CSR.EN and clears it again for each one, including each status read in the wait for BUSY.
-  - In between, the QMI is in plain 03h read mode ("the RP2350 bootrom leaves the flash in a basic XIP state in between program/erase operations", p. 355).
+  - In between, the QMI is in plain 03h read mode: `flash_exit_xip()` sets it up, and the ROM's own comment says it "leaves the QMI in the same 03h XIP configuration between programming commands" (`varm_generic_flash.c`).
   - So a cache miss that falls between two polls would most likely reach the busy chip as a 03h read. The chip ignores it, so the read returns no flash data rather than a bus fault. This comes from the ROM code: the datasheet describes the whole operation as direct mode. It wasn't tried. Either way, nothing reads flash data.
 - **Suspend isn't used.** The chip could pause an erase or program to serve reads (Erase/Program Suspend, 75h, Winbond p. 53), but neither the ROM nor the SDK sends it.
 
@@ -37,7 +37,7 @@ The ROM's `flash_range_program()` sends one 256-byte page per command. `s_native
 
 1. **A byte that's in the cache** is read normally.
 2. **A byte that isn't** returns a bus fault. Interrupts being off doesn't stop it: PRIMASK masks interrupts, not HardFault, and BusFault, which is off by default, escalates to HardFault.
-3. **The HardFault handler is in flash too** (`isr_hardfault` at `0x10000208` in the 1.0.1 build). Fetching it faults again, and a fault in the HardFault handler puts the core in lockup: it stops.
+3. **The HardFault handler is in flash too.** The vector table is in RAM (`ram_vector_table`), so the core finds the handler. But the handler itself, the firmware's `isr_hardfault()`, which reboots at once, is in flash (`0x10000208` in the 1.0.1 build). Fetching its first instruction faults again, and a fault in the HardFault handler puts the core in lockup: it stops. If the handler and `watchdog_reboot()` happened to be in the cache, it would reboot at once instead.
 4. **The watchdog resets the Pico** 8 s later (`WATCHDOG_MS`, `main.c`). That is the phase 5 hang. Its note says `flash_range_program()` "stalled". The datasheet says it's a bus fault, and to the eye a lockup looks the same.
 5. **It depends on the cache.**
    - A `const` that only the write reads, like phase 5's zeros, misses every time and hangs every time.
@@ -47,7 +47,7 @@ The ROM's `flash_range_program()` sends one 256-byte page per command. `s_native
    - The page program command and address have gone out, and CS stays low.
    - The reset releases CS at a byte boundary, and the chip programs the bytes it has received: "less than 256 bytes (a partial page) can be programmed" (Winbond, Page Program (02h), p. 46).
    - In phase 5 the first byte missed, so nothing was written. A partly cached source could write the start of a page.
-   - Every reader already checks what it reads: the records and the boot log by their CRC, the updates and payloads by their SHA-256. A torn page is rejected like any broken one.
+   - The readers reject a torn page like any broken one. The records and the boot log check a CRC. An update and a payload upload program their first sector, which holds the header, last, so a hang before that leaves no valid header, and the boot checks the header (`payload_check()`, the ROM's `rom_chain_image()`). The zeros of `invalidate()` are meant to break a header anyway.
    - This is derived from the datasheets; it wasn't tried.
 
 ## 3. What programs flash today

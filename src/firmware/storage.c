@@ -32,10 +32,25 @@ static void erase_sector(void *ctx, uint32_t offset) {
     restore_interrupts(irq);
 }
 
+// Flash can't be read while it's being programmed: data read from flash then bus-faults (unless it's
+// cached), and the Pico hangs until the watchdog resets it. Data from outside SRAM, such as a const
+// array, is copied into RAM a page at a time first, while flash can still be read (flash-from-ram.md).
 static void program(void *ctx, uint32_t offset, const uint8_t *data, size_t length) {
-    const uint32_t irq = save_and_disable_interrupts();
-    flash_range_program((uint32_t)(uintptr_t)ctx + offset, data, length);
-    restore_interrupts(irq);
+    static uint8_t __uninitialized_ram(page)[FLASH_PAGE_SIZE];
+    const uint32_t at = (uint32_t)(uintptr_t)ctx + offset;
+    const uintptr_t from = (uintptr_t)data;
+    if (from >= SRAM_BASE && from + length <= SRAM_END) {
+        const uint32_t irq = save_and_disable_interrupts();
+        flash_range_program(at, data, length);
+        restore_interrupts(irq);
+        return;
+    }
+    for (size_t done = 0; done < length; done += FLASH_PAGE_SIZE) {
+        memcpy(page, data + done, FLASH_PAGE_SIZE);
+        const uint32_t irq = save_and_disable_interrupts();
+        flash_range_program(at + done, page, FLASH_PAGE_SIZE);
+        restore_interrupts(irq);
+    }
 }
 
 void storage_flash_erase(uint32_t offset) {

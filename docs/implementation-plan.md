@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.15, 2026-11-15 |
+| **Status** | Approved v1.16, 2026-11-16 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -27,6 +27,7 @@
 | v1.13 | 2026-11-15 | Approved by the owner. Release 1.0.2 as built (see its "As built" note): its code review, the owner's choices from it (a second update in the re-test, from 1.0.2 to 1.0.2, and the Payloads tab's check after the delete; the release notes reworded; the range check kept), and the re-test, which passed. |
 | v1.14 | 2026-11-15 | Approved by the owner. Release 1.0.3, the official gekkoboot r9.4, from the research in [gekkoboot-dol.md](research/gekkoboot-dol.md): the built-in gekkoboot was a CI build of r9.4 (version `undefined`), not the release's. The owner chose a DOL rebuilt from the release, a tool that rebuilds it and a local test that ties it to the release, and a focused re-test. |
 | v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
+| v1.16 | 2026-11-16 | Approved by the owner. Release 1.1.0, ordinary `.dol` files (D43, design v1.8), from the research in [dol-loader.md](research/dol-loader.md). The owner chose a stub that starts like gekkoboot's packer and fills low memory as gekkoboot does, refusing a `.dol` that reaches the payload image or low memory, and console tests with three `.dol` files and cold boots. |
 
 ## How this plan works
 
@@ -419,7 +420,7 @@ docs/                       design, plan, research, API, update-file format
 **For later releases:**
 - **A review fix is re-tested on the Pico along every path it touches,** not only by the host tests. Both bugs of the acceptance came from review fixes that passed the host tests, on paths no re-test had run: a payload upload and a delete (phase 4), and a client joined for 10 minutes (phase 5).
 - **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it. Taken up in release 1.0.2 (below), as a copy through a RAM page.
-- **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4.
+- **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
@@ -539,6 +540,27 @@ Results and SHA-256s in [release-1.0.3-results.md](research/release-1.0.3-result
 | 9 | **Note:** the tool refuses a packer linked at `0x81300000`, a missing input gave a traceback, and the xz magic isn't checked further | The missing input fixed, with a test. The other two kept: a refusal is the tool's answer to a layout it doesn't know, and it copies the image as it is, so a false match can't change what the Pico sends |
 | 10 | **Note:** "stub" also names gekkoboot's `stub/` | "The packer" in the note |
 | 11 | **Note:** the release notes said the built-in "makes" the release's UF2, and "Tested on a DOL-001" came before R4 | Reworded, with the owner's approval: gekkoboot's own tool turns it into the release's UF2. "Tested" kept, as R4 makes it true before publishing |
+
+## Release 1.1.0: ordinary `.dol` files (D43)
+
+**Branch:** `release-1.1.0`. **Research:** [dol-loader.md](research/dol-loader.md). **Design:** D43 (v1.8). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-16):**
+- the stub starts like gekkoboot's packer: real mode, the hardware quiesced, DABR and IABR cleared;
+- low memory filled as gekkoboot's `__SYS_PreInit` does, the video mode left 0;
+- a `.dol` that reaches the payload image or low memory is refused;
+- console tests with cubiboot's `ipl.dol`, Swiss r2119's `.dol`, and GCMM or the 240p Test Suite, with cold boots.
+
+The other later-releases items aren't in 1.1.0.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The stub:**<br>• `src/dolstub/dolstub.S`, built for `0x81300000` with Ubuntu's `binutils-powerpc-linux-gnu`, added to `docker/Dockerfile`. It does D43's four steps: the start, low memory, the program, the jump;<br>• the table after it: the entry, the BSS, and each section's address, offset and size. Its format is in the source's header;<br>• `tests/ppcsim.py`: the PowerPC interpreter from the research, extended with `rfi`, `mfspr`/`mtspr`, `mftb` and the hardware registers the stub touches, which read back test values;<br>• `tests/test_dolstub.py`. It runs the stub on made-up `.dol` files and checks:<br>&nbsp;&nbsp;– the sections, the BSS and low memory;<br>&nbsp;&nbsp;– every line written back and the instruction cache invalidated before the jump;<br>&nbsp;&nbsp;– no stores outside the program, low memory and the hardware registers;<br>&nbsp;&nbsp;– the jump to the entry.<br>It also assembles the source where binutils is installed (CI, Docker), and checks the bytes against the converters' copy. With `PICOBOOT_PAYLOAD_DIR`, it runs cubiboot's `ipl.dol` and Swiss r2119's `.dol` too | Opus | The tests and CI pass, and CI's bytes equal the local build's. The stub's size is recorded |
+| R2 | **The converters:**<br>• `src/web/dol.js` and `tools/picoboot-wifi.py`: an IPL build as now; any other `.dol` gets the stub, the table and its sections;<br>• both refuse a section or BSS that reaches the payload image or low memory, or lies outside main memory, with a message that says which. The slot-size check stays as it is;<br>• the page says which kind it converted;<br>• `tools/process_ipl.py` (the built-in) is unchanged;<br>• tests: the CLI's converter, its refusals, and the interpreter on its output; the Node test checks that `dol.js` gives the CLI's bytes;<br>• the README and the page's help text name both kinds | Sonnet, in a worktree (as for 4.5–4.7), Opus reviews | The tests and CI pass. For cubiboot's `ipl.dol` and Swiss r2119's `.dol`, the page and the CLI give the same payload, and the interpreter runs each to its entry |
+| R3 | **Version and notes:** `CMakeLists.txt` at `1.1.0`, the release notes in `docs/releases/1.1.0.md` | Opus | The owner approved the notes |
+| R4 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R5 | **Console test** on the DOL-001, on the build after R4:<br>• update over Wi-Fi from 1.0.3; a power-on keeps it;<br>• three `.dol` files converted by the page, at least one also by the CLI: cubiboot's `ipl.dol`, Swiss r2119's `.dol`, and GCMM or the 240p Test Suite;<br>• for each, 3 cold boots after a long power-off, and a quick power cycle. cubiboot starts Swiss from the card, Swiss shows the card, GCMM or the 240p Test Suite runs with the controller;<br>• an IPL build (Swiss in payload 1) still boots;<br>• every boot complete, with its margin; the page up | Owner | Passed; results in `docs/research/release-1.1.0-results.md` |
+| R6 | **Merge and tag `v1.1.0`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R5's build, then published | Owner | Released |
 
 ## Local builds and CI
 

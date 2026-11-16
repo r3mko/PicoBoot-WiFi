@@ -2,6 +2,7 @@
 
 import os
 import random
+import re
 import shutil
 import struct
 import subprocess
@@ -9,8 +10,11 @@ import tempfile
 import unittest
 
 from helpers import IPL_DOL, REPO, load_tool, make_dol
+from test_dolstub import run as run_stub
 
 pi = load_tool("process_ipl")
+ds = load_tool("dolstub")
+cli = load_tool("picoboot-wifi")
 NODE = shutil.which("node")
 BASE = 0x81300000
 
@@ -22,7 +26,7 @@ class DolJsTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def js(self, dol):
-        """(payload, None) or (None, message) from dol.js."""
+        """(payload, None) or (None, message) from dol.js; self.loader says if a stub was put in front."""
         src, out = os.path.join(self.tmp.name, "in.dol"), os.path.join(self.tmp.name, "out.bin")
         with open(src, "wb") as f:
             f.write(dol)
@@ -30,16 +34,27 @@ class DolJsTest(unittest.TestCase):
                              capture_output=True, text=True)
         if run.returncode:
             return None, run.stderr
+        self.assertIn(run.stdout, ("loader", "plain"))
+        self.loader = run.stdout == "loader"
         with open(out, "rb") as f:
             return f.read(), None
 
-    def same(self, dol):
-        """dol.js and process_ipl.py agree: the same payload, or the same error message."""
+    @staticmethod
+    def reference(dol):
+        """(payload, loader, None) or (None, None, message), as the contract has it from the Python tools."""
         try:
-            want, error = pi.dol_to_payload(dol), None
+            if pi.flatten_dol(bytearray(dol))[0] & 0x017FFFFF == 0x01300000:
+                return pi.dol_to_payload(dol), False, None
+            return pi.dol_to_payload(ds.wrap(dol)), True, None
         except ValueError as e:
-            want, error = None, str(e)
+            return None, None, str(e)
+
+    def same(self, dol):
+        """dol.js and the Python tools agree: the same payload and loader flag, or the same error message."""
+        want, loader, error = self.reference(dol)
         self.assertEqual(self.js(dol), (want, error))
+        if error is None:
+            self.assertEqual(self.loader, loader)
         return want
 
     def test_the_bundled_ipl(self):
@@ -91,6 +106,91 @@ class DolJsTest(unittest.TestCase):
                     patched(w18=0xFFFFFFFF, w36=0xFFFFFFFF)):
             with self.subTest(len(dol)):
                 self.assertIsNone(self.same(dol))
+
+    def test_the_embedded_stub_is_the_checked_in_one(self):
+        with open(os.path.join(REPO, "src", "web", "dol.js")) as f:
+            source = f.read()
+        literal = re.search(r"var STUB_HEX =((?:\s*\"[0-9a-f]+\"\s*\+?)+);", source).group(1)
+        self.assertEqual(bytes.fromhex("".join(re.findall(r'"([0-9a-f]+)"', literal))), ds.stub())
+
+    def test_ordinary_dols_get_the_loader_stub(self):
+        rnd = random.Random(3)
+        low = 0x80003100
+        for sections, entry, bss in (
+                ([(low, rnd.randbytes(4096)), (low + 0x10000, rnd.randbytes(1000))], low, (low + 0x20000, 0x2000)),
+                ([(low + 0x800, rnd.randbytes(64)), (low, rnd.randbytes(512)), (low + 0x4000, rnd.randbytes(8))],
+                 low, (0, 0)),                                        # out of order, gaps, no BSS
+                ([(low, b"\2" * 4)], low, (0, 0)),
+                ([(low, rnd.randbytes(100)), (0x80400000, rnd.randbytes(4000))], low + 8, (0x80500000, 4)),
+                ([(low, b"\3" * 8)], low + 4, (0, 0))):
+            with self.subTest(sections=len(sections), entry=entry):
+                self.assertIsNotNone(self.same(make_dol(sections, entry=entry, bss=bss)))
+                self.assertTrue(self.loader)
+        # A text section may be any of 0 to 6; a data section isn't one
+        self.same(make_dol([(low, b"\1" * 16)] + [(0, b"")] * 3 + [(low + 0x100, b"\2" * 16)], entry=low + 0x100))
+        self.assertTrue(self.loader)
+
+    def test_ipl_builds_get_no_stub(self):
+        self.same(make_dol([(BASE, b"\1" * 64)]))
+        self.assertFalse(self.loader)
+        with open(os.path.join(REPO, IPL_DOL), "rb") as f:
+            self.same(f.read())
+        self.assertFalse(self.loader)
+
+    def test_the_loader_refusals(self):
+        text = bytes(range(256)) * 16
+        low = 0x80003100
+        cases = (make_dol([(0x80003000, text)], entry=0x80003000),
+                 make_dol([(0x812FF800, text)], entry=0x812FF800),
+                 make_dol([(low, text)], entry=low, bss=(0x81200000, 0x200000)),
+                 make_dol([(low, text)], entry=low, bss=(0x80002000, 0x100)),
+                 make_dol([(low + 2, text)], entry=low + 2),
+                 make_dol([(low, text + b"x")], entry=low),
+                 make_dol([(low, text)], entry=0x80100000),
+                 make_dol([(low, text)] + [(0, b"")] * 6 + [(0x80010000, b"\1" * 16)], entry=0x80010000),
+                 make_dol([(low, text)], entry=low)[:-1])
+        for dol in cases:
+            with self.subTest(len(dol)):
+                self.assertIsNone(self.same(dol))
+        self.assertIn("reaches low memory", self.js(cases[0])[1])
+        self.assertIn("reaches the payload image", self.js(cases[1])[1])
+
+    def test_a_dol_at_the_ipl_address_with_a_wrong_entry_keeps_the_old_message(self):
+        dol = make_dol([(BASE, b"\1" * 16)], entry=0x80003100)
+        self.assertTrue(self.js(dol)[1].startswith("Invalid entry point or base address"))
+        self.same(dol)
+
+    def test_the_cli_agrees(self):
+        dol = make_dol([(0x80003100, bytes(range(256)) * 4), (0x80010000, b"\5" * 100)], entry=0x80003100,
+                       bss=(0x80020000, 0x100))
+        self.assertEqual(cli.convert_dol(dol, "x"), (self.same(dol), True))
+
+    def runs(self, name):
+        path = os.path.join(os.environ["PICOBOOT_PAYLOAD_DIR"], name)
+        if not os.path.exists(path):
+            self.skipTest(f"no {name} in PICOBOOT_PAYLOAD_DIR")
+        with open(path, "rb") as f:
+            dol = f.read()
+        payload = self.same(dol)
+        self.assertTrue(self.loader)
+        self.assertEqual(cli.convert_dol(dol, name), (payload, True))
+        found, (bss, bss_size), entry = ds.sections(dol)
+        image = bytes(pi.scramble(bytearray(0x720) + payload[32:-4])[0x720:])
+        cpu, _, jump = run_stub(dol, img=image)
+        self.assertEqual(jump, entry & 0x3FFFFFFF)
+        for _, address, offset, size in found:
+            pa = address & 0x3FFFFFFF
+            self.assertEqual(bytes(cpu.mem[pa:pa + size]), dol[offset:offset + size])
+        self.assertEqual(bytes(cpu.mem[bss & 0x3FFFFFFF:(bss & 0x3FFFFFFF) + bss_size]), bytes(bss_size))
+        self.assertEqual(cpu.cache_problems(), [])
+
+    @unittest.skipUnless(os.environ.get("PICOBOOT_PAYLOAD_DIR"), "PICOBOOT_PAYLOAD_DIR not set")
+    def test_cubiboot(self):
+        self.runs("cubiboot_ipl.dol")
+
+    @unittest.skipUnless(os.environ.get("PICOBOOT_PAYLOAD_DIR"), "PICOBOOT_PAYLOAD_DIR not set")
+    def test_swiss(self):
+        self.runs("swiss_r2119.dol")
 
     @unittest.skipUnless(os.environ.get("PICOBOOT_PAYLOAD_DIR"), "PICOBOOT_PAYLOAD_DIR not set")
     def test_the_projects_release_payloads_round_trip(self):

@@ -43,6 +43,21 @@ PAYLOAD1_SIZE = 0x180000        # payload 1, up to firmware slot A (src/common/l
 NAME_MAX = 24
 EXPECTED_ENTRY = 0x81300000     # of an IPL payload, for the .dol converter (a copy of tools/process_ipl.py's)
 EXPECTED_BASE = 0x01300000
+STUB_HEX = (    # the D43 loader stub: the bytes of src/dolstub/dolstub.bin (built from dolstub.S), 576 bytes
+    "386000007c7b03a63c600130386300187c7a03a64c000064480000057fe802a63c0080006000000c7c1a43a63c600c00"
+    "380000007c15fba67c12fba63880601c7c041a6c7000000141820014388060007c041a6c600000017c041b6c38805008"
+    "380008047c041b6c38a050347c051a6c5400045e7c051b6c7c041a6c5400056d4082fff83880000038000c407c0903a6"
+    "38a0fffc948500044200fffc3c80480038a001009085000038a50100280517004081fff4388040287c041a6c540096fa"
+    "38bf01f47c05002e90000028388060247c041a6c38c000012c0000ff4182000c3cc0100060c600043880302c7c041a6c"
+    "5400273e7cc6021490c0002c3c0009a76000ec80900000f83c001cf76000c580900000fc7cad42e67ccc42e67ced42e6"
+    "7c0538004082fff020c600007ca5019090a030d890c030dc3900000039203100480000ad3bdf0224839e0000811e0004"
+    "813e0008550800be5520f0bf418200187c0903a638a8fffc38800000948500044200fffc48000079837e000c3b5e0010"
+    "2c1b000041820048811a000080ba0004813a0008550800be7ca5f2145520f0bf4182001c7c0903a638a5fffc38c8fffc"
+    "84850004948600044200fff8480000313b5a000c3b7bffff4bffffb87c0004ac7c10faa6600008007c10fba64c00012c"
+    "579c00be7f8903a64e8004202c0900004d8200207d294214550800347c00406c390800207c0848404180fff44e800020"
+    "010000000200000001800000030000000200000004000000018000000300000060000000600000006000000060000000"
+)
+LOW_END = 0x80003100            # the loader stub fills low memory below this (a copy of tools/dolstub.py's)
 BOARD = "pico2_w"
 CHUNK = 16384
 UPLOAD_READ_TIMEOUT = 60        # after the last byte the Pico still writes and checks flash
@@ -250,9 +265,58 @@ def raw_payload(data, path):
     return data[:size]
 
 
+def _check_range(name, address, size):
+    """A copy of tools/dolstub.py's."""
+    end = address + size
+    if address % 4 or size % 4:
+        raise ValueError(f"{name} (0x{address:08X}, {size} bytes) isn't in whole words")
+    if address < LOW_END:
+        raise ValueError(f"{name} (0x{address:08X}-0x{end:08X}) reaches low memory, below "
+                         f"0x{LOW_END:08X}, which the loader stub fills")
+    if end > EXPECTED_ENTRY:
+        raise ValueError(f"{name} (0x{address:08X}-0x{end:08X}) reaches the payload image at "
+                         f"0x{EXPECTED_ENTRY:08X}, where the loader stub runs")
+
+
+def wrap_dol(dol):
+    """An ordinary .dol as a .dol built for 0x81300000: the loader stub, a table and the sections
+    (a copy of wrap() and its checks in tools/dolstub.py)."""
+    h = struct.unpack(">64I", dol[:256])
+    found = [(n, h[18 + n], h[n], h[36 + n]) for n in range(18) if h[36 + n]]
+    bss, entry = (h[54], h[55]), h[56]
+    for n, address, offset, size in found:
+        name = f"Section {n}"
+        if address == 0:
+            raise ValueError(f"{name} has data but no load address")
+        if offset + size > len(dol):
+            raise ValueError(f"{name} ends at 0x{offset + size:X}, past the end of the file "
+                             f"(0x{len(dol):X} bytes), file truncated?")
+        _check_range(name, address, size)
+    if bss[1]:
+        _check_range("The BSS", *bss)
+    if not any(n < 7 and address <= entry < address + size for n, address, _, size in found):
+        raise ValueError(f"The entry point 0x{entry:08X} isn't in a text section")
+    table_size = 16 + 12 * len(found)
+    table_size += -table_size % 32
+    records, data = b"", b""
+    for _, address, offset, size in found:
+        records += struct.pack(">III", address, table_size + len(data), size)
+        data += dol[offset:offset + size]
+    table = (struct.pack(">IIII", entry, bss[0], bss[1], len(found)) + records).ljust(table_size, b"\0")
+    image = bytes.fromhex(STUB_HEX) + table + data
+    header = [0] * 64
+    header[0], header[18], header[36], header[56] = 0x100, EXPECTED_ENTRY, len(image), EXPECTED_ENTRY
+    return struct.pack(">64I", *header) + image
+
+
 def convert_dol(data, path):
+    """(the payload, whether a loader stub is in front of it): an IPL build converts as it is, an
+    ordinary .dol is wrapped first."""
     try:
-        return dol_to_payload(data)
+        base = flatten_dol(bytearray(data))[0] & 0x017FFFFF
+        if base == EXPECTED_BASE:
+            return dol_to_payload(data), False
+        return dol_to_payload(wrap_dol(data)), True
     except ValueError as e:
         raise Refused(f"{path}: {e}")
 
@@ -270,8 +334,8 @@ def load_payload(path):
         payload = raw_payload(data, path)
         return payload, payload, "raw payload" + (", without the padding after it" if len(payload) < len(data) else "")
     if path.lower().endswith(".dol"):
-        payload = convert_dol(data, path)
-        return payload, payload, ".dol, converted"
+        payload, loader = convert_dol(data, path)
+        return payload, payload, ".dol, converted with a loader stub (an ordinary .dol)" if loader else ".dol, converted"
     raise Refused(f"{path} is not a payload: expected a payload UF2, a raw payload "
                   "(starts with IPLBOOT) or a .dol")
 
@@ -617,10 +681,11 @@ def cmd_payload_convert(args):
     out = args.output or os.path.splitext(args.file)[0] + (".uf2" if args.uf2 else ".bin")
     if os.path.exists(out) and not args.force:
         raise Refused(f"{out} exists already; use --force to overwrite it")
-    payload = convert_dol(dol, args.file)
+    payload, loader = convert_dol(dol, args.file)
     write_new(out, payload_uf2(payload) if args.uf2 else payload, True)
     what = "a UF2 for a USB install into payload 1" if args.uf2 else "a raw payload"
-    print(f"Wrote {out} ({what}), payload {len(payload)} bytes.\nSHA-256: {hashlib.sha256(payload).hexdigest()}")
+    print(f"Wrote {out} ({what}), payload {len(payload)} bytes"
+          f"{', with a loader stub for an ordinary .dol' if loader else ''}.\nSHA-256: {hashlib.sha256(payload).hexdigest()}")
 
 
 def cmd_ipl_once(args):

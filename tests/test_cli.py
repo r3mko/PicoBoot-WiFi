@@ -6,6 +6,7 @@ import http.server
 import io
 import json
 import os
+import random
 import socket
 import struct
 import tempfile
@@ -14,12 +15,14 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import REPO, load_tool, run_tool
+from helpers import REPO, load_tool, make_dol, run_tool
+from test_dolstub import run as run_stub
 
 cli = load_tool("picoboot-wifi")
 mk = load_tool("mkupdate")
 mkuf2 = load_tool("mkuf2")
 ipl = load_tool("process_ipl")
+ds = load_tool("dolstub")
 
 IMAGE = bytes(range(256)) * 700
 BLOB = b"W43B" + bytes(60) + b"blob data" * 1000
@@ -450,6 +453,20 @@ def synthetic_dol(entry=0x81300000, base=0x81300000, text=bytes(range(200)) * 3)
     return struct.pack(">64I", *header) + text
 
 
+LOW = 0x80003100
+ORDINARY_TEXT = bytes(range(256)) * 4
+ORDINARY_DATA = b"\x11\x22\x33\x44" * 100
+
+
+def ordinary_dol():
+    """An ordinary .dol: text and data sections, a BSS, entry at the start of the text."""
+    return make_dol([(LOW, ORDINARY_TEXT), (0x80010000, ORDINARY_DATA)], entry=LOW, bss=(0x80020000, 0x100))
+
+
+ORDINARY_PAYLOAD = ipl.dol_to_payload(ds.wrap(ordinary_dol()))
+ORDINARY_SHA = hashlib.sha256(ORDINARY_PAYLOAD).hexdigest()
+
+
 def payload_status(chosen="payload1", target="payload2", p1=None, p2=None, once=False):
     empty = {"valid": False, "name": "", "size": 0, "sha256": None}
     return {**STATUS, "payloads": {"chosen": chosen, "upload_target": target, "original_ipl_once": once,
@@ -522,6 +539,93 @@ class ConverterCopyTest(unittest.TestCase):
                 with self.assertRaises(ValueError) as got:
                     cli.dol_to_payload(dol)
                 self.assertEqual(str(got.exception), str(want.exception))
+
+
+class LoaderCopyTest(unittest.TestCase):
+    """The CLI's wrapper for an ordinary .dol is a copy of tools/dolstub.py's."""
+
+    def test_the_embedded_stub_is_the_checked_in_one(self):
+        self.assertEqual(bytes.fromhex(cli.STUB_HEX), ds.stub())
+
+    def test_ordinary_dols(self):
+        rnd = random.Random(5)
+        for sections, entry, bss in (
+                ([(LOW, ORDINARY_TEXT), (0x80010000, ORDINARY_DATA)], LOW, (0x80020000, 0x100)),
+                ([(LOW + 0x800, rnd.randbytes(64)), (LOW, rnd.randbytes(512)), (LOW + 0x4000, rnd.randbytes(8))],
+                 LOW, (0, 0)),
+                ([(LOW, b"abcd")], LOW, (0, 0)),
+                ([(LOW, b"abcd" * 50), (0x80400000, b"wxyz" * 1000)], LOW + 8, (0x80500000, 4))):
+            with self.subTest(sections=len(sections)):
+                dol = make_dol(sections, entry=entry, bss=bss)
+                self.assertEqual(cli.wrap_dol(dol), ds.wrap(dol))
+                self.assertEqual(cli.convert_dol(dol, "x"), (ipl.dol_to_payload(ds.wrap(dol)), True))
+
+    def test_ipl_builds_are_as_before(self):
+        dol = synthetic_dol()
+        self.assertEqual(cli.convert_dol(dol, "x"), (ipl.dol_to_payload(dol), False))
+        with open(os.path.join(REPO, "assets", "ipl", "gekkoboot_r9_4.dol"), "rb") as f:
+            self.assertEqual(cli.convert_dol(f.read(), "x")[1], False)
+
+    def test_the_same_errors(self):
+        text = bytes(range(256)) * 16
+        cases = [make_dol([(0x80003000, text)], entry=0x80003000),
+                 make_dol([(0x81300000 - 8, text)], entry=0x81300000 - 8),
+                 make_dol([(LOW, text)], entry=LOW, bss=(0x81200000, 0x200000)),
+                 make_dol([(LOW, text)], entry=LOW, bss=(0x80002000, 0x100)),
+                 make_dol([(LOW + 2, text)], entry=LOW + 2),
+                 make_dol([(LOW, text + b"x")], entry=LOW),
+                 make_dol([(LOW, text)], entry=0x80100000),
+                 make_dol([(LOW, text)] + [(0, b"")] * 6 + [(0x80010000, b"\1" * 16)], entry=0x80010000),
+                 make_dol([]), b"\0" * 100, make_dol([(LOW, text)], entry=LOW)[:-1],
+                 make_dol([(0, text)], entry=LOW),
+                 synthetic_dol(entry=0x80003100)]
+        for dol in cases:
+            with self.subTest(len(dol)):
+                try:
+                    flat = ipl.flatten_dol(bytearray(dol))
+                    ipl.dol_to_payload(dol if flat[0] & 0x017FFFFF == 0x01300000 else ds.wrap(dol))
+                    self.fail("the reference accepted it")
+                except ValueError as want:
+                    with self.assertRaises(cli.Refused) as got:
+                        cli.convert_dol(dol, "x.dol")
+                    self.assertEqual(str(got.exception), f"x.dol: {want}")
+
+    def test_the_interpreter_runs_the_clis_payload(self):
+        payload, loader = cli.convert_dol(ordinary_dol(), "x")
+        self.assertTrue(loader)
+        image = bytes(ipl.scramble(bytearray(0x720) + payload[32:-4])[0x720:])
+        cpu, _, jump = run_stub(ordinary_dol(), img=image)
+        self.assertEqual(jump, 0x3100)
+        self.assertEqual(bytes(cpu.mem[0x3100:0x3100 + len(ORDINARY_TEXT)]), ORDINARY_TEXT)
+        self.assertEqual(bytes(cpu.mem[0x10000:0x10000 + len(ORDINARY_DATA)]), ORDINARY_DATA)
+        self.assertEqual(bytes(cpu.mem[0x20000:0x20100]), bytes(0x100))
+        self.assertEqual(cpu.cache_problems(), [])
+
+    def real(self, name):
+        path = os.path.join(os.environ["PICOBOOT_PAYLOAD_DIR"], name)
+        if not os.path.exists(path):
+            self.skipTest(f"no {name} in PICOBOOT_PAYLOAD_DIR")
+        with open(path, "rb") as f:
+            dol = f.read()
+        payload, loader = cli.convert_dol(dol, name)
+        self.assertTrue(loader)
+        found, (bss, bss_size), entry = ds.sections(dol)
+        image = bytes(ipl.scramble(bytearray(0x720) + payload[32:-4])[0x720:])
+        cpu, _, jump = run_stub(dol, img=image)
+        self.assertEqual(jump, entry & 0x3FFFFFFF)
+        for _, address, offset, size in found:
+            pa = address & 0x3FFFFFFF
+            self.assertEqual(bytes(cpu.mem[pa:pa + size]), dol[offset:offset + size])
+        self.assertEqual(bytes(cpu.mem[bss & 0x3FFFFFFF:(bss & 0x3FFFFFFF) + bss_size]), bytes(bss_size))
+        self.assertEqual(cpu.cache_problems(), [])
+
+    @unittest.skipUnless(os.environ.get("PICOBOOT_PAYLOAD_DIR"), "PICOBOOT_PAYLOAD_DIR not set")
+    def test_cubiboot(self):
+        self.real("cubiboot_ipl.dol")
+
+    @unittest.skipUnless(os.environ.get("PICOBOOT_PAYLOAD_DIR"), "PICOBOOT_PAYLOAD_DIR not set")
+    def test_swiss(self):
+        self.real("swiss_r2119.dol")
 
 
 class PayloadStatusTest(CliTestCase):
@@ -613,6 +717,19 @@ class PayloadUploadTest(CliTestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(self.uploads()[0]["body"], PAYLOAD)
         self.assertEqual(self.uploads()[0]["headers"]["X-Name"], "Swiss r2119")
+
+    def test_an_ordinary_dol_is_converted_with_a_stub(self):
+        self.pico.route("POST", "/api/payload", (200, {**self.ANSWER, "size": len(ORDINARY_PAYLOAD),
+                                                       "sha256": ORDINARY_SHA}))
+        code, out, err = self.cli("payload", "upload", self.write(ordinary_dol(), "game.dol"), "--yes")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.uploads()[0]["body"], ORDINARY_PAYLOAD)
+        self.assertIn(f"{len(ORDINARY_PAYLOAD)} bytes (.dol, converted with a loader stub (an ordinary .dol))", out)
+
+    def test_an_ipl_dol_says_converted(self):
+        code, out, err = self.cli("payload", "upload", self.write(synthetic_dol(), "a.dol"), "--yes")
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"{len(PAYLOAD)} bytes (.dol, converted)", out)
 
     def test_the_target_comes_from_the_status(self):
         self.pico.route("GET", "/api/status", (200, payload_status("payload2", "payload1")))
@@ -799,7 +916,29 @@ class PayloadCommandsTest(CliTestCase):
         self.assertEqual(self.cli("payload", "convert", path, "-o", other)[0], 0)
         self.assertTrue(os.path.exists(other))
 
-    def test_convert_refuses_a_non_ipl_dol(self):
+    def test_convert_an_ordinary_dol(self):
+        path = self.write(ordinary_dol(), "game.dol")
+        code, out, err = self.cli("payload", "convert", path)
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(self.tmp.name, "game.bin"), "rb") as f:
+            self.assertEqual(f.read(), ORDINARY_PAYLOAD)
+        self.assertIn(f"payload {len(ORDINARY_PAYLOAD)} bytes, with a loader stub for an ordinary .dol.\n", out)
+        self.assertIn(ORDINARY_SHA, out)
+
+    def test_convert_an_ipl_dol_says_nothing_of_a_stub(self):
+        code, out, err = self.cli("payload", "convert", self.write(synthetic_dol(), "a.dol"))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"payload {len(PAYLOAD)} bytes.\n", out)
+        self.assertNotIn("loader", out)
+
+    def test_convert_refuses_a_dol_that_reaches_the_ipl_address(self):
+        path = self.write(make_dol([(LOW, ORDINARY_TEXT)], entry=LOW, bss=(0x81200000, 0x200000)), "game.dol")
+        code, _, err = self.cli("payload", "convert", path)
+        self.assertEqual(code, 1)
+        self.assertIn("reaches the payload image", err)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "game.bin")))
+
+    def test_convert_refuses_an_ipl_dol_with_a_wrong_entry(self):
         path = self.write(synthetic_dol(entry=0x80003100), "game.dol")
         code, _, err = self.cli("payload", "convert", path)
         self.assertEqual(code, 1)

@@ -101,7 +101,7 @@ progress { width:100%; height:14px; margin-top:12px; }
   <div id="pl-err" class="err"></div>
   <h2>Upload a payload</h2>
   <input type="file" id="pl-file">
-  <div class="hint">A .dol, a payload .uf2 or a raw payload.</div>
+  <div class="hint">A .dol (built for the IPL's address or an ordinary one), a payload .uf2 or a raw payload.</div>
   <div class="err" id="pl-up-err"></div>
   <div id="pl-up-box" hidden>
     <label for="pl-up-name">Name</label>
@@ -533,7 +533,7 @@ $("pl-file").onchange = async () => {
   const f = $("pl-file").files[0];
   if (!f || uploading) return;
   const bad = m => { $("pl-up-err").textContent = m; };
-  let blob = f;
+  let blob = f, loader = false;
   try {
     const dv = new DataView(await f.slice(0, 8).arrayBuffer());
     const head = String.fromCharCode(...new Uint8Array(dv.buffer));
@@ -547,7 +547,7 @@ $("pl-file").onchange = async () => {
       blob = f.slice(0, size);
     } else if (dv.getUint32(0, true) !== 0x0A324655) {
       if (!window.PicoBootDol) return bad("The .dol converter isn't loaded yet. Try again in a moment.");
-      try { blob = new Blob([PicoBootDol.dolToPayload(new Uint8Array(await f.arrayBuffer()))]); } catch (e) { return bad(e.message); }
+      try { const c = PicoBootDol.convertDol(new Uint8Array(await f.arrayBuffer())); blob = new Blob([c.payload]); loader = c.loader; } catch (e) { return bad(e.message); }
     }
   } catch (e) { return bad("Can't read this file."); }
   await loadStatus();
@@ -557,7 +557,7 @@ $("pl-file").onchange = async () => {
   const t = p.upload_target, o = t === "payload1" ? "payload 2" : "payload 1";
   $("pl-up-name").value = nameFrom(f.name);
   $("pl-up-info").className = p[t].valid ? "banner" : "banner ok";
-  $("pl-up-info").innerHTML = `${mb(blob.size)}. It goes into payload ${t.slice(-1)} and boots at the next power-on; ${o} stays as it is.` +
+  $("pl-up-info").innerHTML = (loader ? "An ordinary .dol: a small loader in front of it puts it in place at power-on. " : "") + `${mb(blob.size)}. It goes into payload ${t.slice(-1)} and boots at the next power-on; ${o} stays as it is.` +
     (p[t].valid ? ` <b>This replaces ${p[t].name ? esc(p[t].name) : "the payload there"}.</b>` : "");
   $("pl-up-box").hidden = $("pl-up-info").hidden = false;
 };

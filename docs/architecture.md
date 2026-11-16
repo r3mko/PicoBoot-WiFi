@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.7, 2026-11-11 |
+| **Status** | Approved v1.9, 2026-11-16 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -21,6 +21,8 @@
 | v1.5 | 2026-11-10 | Approved by the owner at the end of phase 3. Phase 3, step 3.1: the update file format ([update-format.md](update-format.md)). The owner chose to always carry the Wi-Fi blob in the release file, which drops D14's copy between the Wi-Fi areas, and to allow downgrades with a warning (D11). The header names the layout and the lowest loader version, since OTA can't update the loader (D11). Step 3.4: D12 as built; the owner chose 3 crashes for the crash loop, and a fallback for good. |
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. D17: a USB install is recorded after a complete injection (or a choice, rename or upload over Wi-Fi), so the console's power-on shows it. D43: a loader stub for ordinary `.dol` files, for a later release. The phase 4 review: a wider fingerprint, no update to a firmware from before boot control format 2, Wi-Fi 1.5 s later on an "original IPL once" boot. |
 | v1.7 | 2026-11-11 | Approved by the owner at the end of phase 5. Phase 5: how a release is made (D24): a draft release by CI on a version tag, with the CLI and checksums; a release's version without the git hash. The security review (D19): what the password gate means, and DNS-rebinding reads of the GETs accepted by the owner. |
+| v1.8 | 2026-11-16 | Approved by the owner. D43, a loader stub for ordinary `.dol` files, for release 1.1.0, from the research in [dol-loader.md](research/dol-loader.md). The owner chose a start like gekkoboot's packer, low memory filled as gekkoboot does, and refusing a `.dol` that reaches the payload image or low memory. D16 and D25 updated to match. |
+| v1.9 | 2026-11-16 | Approved by the owner. D43 as built (release 1.1.0): the stub is linked at `0x01300000`; the BSS is zeroed before the sections; the system-call vector returns (`rfi`), from the code review. D16: a `.dol` at `0x81300000` with another entry point is refused as before. |
 
 ## How to read the decisions
 
@@ -76,7 +78,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D40 | Settings | Decision | Their values and defaults: channel 6 (1–11), Tx power in named levels (medium), country worldwide |
 | D41 | Settings changes | Decision | At once; Wi-Fi changes restart the AP and stay on trial until a client joins; the password is write-only |
 | D42 | Payload uploads | Decision | Names you choose; into payload 2 while the built-in boots; the chosen payload can't be deleted; backups without the password; boot control format 2 with loader 3 |
-| D43 | Ordinary `.dol` files | Decision | Not in the first release: a loader stub in the payload, so that `.dol` files not built for the IPL's address boot too; an option for later releases |
+| D43 | Ordinary `.dol` files | Decision | A loader stub in the payload (release 1.1.0): real mode, low memory as gekkoboot fills it, the sections, the cache sync; `.dol` files that reach the payload image or low memory are refused |
 
 ## 1. Goal and scope
 
@@ -335,11 +337,22 @@ power on -> boot ROM -> loader (flash offset 0)
 - **Raw payload:** the `IPLBOOT` … `PICO` image as it sits in flash.
 - **Checks:** every upload is checked for header, footer, size (≤ 1.5 MB for payload 1; ≤ 1.5 MB − 4K for payload 2, D37) and 1 KB alignment before it can be chosen.
 - **`.dol` files:** converted to a payload in the browser (JavaScript port of `tools/process_ipl.py`) and in the CLI tool (the Python original). The device doesn't convert them: DOL sections need random access, which a streamed upload doesn't give.
+  - A `.dol` built as an IPL replacement (loaded at and started from `0x81300000`) becomes the payload image itself.
+  - A `.dol` loaded elsewhere gets D43's loader stub in front. One loaded at `0x81300000` with another entry point is refused, as before.
 
-**D43 (Decision): no loader for ordinary `.dol` files in the first release** (the owner's choice, phase 4).
-- **Today:** the converter (D16) takes only a `.dol` built as an IPL replacement: loaded at, and started from, `0x81300000`, where the boot ROM puts the IPL and jumps to it (gekkoboot, iplboot, Swiss's IPL build). Others are refused, e.g. Swiss's regular `swiss_r2119.dol`, which starts at `0x80397940`.
-- **What it would be:** a small loader stub built for `0x81300000`, with the `.dol` appended. The stub copies the sections to their own addresses, clears the BSS and jumps to the entry point, as Swiss's PicoBoot build does in effect. The converter in the browser and the CLI would put the two together.
-- **Status:** an option for later releases. It needs a GameCube toolchain (devkitPPC) for the stub, and console tests with a range of `.dol` files.
+**D43 (Decision): a loader stub for ordinary `.dol` files** (release 1.1.0, the owner's choices; research in [dol-loader.md](research/dol-loader.md)).
+- **What it is:** a `.dol` that isn't built for `0x81300000` (an ordinary one, linked at `0x80003100` by default) becomes a payload image of a small loader stub, a table and the `.dol`'s sections. An IPL build still converts as before (D16).
+- **The stub,** linked at `0x01300000` and entered at `0x81300000` (where BS1 jumps), in this order:
+  1. **Start like gekkoboot's packer** (the code at the same address in our built-in): real mode first (`mtsrr1 0`, `rfi`), so nothing depends on BS1's undocumented BATs. Then it quiesces the hardware: stops a DI transfer, resets and halts the DSP, turns audio DMA off and waits for the DMAs. It clears DABR and IABR, as Swiss's newer packer does.
+  2. **Low memory as gekkoboot's `__SYS_PreInit`:** zero `0x80000000`–`0x800030FF`, then the memory size (`0x28`, from the memory controller as BS1 left it), the console type (`0x2C`), the bus and CPU clocks (`0xF8`, `0xFC`) and the boot time (`0x800030D8`). The video mode (`0xCC`) stays 0: libogc sets it itself from the console's SRAM settings. The exception vectors point at a loop, so an exception before the program sets its own stops there; the system call's (`0xC00`) returns (`rfi`), as Swiss's packer leaves it and as a program gekkoboot starts finds it, because libogc's cache flushes end in `sc`.
+  3. **The program:** the BSS zeroed, then each section copied to its address, in the header's order, so a section inside the BSS's range keeps its data, as in Swiss's loader; everything written back (`dcbst`).
+  4. **The start:** `sync`, the instruction cache invalidated, `isync`, then a jump to the entry. No argv (argc 0).
+- **Why:** booted straight from the payload, nobody fills low memory or syncs the caches, and after a long power-off memory holds garbage. cubiboot's own PicoBoot stub does neither, and fails on the owner's cold boots.
+- **What the converter refuses:** a `.dol` with a section or BSS that reaches the payload image (from `0x81300000`) or low memory (below `0x80003100`), or lies outside the 24 MB of main memory. None of the `.dol` files surveyed does; the stub stays simple.
+- **Built with** Ubuntu's PowerPC binutils (`binutils-powerpc-linux-gnu`) in the build image, not devkitPPC: the stub is a few hundred bytes of assembly, with no C or libraries.
+- **Where it lives:** the assembly source in the repo; its bytes in the page's converter and the CLI, which each put the payload together. CI assembles the source and checks the bytes match.
+- **Only the converters change:** the payload format, the firmware's C code, the loader and the injection stay as they are.
+- **Correction of earlier text:** Swiss's PicoBoot build doesn't copy `.dol` sections (its xz packer unpacks one flat image); the closest existing design is cubiboot's `entry.dol`.
 
 **D42 (Decision): payload uploads, names and backups** (phase 4, the owner's choices; details D15–D17, D22).
 - **Names:** each payload has a short name you choose, up to 24 printable characters. The payload page pre-fills it from the file name (`swiss_r2119.dol` → `Swiss r2119`); it can be changed at the upload and renamed later.
@@ -488,7 +501,8 @@ Home Wi-Fi (D21) is left out of the first release.
   - Python tests for the tools;
   - the PIO simulator from PicoBoot-DX against the real PIO programs;
   - a layout check of each ELF against the flash map;
-  - host-compiled C tests for the loader's slot decision and the boot-control records.
+  - host-compiled C tests for the loader's slot decision and the boot-control records;
+  - D43's stub: assembled with Ubuntu's PowerPC binutils and checked against the converters' copy, then run by a small PowerPC interpreter in Python on made-up `.dol` files, which checks the copies, the BSS, low memory and the cache sync before the jump.
 - **Hardware tests:** the owner, on a real GameCube.
 
 **D26 (Decision): LED.**

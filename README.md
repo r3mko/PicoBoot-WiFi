@@ -8,7 +8,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
 
 ## What it does
 
-- **Boots a payload at every power-on:** payload 1, payload 2, or the built-in gekkoboot. It takes the same payloads as PicoBoot and PicoBoot-DX: `swiss_rXXXX.uf2`, `gekkoboot_pico.uf2`, or a `.dol` built as an IPL replacement.
+- **Boots a payload at every power-on:** payload 1, payload 2, or the built-in gekkoboot. It takes the same payloads as PicoBoot and PicoBoot-DX: `swiss_rXXXX.uf2`, `gekkoboot_pico.uf2`, or a `.dol` built as an IPL replacement. It also takes an ordinary `.dol`, with a small loader in front.
 - **A Wi-Fi access point after the injection:** `PicoBoot-XXXX`, where `XXXX` is from the chip's ID. Phones open its page by themselves; otherwise go to `http://192.168.4.1/`. It turns off 10 minutes after the last client leaves.
 - **Payloads over Wi-Fi:**
   - upload a `.dol`, a payload `.uf2` or a raw payload; it goes into the slot that isn't chosen;
@@ -82,7 +82,7 @@ Install `picoboot-wifi-X.Y.Z.uf2` as above. The wiring stays the same, and the p
   - **Per payload:** choose it, rename it, delete it (not the chosen one), or download a backup.
   - **Built-in gekkoboot:** it can be chosen as well. It also boots when the chosen payload isn't valid.
   - **Original IPL once:** the next power-on starts the console's own menu; the one after boots the payload again.
-  - **`.dol` files:** only those built as an IPL replacement work, i.e. loaded at `0x81300000`, such as gekkoboot or iplboot. Swiss ships its IPL payload only in `PicoBoot/swiss_rXXXX.uf2`, so use that; a regular `swiss_rXXXX.dol` is refused.
+  - **`.dol` files:** both kinds work. One built as an IPL replacement (loaded at `0x81300000`, such as gekkoboot or iplboot) is used as it is. An ordinary `.dol` gets a small loader stub in front of it, which puts it in place at power-on. It is refused if its sections or BSS reach `0x81300000` and up, or low memory below `0x80003100`. Swiss's regular `swiss_rXXXX.dol` works too; the PicoBoot `swiss_rXXXX.uf2` still does as well.
 - **Firmware:**
   - **Install an update** (`picoboot-wifi-X.Y.Z-update.bin`): it goes into the other slot and starts on trial.
   - **Keeping it:** it's kept by itself after the next power-on with a complete injection, or press *Keep*. If it crashes on trial, or its Wi-Fi doesn't come up, the previous firmware boots again by itself.

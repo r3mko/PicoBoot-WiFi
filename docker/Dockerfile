@@ -33,5 +33,10 @@ RUN git clone --depth 1 --branch 2.3.1 https://github.com/raspberrypi/picotool.g
     && cmake --install /tmp/picotool/build \
     && rm -rf /tmp/picotool
 
+# PowerPC binutils for the D43 loader stub (src/dolstub), in a layer of their own so the SDK and
+# picotool layers above stay cached
+RUN apt-get update && apt-get install -y --no-install-recommends binutils-powerpc-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PICO_SDK_PATH=/opt/pico-sdk \
     PICOTOOL_FETCH_FROM_GIT_PATH=/opt/picotool

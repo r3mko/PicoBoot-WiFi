@@ -111,3 +111,4 @@ endfunction()
 
 add_subdirectory(src/loader)
 add_subdirectory(src/firmware)
+add_subdirectory(src/dolstub)

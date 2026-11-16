@@ -58,6 +58,9 @@ def _check_range(name, address, size):
     end = address + size
     if address % 4 or size % 4:
         raise ValueError(f"{name} (0x{address:08X}, {size} bytes) isn't in whole words")
+    if address < 0x80000000 or end > 0x81800000:
+        raise ValueError(f"{name} (0x{address:08X}-0x{end:08X}) is outside main memory "
+                         f"(0x80000000-0x81800000)")
     if address < LOW_END:
         raise ValueError(f"{name} (0x{address:08X}-0x{end:08X}) reaches low memory, below "
                          f"0x{LOW_END:08X}, which the loader stub fills")

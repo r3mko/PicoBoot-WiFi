@@ -25,8 +25,8 @@ A research agent read the projects' sources; the claims the design rests on were
 
 | `.dol` | Sections and BSS | As a payload | Slots |
 |---|---|---|---|
-| cubiboot v1.13.0 `ipl.dol` | `0x80003100`–`0x80327CE0`, a 2.5 MB BSS | 734 KB, 717 transfers | both |
-| Swiss r2119 `swiss_r2119.dol` | `0x80397940`–`0x804E8A80` | 1,350,656 B, 1319 transfers | both |
+| cubiboot v1.13.0 `ipl.dol` | `0x80003100`–`0x80327CE0`, a 2.5 MB BSS | 733,508 B, 717 transfers | both |
+| Swiss r2119 `swiss_r2119.dol` | `0x80397940`–`0x804E8A80` | 1,350,596 B, 1319 transfers | both |
 | Swiss r2119 `Legacy/swiss_r2119-lz.dol` | `0x80509400`–`0x806E0080` | 1.93 MB | neither |
 
 - **Below the payload image:** the image would run from `0x81300000` to at most `0x81480000` (1.5 MB). None of these reaches it. The libogc link scripts put programs at `0x80003100` (devkitppc-crtls `ogc.ld`).
@@ -42,7 +42,8 @@ A research agent read the projects' sources; the claims the design rests on were
   3. It quiesces the hardware: it stops a DI transfer, resets and halts the DSP, turns audio DMA off and waits for DMAs (`crt0.S:58-102`).
   4. It points the exception vectors at a reload and sets its own stack (`crt0.S:126-141`).
   5. At the end it does `dcbst` over its output, `sync`, then `HID0 |= 0xC00` (flash-invalidates both L1 caches), and jumps to the physical entry (`main.c:109-113`).
-- **Swiss's newer packer** also clears DABR and IABR, and turns the locked cache off (`cube/packer/source/crt0.S:129-156`).
+- **Swiss's newer packer** also clears DABR and IABR, puts `rfi` at the system-call vector `0xC00`, and turns the locked cache off (`cube/packer/source/crt0.S:129-156`).
+- **A program gekkoboot starts** finds `rfi` at every vector: before the jump, `SYS_ResetSystem` closes them (libogc2 `exception.c`, `__exception_close`). An early `sc` therefore returns. libogc's cache flushes (`DCFlushRange`, `DCStoreRange`) end in `sc`, and a program may call them before it sets up its own handlers, for example in a `__SYS_PreInit` (release 1.1.0's code review).
 - **A libogc program sets up the rest itself.** libogc2's and devkitPro libogc's crt0 set their own BATs, MSR, caches and stack before any C code. They clear their own SBSS and BSS (libogc2 `ogc_crt0.S:55-71`; libogc 3 `common_crt0.S`). Without the `_arg` magic at entry+8, argc is 0. So the stub must leave a sane machine, but needn't build the libogc environment [inf].
 
 ## 4. Low memory
@@ -66,7 +67,7 @@ The IPL normally fills low memory (`0x80000000`–`0x800030FF`) before it starts
 
 ## 5. Building it without devkitPPC
 
-- **Ubuntu 26.04's `binutils-powerpc-linux-gnu` 2.46** in our build image assembles and links a freestanding stub (`as -mregnames -m750cl`, `ld` at `0x81300000`, `objcopy -O binary`). No C, libc or SDK is involved.
+- **Ubuntu 26.04's `binutils-powerpc-linux-gnu` 2.46** in our build image assembles and links a freestanding stub (`as -mregnames -m603`, `ld` at `0x01300000`, `objcopy -O binary`). `-m750cl` lacks the 750's `mftb`; with `-many`, `mftb` becomes the newer `mfspr` form, which the 750 doesn't have. No C, libc or SDK is involved.
 - **A prototype** (copy, clear, sync, jump; in virtual mode, without §3's or §4's set-up) is 224 bytes. A full one with real mode and low memory would be a few hundred bytes [inf].
 - **Where the bytes live:** the converter exists twice (`dol.js`, the CLI) and the CLI is one standard-library file. So the stub would go in as fixed bytes in both, with its assembly source in the repo. CI reassembles it and checks the bytes match. Whether binutils gives the same bytes on CI's amd64 as locally on arm64 is to be confirmed [inf: the assembler doesn't depend on the host].
 

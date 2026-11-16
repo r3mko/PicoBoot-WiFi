@@ -28,7 +28,7 @@ class Hardware:
 
     def __init__(self, mi=2, dicfg=0xFF, revision=2, di_running=False, dsp_busy=2, ai=0x0000C123):
         self.values = {
-            0x0C004028: (mi << 16) | 0x5A5A,        # The memory controller's 0x4028, then 0x402A
+            0x0C004028: ((0xFFF8 | mi) << 16) | 0x5A5A,     # 0x4028 (its low 3 bits count), 0x402A
             0x0C006024: dicfg,                      # DICFG
             0x0C00302C: (revision << 28) | 0x0123456,
             0x0C00601C: 1 if di_running else 0,     # DICR: TSTART
@@ -108,6 +108,7 @@ class RunTest(unittest.TestCase):
         expected = bytearray(0x3100)
         for vector in range(0x100, 0x1800, 0x100):
             expected[vector:vector + 4] = struct.pack(">I", 0x48000000)      # b . (itself)
+        expected[0xC00:0xC04] = struct.pack(">I", 0x4C000064)               # The system call: rfi
         struct.pack_into(">I", expected, 0x28, 0x01800000)                  # Memory controller value 2: 24 MB
         struct.pack_into(">I", expected, 0x2C, 0x00000001 + 2)              # Retail HW1, revision 2
         struct.pack_into(">II", expected, 0xF8, 162000000, 486000000)
@@ -175,6 +176,18 @@ class HardwareVariantsTest(unittest.TestCase):
         self.assertEqual(bytes(cpu.mem[0x2001C:0x20024]), bytes(8))
         self.assertEqual(cpu.cache_problems(), [])
 
+    def test_bss_first_then_the_sections_in_order(self):
+        # A data section inside the BSS's range keeps its data, and where sections overlap, the later
+        # one in the header wins
+        dol = make_dol([(0x80003100, TEXT), (0x80021000, b"\x77" * 64), (0x80021020, b"\x88" * 64)],
+                       entry=0x80003100, bss=(0x80020000, 0x4000))
+        cpu, _, _ = run(dol)
+        self.assertEqual(bytes(cpu.mem[0x20000:0x21000]), bytes(0x1000))
+        self.assertEqual(bytes(cpu.mem[0x21000:0x21020]), b"\x77" * 32)
+        self.assertEqual(bytes(cpu.mem[0x21020:0x21060]), b"\x88" * 64)
+        self.assertEqual(bytes(cpu.mem[0x21060:0x24000]), bytes(0x24000 - 0x21060))
+        self.assertEqual(cpu.cache_problems(), [])
+
     def test_an_empty_section_record_is_skipped(self):
         # The converters leave empty sections out; the stub copes with one anyway
         img = bytearray(ds.image(SIMPLE, STUB))
@@ -196,6 +209,18 @@ class HardwareVariantsTest(unittest.TestCase):
         (_, _, tbu), (_, _, tbl) = cpu.tb_reads[3:5]
         self.assertEqual(tbu, 2)
         self.assertEqual((-boot) & 0xFFFFFFFFFFFFFFFF, (tbu << 32) | tbl)
+
+    def test_boot_time_with_a_low_word_of_zero(self):
+        # Minus (5 << 32): the low word's negation carries into the high word
+        first = Cpu(ds.image(SIMPLE), hardware=Hardware(), timebase=0)
+        first.run(inside=(IMAGE, IMAGE + len(STUB)), max_steps=MAX_STEPS)
+        step = first.tb_reads[1][0]
+        self.assertTrue(step // 1000 == (step - 1) // 1000 == (step + 1) // 1000)
+        img = ds.image(SIMPLE, STUB)
+        cpu = Cpu(img, hardware=Hardware(), timebase=(5 << 32) - step // 1000, tb_divider=1000)
+        cpu.run(inside=(IMAGE, IMAGE + len(STUB)), max_steps=MAX_STEPS)
+        self.assertEqual([v for _, _, v in cpu.tb_reads], [5, 0, 5])
+        self.assertEqual(struct.unpack_from(">II", cpu.mem, 0x30D8), (0xFFFFFFFB, 0))
 
 
 class CacheCheckTest(unittest.TestCase):
@@ -248,6 +273,10 @@ class LayoutTest(unittest.TestCase):
             ("entry outside", make_dol([(0x80003100, TEXT)], entry=0x80100000), "isn't in a text section"),
             ("entry in data", make_dol([(0x80003100, TEXT)] + [(0, b"")] * 6 + [(0x80010000, DATA)], entry=0x80010000),
              "isn't in a text section"),
+            ("the uncached mirror", make_dol([(0xC0003100, TEXT)], entry=0xC0003100), "outside main memory"),
+            ("physical", make_dol([(0x00003100, TEXT)], entry=0x00003100), "outside main memory"),
+            ("past 24 MB", make_dol([(0x80003100, TEXT)], entry=0x80003100, bss=(0x817FF000, 0x2000)),
+             "The BSS .* outside main memory"),
             ("no sections", make_dol([]), "no sections"),
             ("short", b"\0" * 100, "smaller than a DOL header"),
             ("truncated", SIMPLE[:-1], "past the end of the file"),

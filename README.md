@@ -8,7 +8,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
 
 ## What it does
 
-- **Boots a payload at every power-on:** payload 1, payload 2, or the built-in gekkoboot. It takes the same payloads as PicoBoot and PicoBoot-DX: `swiss_rXXXX.uf2`, `gekkoboot_pico.uf2`, or a `.dol`, either built as an IPL replacement or an ordinary one.
+- **Boots a payload at every power-on:** payload 1, payload 2, or the built-in gekkoboot. It takes the same payloads as PicoBoot and PicoBoot-DX: `swiss_rXXXX.uf2`, `gekkoboot_pico.uf2`, or a `.dol` built as an IPL replacement. It also takes an ordinary `.dol`, with a small loader in front.
 - **A Wi-Fi access point after the injection:** `PicoBoot-XXXX`, where `XXXX` is from the chip's ID. Phones open its page by themselves; otherwise go to `http://192.168.4.1/`. It turns off 10 minutes after the last client leaves.
 - **Payloads over Wi-Fi:**
   - upload a `.dol`, a payload `.uf2` or a raw payload; it goes into the slot that isn't chosen;

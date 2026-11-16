@@ -2,14 +2,17 @@
 A small PowerPC interpreter for the D43 loader stub (src/dolstub/dolstub.S): only the instructions
 the stub uses, on a model of the GameCube's 24 MB of main memory (Python standard library only).
 
-It starts as BS1 leaves the CPU (docs/research/dol-loader.md §3): translation on, BAT0 mapping
-0x80000000 to physical 0, at 0x81300000. An `rfi` to MSR 0 gives real mode, where addresses are
+It starts as Dolphin models BS1's state, which isn't documented for the hardware
+(docs/research/dol-loader.md §3): translation on, BAT0 mapping 0x80000000 to physical 0, at
+0x81300000. An `rfi` to MSR 0 gives real mode, where addresses are
 physical. Hardware registers (physical 0x0C000000 and up) are reached only through eciwx/ecowx,
 which need EAR's enable bit; a plain load or store there would be cached, and stops the run.
 
 For each 32-byte line it records the last store, dcbst and icbi, and the last sync, isync and
 instruction-cache flash invalidate (HID0 ICFI), so a test can check the cache rules at the jump.
-Anything it doesn't know stops the run with Halt.
+Anything it doesn't know stops the run with Halt, including forms of known instructions the stub
+doesn't use (record, link) and a data-cache flash invalidate, which would drop what isn't written
+back.
 """
 
 import struct
@@ -19,7 +22,7 @@ HARDWARE = 0x0C000000
 MSR_IR, MSR_DR = 0x20, 0x10
 SPR_LR, SPR_CTR, SPR_SRR0, SPR_SRR1, SPR_EAR = 8, 9, 26, 27, 282
 SPR_HID0, SPR_IABR, SPR_DABR = 1008, 1010, 1013
-HID0_ICFI = 0x0800
+HID0_ICFI, HID0_DCFI = 0x0800, 0x0400
 
 
 class Halt(Exception):
@@ -43,19 +46,22 @@ def _mask(mb, me):
 
 
 class Cpu:
-    def __init__(self, image, load=0x01300000, hardware=None, timebase=0x0000123456789ABC):
-        """`image` goes to physical `load`; `hardware(pa)` answers eciwx reads (default 0)."""
+    def __init__(self, image, load=0x01300000, hardware=None, timebase=0x0000123456789ABC, tb_divider=1):
+        """`image` goes to physical `load`; `hardware(pa)` answers eciwx reads (default 0). The time
+        base is `timebase` plus the instructions run so far, divided by `tb_divider`."""
         self.mem = bytearray(MEMORY)
         self.mem[load:load + len(image)] = image
         # What BS1 leaves in the registers isn't known: garbage, so the stub must set what it uses
         self.r = [0xDEAD0000 | i for i in range(32)]
         self.pc, self.msr = 0x80000000 | load, MSR_IR | MSR_DR
         self.lr, self.ctr, self.cr, self.ca = 0xDEADBEE8, 0xDEADBEEC, 0x2A2A2A2A, 1
-        self.spr = {SPR_SRR0: 0xDEADBEE0, SPR_SRR1: 0x00003032, SPR_EAR: 0, SPR_HID0: 0x0011C464,
+        # HID0 as Dolphin's BS1 sets it (0x0011C464), as a read returns it: ICFI and DCFI clear
+        # themselves once the invalidate starts
+        self.spr = {SPR_SRR0: 0xDEADBEE0, SPR_SRR1: 0x00003032, SPR_EAR: 0, SPR_HID0: 0x0011C064,
                     SPR_IABR: 0x80001001, SPR_DABR: 0x800000EE}
         self.hardware = hardware or (lambda pa: 0)
         self.hw_writes = []                     # (physical address, value), in order
-        self.timebase = timebase
+        self.timebase, self.tb_divider = timebase, tb_divider
         self.tb_reads = []                      # (step, TBR, value)
         self.step = 0
         self.stored, self.dcbst, self.icbi = {}, {}, {}
@@ -153,6 +159,8 @@ class Cpu:
                 if self.branch_ok(rd, ra):
                     npc = target
             elif xo == 528:                                     # bcctr
+                if ins & 1:
+                    raise Halt(f"bcctrl at 0x{self.pc:08X}")
                 if self.branch_ok(rd | 0x04, ra):
                     npc = self.ctr
             elif xo == 50:                                      # rfi
@@ -191,13 +199,17 @@ class Cpu:
         elif op == 32:                                          # lwz
             r[rd] = self.load32((base + simm) & 0xFFFFFFFF)
         elif op == 33:                                          # lwzu
+            if ra in (0, rd):
+                raise Halt(f"invalid lwzu at 0x{self.pc:08X}")
             r[ra] = (r[ra] + simm) & 0xFFFFFFFF
             r[rd] = self.load32(r[ra])
         elif op == 36:                                          # stw
             self.store32((base + simm) & 0xFFFFFFFF, r[rd])
-        elif op == 37:                                          # stwu
-            r[ra] = (r[ra] + simm) & 0xFFFFFFFF
-            self.store32(r[ra], r[rd])
+        elif op == 37:                                          # stwu: stores rS as it was
+            if ra == 0:
+                raise Halt(f"invalid stwu at 0x{self.pc:08X}")
+            value, r[ra] = r[rd], (r[ra] + simm) & 0xFFFFFFFF
+            self.store32(r[ra], value)
         elif op == 31:
             self.execute_31(ins, rd, ra, rb, base)
         else:
@@ -208,6 +220,8 @@ class Cpu:
         r = self.r
         xo = (ins >> 1) & 0x3FF
         spr = ((ins >> 16) & 31) | (((ins >> 11) & 31) << 5)
+        if ins & 1:
+            raise Halt(f"the record form of 31/{xo} at 0x{self.pc:08X}")
         if xo == 339:                                           # mfspr
             r[rd] = self.lr if spr == SPR_LR else self.ctr if spr == SPR_CTR else self.spr_value(spr)
         elif xo == 467:                                         # mtspr
@@ -217,11 +231,13 @@ class Cpu:
                 self.ctr = r[rd]
             else:
                 self.spr_value(spr)
+                if spr == SPR_HID0 and r[rd] & HID0_DCFI:
+                    raise Halt(f"a data-cache flash invalidate at 0x{self.pc:08X}")
                 if spr == SPR_HID0 and r[rd] & HID0_ICFI:
                     self.last_icfi = self.step
                 self.spr[spr] = r[rd] & (~HID0_ICFI if spr == SPR_HID0 else 0xFFFFFFFF)
         elif xo == 371:                                         # mftb
-            tb = (self.timebase + self.step) & 0xFFFFFFFFFFFFFFFF
+            tb = (self.timebase + self.step // self.tb_divider) & 0xFFFFFFFFFFFFFFFF
             if spr == 268:
                 r[rd] = tb & 0xFFFFFFFF
             elif spr == 269:

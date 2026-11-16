@@ -578,6 +578,8 @@ class LoaderCopyTest(unittest.TestCase):
                  make_dol([(LOW, text)] + [(0, b"")] * 6 + [(0x80010000, b"\1" * 16)], entry=0x80010000),
                  make_dol([]), b"\0" * 100, make_dol([(LOW, text)], entry=LOW)[:-1],
                  make_dol([(0, text)], entry=LOW),
+                 make_dol([(0xC0003100, text)], entry=0xC0003100),
+                 make_dol([(0x00003100, text)], entry=0x00003100),
                  synthetic_dol(entry=0x80003100)]
         for dol in cases:
             with self.subTest(len(dol)):

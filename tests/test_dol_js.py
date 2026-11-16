@@ -148,12 +148,16 @@ class DolJsTest(unittest.TestCase):
                  make_dol([(low, text + b"x")], entry=low),
                  make_dol([(low, text)], entry=0x80100000),
                  make_dol([(low, text)] + [(0, b"")] * 6 + [(0x80010000, b"\1" * 16)], entry=0x80010000),
-                 make_dol([(low, text)], entry=low)[:-1])
+                 make_dol([(low, text)], entry=low)[:-1],
+                 make_dol([(0xC0003100, text)], entry=0xC0003100),
+                 make_dol([(0x00003100, text)], entry=0x00003100))
         for dol in cases:
             with self.subTest(len(dol)):
                 self.assertIsNone(self.same(dol))
         self.assertIn("reaches low memory", self.js(cases[0])[1])
         self.assertIn("reaches the payload image", self.js(cases[1])[1])
+        self.assertIn("outside main memory", self.js(cases[-2])[1])
+        self.assertIn("outside main memory", self.js(cases[-1])[1])
 
     def test_a_dol_at_the_ipl_address_with_a_wrong_entry_keeps_the_old_message(self):
         dol = make_dol([(BASE, b"\1" * 16)], entry=0x80003100)

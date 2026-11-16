@@ -28,8 +28,9 @@
  *   1. real mode, as gekkoboot's packer: nothing depends on BS1's undocumented BATs;
  *   2. DABR and IABR cleared; the hardware quiesced: a DI transfer stopped, the DSP reset and
  *      halted, audio DMA off, the DMAs finished;
- *   3. low memory as the IPL would leave it, as gekkoboot's __SYS_PreInit fills it, with the
- *      exception vectors pointing at themselves;
+ *   3. low memory zeroed, then the values gekkoboot's __SYS_PreInit fills in; each exception vector
+ *      branches to itself, except the system call's, which returns (as Swiss's packer: libogc's
+ *      cache flushes end in sc, which a program may run before it sets up its own handlers);
  *   4. the BSS zeroed, then each section copied (a section that shares the BSS's range wins);
  *   5. everything written back from the data cache, the instruction cache invalidated, then a
  *      jump to the entry's physical address, still in real mode (libogc's crt0 sets up its own).
@@ -107,6 +108,11 @@ startup:
         addi    r5, r5, 0x100
         cmplwi  r5, 0x1700
         ble     5b
+
+        # The system call (0xC00) returns: rfi, as Swiss's packer leaves it
+        lis     r4, 0x4C00
+        ori     r4, r4, 0x0064
+        stw     r4, 0xC00(0)
 
         # 0x28: the memory size, from the memory controller as BS1 set it up (0x4028 & 7)
         li      r4, 0x4028

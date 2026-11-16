@@ -726,7 +726,7 @@ class PayloadUploadTest(CliTestCase):
         code, out, err = self.cli("payload", "upload", self.write(ordinary_dol(), "game.dol"), "--yes")
         self.assertEqual(code, 0, err)
         self.assertEqual(self.uploads()[0]["body"], ORDINARY_PAYLOAD)
-        self.assertIn(f"{len(ORDINARY_PAYLOAD)} bytes (.dol, converted with a loader stub (an ordinary .dol))", out)
+        self.assertIn(f"{len(ORDINARY_PAYLOAD)} bytes (an ordinary .dol, converted with a loader stub)", out)
 
     def test_an_ipl_dol_says_converted(self):
         code, out, err = self.cli("payload", "upload", self.write(synthetic_dol(), "a.dol"), "--yes")

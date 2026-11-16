@@ -338,7 +338,7 @@ def load_payload(path):
         return payload, payload, "raw payload" + (", without the padding after it" if len(payload) < len(data) else "")
     if path.lower().endswith(".dol"):
         payload, loader = convert_dol(data, path)
-        return payload, payload, ".dol, converted with a loader stub (an ordinary .dol)" if loader else ".dol, converted"
+        return payload, payload, "an ordinary .dol, converted with a loader stub" if loader else ".dol, converted"
     raise Refused(f"{path} is not a payload: expected a payload UF2, a raw payload "
                   "(starts with IPLBOOT) or a .dol")
 

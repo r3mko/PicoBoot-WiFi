@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.16, 2026-11-16; draft v1.17 (release 1.1.0 as built) for approval at the end of release 1.1.0 |
+| **Status** | Approved v1.17, 2026-11-16 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -28,7 +28,7 @@
 | v1.14 | 2026-11-15 | Approved by the owner. Release 1.0.3, the official gekkoboot r9.4, from the research in [gekkoboot-dol.md](research/gekkoboot-dol.md): the built-in gekkoboot was a CI build of r9.4 (version `undefined`), not the release's. The owner chose a DOL rebuilt from the release, a tool that rebuilds it and a local test that ties it to the release, and a focused re-test. |
 | v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
 | v1.16 | 2026-11-16 | Approved by the owner. Release 1.1.0, ordinary `.dol` files (D43, design v1.8), from the research in [dol-loader.md](research/dol-loader.md). The owner chose a stub that starts like gekkoboot's packer and fills low memory as gekkoboot does, refusing a `.dol` that reaches the payload image or low memory, and console tests with three `.dol` files and cold boots. |
-| v1.17 draft | 2026-11-16 | Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
+| v1.17 | 2026-11-16 | Approved by the owner. Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
 
 ## How this plan works
 
@@ -578,7 +578,7 @@ The other later-releases items aren't in 1.1.0.
   - Swiss's IPL build still booting;
   - 14 power-ons, all complete, with margins of 158.2–163.8 ms.
 
-Results and SHA-256s in [release-1.1.0-results.md](research/release-1.1.0-results.md).
+Results and SHA-256s in [release-1.1.0-results.md](research/release-1.1.0-results.md). R6: merged into `main` on 2026-11-16; the owner had it pushed and tagged `v1.1.0`.
 
 **Differences from the plan:**
 - **The third `.dol` is gekkoboot's lowmem build** (the owner's choice). GCMM's GameCube `.dol` (3.8 MB) and the 240p Test Suite's don't fit a slot.

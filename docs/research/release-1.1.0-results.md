@@ -2,7 +2,7 @@
 
 The console test of release 1.1.0 (the plan's step R5), run by the owner on 2026-11-16.
 
-**Status:** R5 passed. For the owner's approval with plan v1.17 and design v1.9.
+**Status:** R5 passed. Approved by the owner with plan v1.17 and design v1.9; release 1.1.0 merged into `main` on 2026-11-16.
 
 **Setup:**
 - **The Pico:** the Pico 2 W from phases 0 to 5 (SSID suffix C2C4, RP2350 A2) in the DOL-001, on 3V3, running 1.0.3 in slot A.

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.8, 2026-11-16; draft v1.9 (D43 as built) for approval at the end of release 1.1.0 |
+| **Status** | Approved v1.9, 2026-11-16 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -22,7 +22,7 @@
 | v1.6 | 2026-11-11 | Approved by the owner at the end of phase 4. Phase 4: payload uploads (D42). The owner chose names they pick (which brings boot control format 2 and loader version 3, one USB install), uploads into payload 2 while the built-in boots, no deleting the chosen payload, and backups without the Wi-Fi password. D17: a USB install is recorded after a complete injection (or a choice, rename or upload over Wi-Fi), so the console's power-on shows it. D43: a loader stub for ordinary `.dol` files, for a later release. The phase 4 review: a wider fingerprint, no update to a firmware from before boot control format 2, Wi-Fi 1.5 s later on an "original IPL once" boot. |
 | v1.7 | 2026-11-11 | Approved by the owner at the end of phase 5. Phase 5: how a release is made (D24): a draft release by CI on a version tag, with the CLI and checksums; a release's version without the git hash. The security review (D19): what the password gate means, and DNS-rebinding reads of the GETs accepted by the owner. |
 | v1.8 | 2026-11-16 | Approved by the owner. D43, a loader stub for ordinary `.dol` files, for release 1.1.0, from the research in [dol-loader.md](research/dol-loader.md). The owner chose a start like gekkoboot's packer, low memory filled as gekkoboot does, and refusing a `.dol` that reaches the payload image or low memory. D16 and D25 updated to match. |
-| v1.9 draft | 2026-11-16 | D43 as built (release 1.1.0): the stub is linked at `0x01300000`; the BSS is zeroed before the sections; the system-call vector returns (`rfi`), from the code review. D16: a `.dol` at `0x81300000` with another entry point is refused as before. |
+| v1.9 | 2026-11-16 | Approved by the owner. D43 as built (release 1.1.0): the stub is linked at `0x01300000`; the BSS is zeroed before the sections; the system-call vector returns (`rfi`), from the code review. D16: a `.dol` at `0x81300000` with another entry point is refused as before. |
 
 ## How to read the decisions
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.16, 2026-11-16 |
+| **Status** | Approved v1.16, 2026-11-16; draft v1.17 (release 1.1.0 as built) for approval at the end of release 1.1.0 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -28,6 +28,7 @@
 | v1.14 | 2026-11-15 | Approved by the owner. Release 1.0.3, the official gekkoboot r9.4, from the research in [gekkoboot-dol.md](research/gekkoboot-dol.md): the built-in gekkoboot was a CI build of r9.4 (version `undefined`), not the release's. The owner chose a DOL rebuilt from the release, a tool that rebuilds it and a local test that ties it to the release, and a focused re-test. |
 | v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
 | v1.16 | 2026-11-16 | Approved by the owner. Release 1.1.0, ordinary `.dol` files (D43, design v1.8), from the research in [dol-loader.md](research/dol-loader.md). The owner chose a stub that starts like gekkoboot's packer and fills low memory as gekkoboot does, refusing a `.dol` that reaches the payload image or low memory, and console tests with three `.dol` files and cold boots. |
+| v1.17 draft | 2026-11-16 | Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
 
 ## How this plan works
 
@@ -421,6 +422,7 @@ docs/                       design, plan, research, API, update-file format
 - **A review fix is re-tested on the Pico along every path it touches,** not only by the host tests. Both bugs of the acceptance came from review fixes that passed the host tests, on paths no re-test had run: a payload upload and a delete (phase 4), and a client joined for 10 minutes (phase 5).
 - **Flash is programmed from RAM only** (`storage.h`): flash can't be read while it's being programmed, and the host tests' simulated flash can't show it. Taken up in release 1.0.2 (below), as a copy through a RAM page.
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
+- **Larger ordinary `.dol` files:** D43's payload holds the program as it is, so a slot's 1.5 MB is the limit, and GCMM's 3.8 MB `.dol` doesn't fit. A stub that unpacks, as gekkoboot's and Swiss's xz packers do, would fit most homebrew. An option.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
@@ -561,6 +563,50 @@ The other later-releases items aren't in 1.1.0.
 | R4 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | R5 | **Console test** on the DOL-001, on the build after R4:<br>• update over Wi-Fi from 1.0.3; a power-on keeps it;<br>• three `.dol` files converted by the page, at least one also by the CLI: cubiboot's `ipl.dol`, Swiss r2119's `.dol`, and GCMM or the 240p Test Suite;<br>• for each, 3 cold boots after a long power-off, and a quick power cycle. cubiboot starts Swiss from the card, Swiss shows the card, GCMM or the 240p Test Suite runs with the controller;<br>• an IPL build (Swiss in payload 1) still boots;<br>• every boot complete, with its margin; the page up | Owner | Passed; results in `docs/research/release-1.1.0-results.md` |
 | R6 | **Merge and tag `v1.1.0`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R5's build, then published | Owner | Released |
+
+**As built (2026-11-16):**
+- **The steps:**
+  - R1 in `7edaaf3`. Its CI run passed, and CI's stub bytes equal the local build's.
+  - R2 in `00ae8c7`, by a Sonnet agent in a worktree, reviewed. Its CI run passed.
+  - R3 in `a83ac7c`. The owner approved the notes, then their rewording after R4.
+  - R4's fixes in `3713e8d`.
+  - After R5, the CLI's payload line in `79f6879`.
+- **R5 passed on R4's build:**
+  - the update over Wi-Fi from 1.0.3, kept by a power-on;
+  - cubiboot's `ipl.dol`, gekkoboot's lowmem `.dol` and Swiss r2119's `.dol`, each from the page, each with 3 cold boots and a quick power cycle;
+  - cubiboot once more, from the CLI, with a cold boot;
+  - Swiss's IPL build still booting;
+  - 14 power-ons, all complete, with margins of 158.2–163.8 ms.
+
+Results and SHA-256s in [release-1.1.0-results.md](research/release-1.1.0-results.md).
+
+**Differences from the plan:**
+- **The third `.dol` is gekkoboot's lowmem build** (the owner's choice). GCMM's GameCube `.dol` (3.8 MB) and the 240p Test Suite's don't fit a slot.
+- **R1 added `tools/dolstub.py`.** It wraps an ordinary `.dol` as a `.dol` for `0x81300000`, so the existing IPL converters take it unchanged; the page and the CLI carry copies.
+- **The stub's bytes are checked in** as `src/dolstub/dolstub.bin`. CI's build must match them, and the converters' copies are tested against them.
+- **The stub is assembled with `-m603`:** binutils' `-m750cl` lacks the 750's `mftb`.
+- **It zeroes the BSS before the sections,** so a section inside the BSS's range keeps its data.
+- **R4 put `rfi` at the system-call vector** (design v1.9).
+
+**Code review of release 1.1.0** (a fresh Opus 5.5 reviewer, 2026-11-16):
+- **Overall:** nothing that would hang or corrupt anything on the paths R5 exercises.
+  - The stub matches gekkoboot's packer and `__SYS_PreInit` instruction for instruction where it says so.
+  - libogc2, devkitPro libogc 2.14.1 and libogc 3 all cope with its real-mode entry at a physical address.
+  - The CLI, the page and the reference gave the same bytes and messages for 2,000 random `.dol` files.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Risk on hardware:** `b .` at the system-call vector. libogc's cache flushes end in `sc`, so a program that flushes before it sets up its own handlers (in a `__SYS_PreInit`) would hang. From gekkoboot (`rfi` at every vector) or Swiss (`rfi` at `0xC00`) it boots | Fixed: `rfi` at `0xC00`; the other vectors still loop |
+| 2 | **Risk on hardware:** the memory size is read as one 32-bit word of a 16-bit register | Accepted by the owner. Dolphin models such a read as two registers, as the stub assumes, and gekkoboot's packer relies on the same for the DSP's. R5's boots ran normally |
+| 3 | **Test gap:** no test that a section inside the BSS keeps its data; a stub clearing the BSS last passed | Fixed: a test, which that stub now fails |
+| 4 | **Test gap:** the memory controller's value wasn't checked to be masked to 3 bits | Fixed: garbage in the other bits |
+| 5 | **Doc error:** the release notes said the loader sets up what the console's menu would, and named only sections among what's refused | Fixed: what gekkoboot fills in; "sections or BSS" |
+| 6 | **Doc error:** the research note missed Swiss's `rfi` at `0xC00`, and had a payload size and `-m750cl` wrong | Fixed |
+| 7 | **Note:** a section outside main memory got a message about the payload image or low memory | Fixed: an "outside main memory" check first, in all three converters |
+| 8 | **Note:** a `.dol` too big for a slot converts, and only the Pico refuses it | Accepted by the owner: as for IPL builds; the slot check stays where it is |
+| 9 | **Note:** D43, D16 and the README's wording | Fixed: design draft v1.9 |
+| 10 | **Note:** the interpreter ignored record and link forms the stub doesn't use, and the time base's carry was untested | Fixed: they halt the run; a test with a low word of 0 |
+| 11 | **Note:** `tools/dolstub.py` on its own can name a different first fault than the converters, for a file with several | Accepted by the owner: every converter refuses such a file |
 
 ## Local builds and CI
 

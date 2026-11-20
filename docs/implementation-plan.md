@@ -637,6 +637,8 @@ The other later-releases items aren't in 1.1.1.
   - R2 in `e9c145b`. The owner approved the notes.
   - R3 in `b7dc50b`: the code review and its fixes.
   - After R4, in `98af5a1`: the PIO simulator refuses `jmp pin` without a JMP_PIN, as PicoBoot-DX `0ed9e8b` does (the owner's choice). Tests only; no result changes.
+  - In `61677af`: the research note [cs-at-start-up.md](research/cs-at-start-up.md), and the notes it corrects. Docs only.
+  - CI passed on every push of the branch, the last on `61677af`. A clean build of it gives R4's files byte for byte.
 - **R4 passed on R3's build,** on the second console:
   - bit 7 cleared on the test page first;
   - 1.1.0 over Wi-Fi, then the update to 1.1.1, kept by a power-on;
@@ -644,7 +646,7 @@ The other later-releases items aren't in 1.1.1.
   - margins of 159.4–160.1 ms;
   - the page up.
 
-Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-results.md).
+Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-results.md). R5: merged into `main` on 2026-11-20; the owner had it pushed and tagged `v1.1.1`.
 
 **Differences from the plan:**
 - **21 cold boots, not 20:** the trial's power-on, and 20 after it.

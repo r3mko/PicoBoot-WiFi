@@ -2,7 +2,7 @@
 
 The console test of release 1.1.1 (the plan's step R4), run by the owner on 2026-11-20 on the second console.
 
-**Status:** R4 passed. Approved by the owner with plan v1.19 and design v1.11.
+**Status:** R4 passed. Approved by the owner with plan v1.19 and design v1.11; release 1.1.1 merged into `main` on 2026-11-20.
 
 **Setup:**
 - **The console:** the owner's second DOL-001, with a GC2SD in a memory-card slot and an HDMI adapter ([cs-pull-up.md](cs-pull-up.md)). The Pico's ground wire is the short one, to a ground point near U10.

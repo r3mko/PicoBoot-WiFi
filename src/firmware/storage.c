@@ -16,14 +16,16 @@
 _Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, "ringlog_read() reads the whole log");
 
 #define BOOTLOG_MAGIC   0x31474C42u     // "BLG1"
-#define BOOTLOG_VERSION 4               // Bump when boot_report_t changes (2: payload_chosen; 3: loader_flags;
-                                        // 4: D17 and "original IPL once")
+#define BOOTLOG_VERSION 4               // Bump when boot_report_t's layout changes (2: payload_chosen;
+                                        // 3: loader_flags; 4: D17 and "original IPL once"). 1.1.1 dropped
+                                        // the last field, which kept the size and every offset
 
 // Read through the untranslated, uncached XIP window: the loader maps only this firmware's slot at
 // XIP_BASE, and the cache mustn't hide what was just programmed
 #define FLASH_AREA(offset) ((const uint8_t *)(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE + (offset)))
 
 _Static_assert(sizeof(boot_report_t) <= RINGLOG_MAX_PAYLOAD, "a boot report must fit a log entry");
+_Static_assert(sizeof(boot_report_t) == 60, "boot_report_t is stored in the boot log: its size is part of the format");
 
 // record_flash_t callbacks; ctx is the area's flash offset
 static void erase_sector(void *ctx, uint32_t offset) {

@@ -19,13 +19,14 @@ The counts and the boot results come from the owner's boot logs and reports of 2
 - **What the second console did:** it showed its own IPL menu on every boot. A payload never started, neither the built-in gekkoboot nor Swiss as an IPL build in payload 2.
 - **What the Pico saw:** every injection was complete, with the dev console's timing to the microsecond. But the CS counters read 11,492–59,154 transfers for the built-in (285 expected) and up to 919,302 for Swiss (1544 expected). Raw and clocked nearly agreed.
 
-| Boots | Change | CS mode | `cs_raw` |
-|---|---|---|---|
-| 13, 19–23 | `+9a10a77`, 8 mA | pull-up | 247,927–250,138 |
-| 14–18 | `+9a10a77`, 8 mA | pull-down | 56,146–57,284 |
-| 24 | the GP6 wire shortened | pull-up | 260,735 |
-| 26–29 | `+606476d`, **12 mA** | pull-up | 447,340–919,302 |
-| 30–32 | `+606476d`, **12 mA** | pull-down | 339,265–340,449 |
+| Boots | Change | Payload | CS mode | `cs_raw` (expected) |
+|---|---|---|---|---|
+| 1–10, 12 | 1.1.0 and `+9a10a77`, 8 mA | the built-in | pull-up | 11,492–59,154 (285) |
+| 13, 19–23 | `+9a10a77`, 8 mA | Swiss r2119 | pull-up | 247,927–250,138 (1544) |
+| 14–18 | `+9a10a77`, 8 mA | Swiss r2119 | pull-down | 56,146–57,284 (1544) |
+| 24 | the GP6 wire shortened | Swiss r2119 | pull-up | 260,735 (1544) |
+| 26–29 | `+606476d`, **12 mA** | Swiss r2119 | pull-up | 447,340–919,302 (1544) |
+| 30–32 | `+606476d`, **12 mA** | Swiss r2119 | pull-down | 339,265–340,449 (1544) |
 
 - **The noise came from the Pico's own data output:** a stronger drive gave two to six times more CS edges, and shortening the data wire changed nothing. The owner then shortened the **ground** wire, and the counts dropped to the expected 285 to 289.
 - **So it was ground bounce [inf]:** the data line's switching current through a long ground wire moved the Pico's ground, and CS crossed its threshold during transfers.
@@ -46,9 +47,9 @@ Two test builds on the second console separate the two:
 | `+9a10a77`, clock-qualified count | pull-down | 16–22 | 285 every time | 7 of 7 |
 | `+9a10a77` | pull-up | 23–28 | 286, 287, 285, 285, 286, 286 | 2 of 6, the 285s |
 
-- **With the pull-up, about half the boots get one to four extra CS transfers,** and every one of those boots fails. The extra transfers are clocked (raw equals clocked), so the clock-qualified count counts them too, and the payload goes out early.
+- **With the pull-up, about half the boots get one to four extra CS transfers,** and every one of those boots fails. The extra transfers are clocked (raw equals clocked), so the clock-qualified count counts them too, and the payload goes out early [inf: where the extra transfers fall wasn't measured].
 - **With the pull-down,** both counts are exact, and the console boots 14 of 14.
-- **CS reads high at "PIO ready" on every boot here, in both modes.** On this console something holds CS high from the start: the console, or a resistor on its board. That differs from the dev console (§3).
+- **CS reads high at "PIO ready" on every boot here, in both modes.** On this console something holds CS high from the start: the console, a resistor on its board, or RP2350-E9, which phase 1 saw hold an undriven CS at about 2.2 V on an A2 chip [inf]. That differs from the dev console (§3).
 - **Not known:** how the pull-up produces clocked extra edges on this console. Only the effect is measured.
 
 ## 3. The dev console without the pull-up

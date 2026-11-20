@@ -21,7 +21,7 @@ The web UI and the CLI tool use this API: the status, settings, diagnostics and 
 - **One transfer of a file at a time:** while a backup downloads, uploads and payload deletes get 503 `busy`, so what it sends can't change under it; a backup asked for during an upload or another backup gets 503 `busy` too.
 - **Compatibility:**
   - Later phases add fields; clients ignore fields they don't know.
-  - `api` in the status counts up only when a field changes meaning or goes away.
+  - `api` in the status counts up only when a field changes meaning or goes away. A field that only test builds set can go without it: 1.1.1 dropped the boot reports' `cs_pulldown_test`, which releases always reported false.
 - **Unknown paths:**
   - under `/api/`, 404;
   - elsewhere, a 302 to the start page (the captive portal, D18).

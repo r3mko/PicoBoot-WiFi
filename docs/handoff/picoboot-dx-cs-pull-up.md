@@ -5,7 +5,7 @@
 
 **In short:**
 - **The failure:** on the owner's second DOL-001, PicoBoot-DX **v0.9 and v0.10 boot, v0.11 and v0.12 don't**. The console starts its own IPL menu instead of the payload.
-- **The cause:** the CS pull-up from v0.11 (`0158695`, `gpio_pull_up(cs_pin)` in `src/pio.c`). With it, that console shows one to four extra CS transfers on about half the boots. They're clocked, so the clock-qualified count from v0.11 (`0be9e59`) counts them too, and the payload goes out early.
+- **The cause, very likely [inf: v0.11 without the pull-up wasn't tested]:** the CS pull-up from v0.11 (`0158695`, `gpio_pull_up(cs_pin)` in `src/pio.c`). With it, that console shows one to four extra CS transfers on about half the boots. They're clocked, so the clock-qualified count from v0.11 (`0be9e59`) counts them too, and the payload goes out early.
 - **The change:** remove the pull-up, so CS keeps the pad's reset pull-down as before v0.11. **Keep the clock-qualified count:** on the phase 0 console it ignores the false edge that the pull-up was added for.
 - **Status:** PicoBoot-WiFi 1.1.1 makes this change. Nothing has changed in PicoBoot-DX; whether and how to take it is up to the owner.
 
@@ -31,10 +31,10 @@
 
 ## 2. Also learned: a long ground wire
 
-Before the bisect, the second console also failed with the pull-down. The CS counters read tens of thousands of edges on every boot, rising with the data pin's drive strength (8 mA to 12 mA: two to six times more). Shortening the Pico's ground wire to a point near U10 brought them back to 285 [inf: the data line's switching bounced the Pico's ground]. PicoBoot-DX has no counters to show this, so a short ground wire is worth a line in its install notes.
+Before the bisect, the second console also failed with the pull-down. The CS counters read tens or hundreds of thousands of edges on every boot, rising with the data pin's drive strength (8 mA to 12 mA: two to six times more). Shortening the Pico's ground wire to a point near U10 brought them back to 285 [inf: the data line's switching bounced the Pico's ground]. PicoBoot-DX has no counters to show this, so a short ground wire is worth a line in its install notes.
 
 ## 3. The change in PicoBoot-DX
 
 - **`src/pio.c`:** remove `gpio_pull_up(cs_pin);` and its comment from `on_transfer_program_init()`, which `0158695` added. Keep `sm_config_set_jmp_pin(&c, cs_pin);` and the `.pio` changes from `0be9e59`.
-- **Tests:** the PIO simulator doesn't model pad pulls, so its tests shouldn't change.
+- **Tests:** the PIO simulator doesn't model pad pulls, so its tests pass unchanged. But its console starts CS high (`tests/pio_sim.py`), as the pull-up left it. A case with CS low at the start, then driven high, with and without a clockless glitch, covers the start the pull-down gives; PicoBoot-WiFi 1.1.1 added these (`cs_low_until` in its `tests/pio_sim.py`).
 - **On hardware:** cold boots on a console like the phase 0 one, where CS reads low when the PIO starts, should still start every time. On one like the second console, they should now start too.

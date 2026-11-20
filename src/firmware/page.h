@@ -33,5 +33,5 @@ float page_temperature_c(void);
 // The test page of phases 1 and 2, at /test in test builds (the web UI is at /)
 size_t page_render(char *buf, size_t size);
 
-// The page's buttons: the payload for the next power-ons, and the CS test mode (plan step 1.10)
+// The page's buttons: the payload for the next power-ons
 bool page_action(const char *path);

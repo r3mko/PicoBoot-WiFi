@@ -39,7 +39,7 @@ The wiring is PicoBoot's (since its v0.4): see the wiring diagram in [PicoBoot's
 
 **Power: 5 V is recommended.** Wire the console's 5 V through a Schottky diode (e.g. 1N5819, SS110) to VSYS. The Pico's own regulator then powers the Wi-Fi chip. With the 3V3 wiring, the console's 3.3 V rail powers the radio as well: on the test console it measured 3.15 V with the radio on, below the 3.2 V where the Wi-Fi chip guarantees full radio performance. The 3V3 wiring still works, and it's supported. Use one of the two, not both.
 
-**Ground: keep the wire short.** Run the Pico's GND with a short wire to a ground point near U10. On one console, a long ground wire kept the payload from reaching the console. It showed in the boot log as far too many CS edges, tens of thousands where 285 or 1544 are expected.
+**Ground: keep the wire short.** Run the Pico's GND with a short wire to a ground point near U10. On one console, a long ground wire kept the payload from reaching the console. It showed in the boot log as far too many CS edges: tens or hundreds of thousands, where 225 more than the payload's transfers are expected (285 for the built-in gekkoboot).
 
 An existing PicoBoot or PicoBoot-DX installation keeps its wiring.
 
@@ -137,7 +137,7 @@ The JSON API is described in [docs/api.md](docs/api.md).
 | Forgotten Wi-Fi password, or settings that lock you out | Install `picoboot-wifi-X.Y.Z.uf2` again over USB. It resets the settings (the default password), the payload choice and the names, and leaves the payloads |
 | A firmware update that doesn't work | Nothing: on trial, its first crash brings the previous firmware back by itself. Or boot the other slot on the Firmware tab |
 | A payload that doesn't boot | Choose another payload or the built-in gekkoboot, or set *Original IPL once* |
-| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. Far more CS edges than expected (285 for the built-in gekkoboot, 1544 for Swiss) point at noise on CS: shorten the ground wire (see [Wiring](#wiring)) |
+| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. Far more CS edges than expected (225 more than the payload's transfers, so 285 for the built-in gekkoboot) point at noise on CS: shorten the ground wire (see [Wiring](#wiring)) |
 | No Wi-Fi | Switch the console off and on: the Wi-Fi turns off 10 minutes after the last client, by default |
 
 ## Documentation

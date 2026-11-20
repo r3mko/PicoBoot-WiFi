@@ -249,7 +249,7 @@ size_t page_render(char *buf, size_t size) {
             (unsigned long)(r->payload_words / WORDS_PER_TRANSFER), (unsigned long)(r->payload_words * 4),
             (unsigned long)r->words_delivered);
         put(&o, "  main() to PIO ready: %lu us; CS at PIO ready: %s\n", (unsigned long)r->main_to_ready_us,
-            r->cs_high_at_ready ? "high" : "LOW");
+            r->cs_high_at_ready ? "high" : "low");
     }
     if (r->result == INJECTION_COMPLETE || r->result == INJECTION_STALLED) {
         put(&o, "  MARGIN             : %ld us from PIO ready to the first CS; first real transfer at %ld us\n",

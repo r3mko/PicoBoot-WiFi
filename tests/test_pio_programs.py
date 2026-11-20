@@ -56,18 +56,20 @@ def add_pulse(console, pin, start, width=2, level=0):
     levels[k:k] = [level, 1 - level]
 
 
-def simulate(words, *, lazy_autopull=False, patch=None, extra_transfers=2, pulses=(), on_transfer_program=None):
+def simulate(words, *, lazy_autopull=False, patch=None, extra_transfers=2, pulses=(), on_transfer_program=None,
+             cs_low_until=None):
     """
     Set up both state machines like on_transfer_program_init(), clocked_output_program_init()
     and injection_start() do, then let a simulated console read the IPL: 224 short transfers,
     one 1K transfer per 256 payload words, and a few short transfers afterwards (fonts, RTC).
     `pulses` adds (pin, start, level) pulses to the console; a start of ("after", n) means a few
-    cycles after transfer n's CS rise.
+    cycles after transfer n's CS rise. `cs_low_until` starts CS low (pio_sim.Console).
     """
     programs, defines = load_programs()
     transfers = len(words) // WORDS_PER_TRANSFER
     console = pio_sim.Console(defines["CS_PIN"], defines["CLK_PIN"],
-                              [64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * transfers + [64] * extra_transfers)
+                              [64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * transfers + [64] * extra_transfers,
+                              cs_low_until=cs_low_until)
     for pin, start, level in pulses:
         if isinstance(start, tuple):
             start = console.cs_rises[start[1]] + 3
@@ -195,9 +197,18 @@ GLITCH_THEN_CLK_WHILE_CS_HIGH = [("CS_PIN", 4, 0), ("CLK_PIN", 9, 1)]
 class GlitchTest(unittest.TestCase):
     """Design D36: a CS pulse without clocks before the IPL read must not shift the payload."""
 
-    def check(self, pulses):
+    def check(self, pulses, cs_low_until=None):
         words = random_words(3, seed=21)
-        self.assertEqual(delivery_problems(words, simulate(words, pulses=pulses)), [])
+        self.assertEqual(delivery_problems(words, simulate(words, pulses=pulses, cs_low_until=cs_low_until)), [])
+
+    def test_cs_low_at_start(self):
+        """Since 1.1.1 CS keeps the reset pull-down: on the dev console it reads low until the console
+        first drives it high (cs-pull-up.md)."""
+        self.check((), cs_low_until=4)
+
+    def test_cs_low_at_start_then_a_glitch(self):
+        """The phase 0 failure as it now comes: CS low, driven high, then a clockless pulse."""
+        self.check([("CS_PIN", 8, 0)], cs_low_until=4)
 
     def test_glitch_before_the_first_transfer(self):
         """Phase 0: the false edge came as the console first drove CS, ~120 ms before the IPL read."""

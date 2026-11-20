@@ -36,12 +36,13 @@ def read_count(sm):
     return 0xFFFFFFFF - sm.rx.popleft()
 
 
-def simulate(words, pulses=()):
+def simulate(words, pulses=(), cs_low_until=None):
     injection, defines = load("injection.pio.h")
     counters, _ = load("counters.pio.h")
     cs, clk = defines["CS_PIN"], defines["CLK_PIN"]
     transfers = len(words) // WORDS_PER_TRANSFER
-    console = pio_sim.Console(cs, clk, [64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * transfers + [64] * 2)
+    console = pio_sim.Console(cs, clk, [64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * transfers + [64] * 2,
+                              cs_low_until=cs_low_until)
     for pin, start, level in pulses:
         add_pulse(console, defines[pin], start, level=level)
 
@@ -88,9 +89,9 @@ def simulate(words, pulses=()):
 
 @unittest.skipUnless(BUILD_DIR, "set PICOBOOT_BUILD_DIR to a firmware build directory")
 class CountersTest(unittest.TestCase):
-    def run_case(self, pulses=()):
+    def run_case(self, pulses=(), cs_low_until=None):
         words = random_words(3, seed=31)
-        r = simulate(words, pulses)
+        r = simulate(words, pulses, cs_low_until)
         self.assertEqual(delivery_problems(words, r), [], "the injection still delivers the payload")
         return r
 
@@ -112,6 +113,19 @@ class CountersTest(unittest.TestCase):
         r = self.run_case([("CS_PIN", 4, 0), ("CLK_PIN", 9, 1)])
         falls = r["console"].cs_falls
         self.assertEqual((r["raw"], r["clocked"]), (len(falls) + 1, len(falls)))
+
+    def test_cs_low_at_start_counts_every_transfer(self):
+        """CS low at "PIO ready" (the reset pull-down, since 1.1.1) isn't a transfer."""
+        r = self.run_case(cs_low_until=4)
+        falls = r["console"].cs_falls
+        self.assertEqual((r["raw"], r["clocked"]), (len(falls), len(falls)))
+        self.assertTrue(falls[0] < r["first"][FLAG_RAW] <= falls[0] + 4, "raw flag at the first real CS edge")
+
+    def test_cs_low_at_start_then_a_glitch_counts_only_in_the_raw_count(self):
+        r = self.run_case([("CS_PIN", 8, 0)], cs_low_until=4)
+        falls = r["console"].cs_falls
+        self.assertEqual((r["raw"], r["clocked"]), (len(falls) + 1, len(falls)))
+        self.assertLess(r["first"][FLAG_RAW], falls[0], "the raw flag marks the glitch")
 
     def test_clk_while_cs_is_high_counts_nothing(self):
         r = self.run_case([("CLK_PIN", 8, 1)])

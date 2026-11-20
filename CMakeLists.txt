@@ -72,8 +72,7 @@ elseif(NOT PICOBOOT_WIFI_BLOB STREQUAL "wifi")
     message(FATAL_ERROR "PICOBOOT_WIFI_BLOB must be wifi or marked")
 endif()
 
-# Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release
-# builds have neither (phase 1 review finding 6)
+# Test builds keep the test page at /test; release builds don't (phase 1 review finding 6)
 if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")
     set(PICOBOOT_WIFI_TEST_BUILD 1)
 else()

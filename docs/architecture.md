@@ -242,7 +242,7 @@ These follow from the research and bind every decision below.
 - **Fix 1, a pull-up on CS (1.0.0 to 1.1.0; removed in 1.1.1):**
   - PicoBoot never sets the pad pulls, so CS keeps the RP2350's reset pull-down. That holds the undriven CS low ("selected") for the console's first ~42 ms.
   - Up to 1.1.0 the firmware turned on the CS pull-up instead. Phase 0 had 0 failures in 50 boots that way.
-  - **On a second DOL-001 it fails** ([cs-pull-up.md](research/cs-pull-up.md)). With the pull-up, about half the boots get one to four extra CS transfers. They're clocked, so fix 2 counts them too, and the console boots its own IPL. Without it, that console boots every time. PicoBoot-DX has the same pull-up from v0.11, and fails there the same way.
+  - **On a second DOL-001 it fails** ([cs-pull-up.md](research/cs-pull-up.md)). With the pull-up, about half the boots get one to four extra CS transfers. They're clocked, so fix 2 counts them too, and the console boots its own IPL. Without it, that console booted every time in the tests (14 of 14). PicoBoot-DX has the same pull-up from v0.11, and fails there the same way.
   - **Since 1.1.1, CS is left as reset leaves it,** as PicoBoot does, and fix 2 alone guards the 224. On the dev console, 3 power-up glitches in 91 boots without the pull-up were all ignored (phase 1, and the 1.1.1 series).
 - **Fix 2, a clock-qualified count:**
   - `on_transfer` counts a CS low period among the 224 only once CLK rises in it **while CS is still low** (`jmp pin` on CS). A pulse without clocks merges with the next real transfer.
@@ -250,12 +250,13 @@ These follow from the research and bind every decision below.
   - The 225th transfer's first address clock must still reach `clocked_output`; phase 1 checks this in the simulator.
   - A passive counter with this rule caught the glitch on hardware, and agreed with the raw count on every good boot.
 - **Diagnostics:** the D31 raw and clocked counters stay. The boot report flags a difference: a glitch the injection survived.
-  - **Far more transfers than expected** (285 for the built-in, 1544 for Swiss) mean noise on CS during the transfers. On the second console, a long ground wire did that: the data line's switching bounced the Pico's ground ([cs-pull-up.md](research/cs-pull-up.md)).
-- **Proven in phase 1:** with PicoBoot's pad setting deliberately restored (a test mode), 2 power-up glitches in 40 boots, 36–37 ms after "PIO ready". Both were ignored, and Swiss started. The 1.1.1 series repeated this: 1 glitch in 51 boots, at 36.5 ms, ignored. The test mode is gone in 1.1.1, since that setting is now the normal one.
+  - **Far more transfers than expected** (225 more than the payload's transfers: 285 for the built-in, 1544 for Swiss r2119) mean noise on CS during the transfers. On the second console, a long ground wire did that, most likely because the data line's switching bounced the Pico's ground ([cs-pull-up.md](research/cs-pull-up.md)).
+- **Proven in phase 1:** with PicoBoot's pad setting deliberately restored (a test mode), 2 power-up glitches in 40 boots, 36–37 ms after "PIO ready". Both were ignored, and Swiss started. The 1.1.1 series repeated this: 1 glitch in 51 boots (48 of them logged), at 36.5 ms, ignored. The test mode is gone in 1.1.1, since that setting is now the normal one.
 - **Known limit (phase 1 code review; the owner chose to keep the proven programs):**
   - "CLK rises" is checked as "CLK reads high" (`wait 1 gpio`), not as an edge.
   - If CLK already reads high when a false CS pulse comes, the pulse still counts. On A2 chips that could happen if the console drives CLK high at power-up and then releases it, since RP2350-E9 can then hold the pad at about 2.2 V.
-  - Not seen: CLK was low in both glitches caught.
+  - Not seen: CLK was low in all three glitches caught.
+  - **Since 1.1.1 this limit is unguarded:** without the pull-up, the false edge comes on every console that leaves CS undriven at first, and nothing else stops it if CLK reads high then.
   - The fix, if it's ever needed, is one `wait 0 gpio CLK` before each of the two waits (`on_transfer` and the passive counter).
 - **Compatibility:** the injection programs now differ from PicoBoot-DX v0.10. D4's compatibility covers the wiring, the payload format and the address, not the PIO code.
 

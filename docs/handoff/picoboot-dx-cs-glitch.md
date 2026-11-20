@@ -35,6 +35,7 @@
 1. **CS is active-low and undriven for ~42 ms.** The console leaves the IPL chip's CS line undriven for about 42 ms after power-on.
 2. **PicoBoot never sets pad pulls.** `pio_gpio_init()` calls `gpio_set_function()`, which "doesn't affect e.g. pullup/pulldown" (SDK `gpio.c`). So CS keeps the pad's **reset pull-down** (`PADS_BANK0_GPIO0_PDE_RESET = 1`, on RP2040 and RP2350 alike), and reads low, "selected", until the console drives it.
 3. **The false edge.** When the console's CS driver comes up, it can let go of the line for a moment. The pull-down then pulls CS low, and the PIO sees a falling edge without a transfer [inference from the timing; the pull-up result supports it].
+   *Revised 2026-11-20 ([cs-at-start-up.md](../research/cs-at-start-up.md) §5):* on an A2 chip a release is unlikely to be the cause, since RP2350-E9 holds a line released from high at about 2.2 V, which reads high. The edge needs CS to start low (5 in 144 boots, against 0 in 90 starting high), so it's more likely the console's first rise of CS isn't clean [inf]. The fixes don't depend on it.
 4. **The shifted payload.** `on_transfer` counts CS falling edges without looking at CLK:
    ```
    start:
@@ -45,6 +46,7 @@
    ```
    With one false edge, `irq set 0` fires on the 224th real transfer instead of the 225th, so the whole payload is sent one transfer early.
 5. **RP2350 A2 boards have it worse:** erratum **RP2350-E9** (datasheet Appendix D.5.1, fixed in A3) can hold a floating input with input-enable at about 2.2 V, which the pull-down can't overcome. "The pad pull-up still works."
+   *Revised 2026-11-20:* not worse. E9 can keep CS high but not make it high, since right after reset the pull-down works; holding CS high, it kept the glitch away in phase 1's first part D (0 in 20 boots) ([cs-at-start-up.md](../research/cs-at-start-up.md) §4).
 
 **The simulator reproduces it:** `~/GitHub/PicoBoot-WiFi/hwtest/dx-measure/tests/test_measure.py`, `GlitchTest`. One CS low pulse without clocks before the IPL read, and PicoBoot-DX's programs deliver a shifted payload.
 

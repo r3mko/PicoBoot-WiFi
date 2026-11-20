@@ -38,3 +38,9 @@ Before the bisect, the second console also failed with the pull-down. The CS cou
 - **`src/pio.c`:** remove `gpio_pull_up(cs_pin);` and its comment from `on_transfer_program_init()`, which `0158695` added. Keep `sm_config_set_jmp_pin(&c, cs_pin);` and the `.pio` changes from `0be9e59`.
 - **Tests:** the PIO simulator doesn't model pad pulls, so its tests pass unchanged. But its console starts CS high (`tests/pio_sim.py`), as the pull-up left it. A case with CS low at the start, then driven high, with and without a clockless glitch, covers the start the pull-down gives; PicoBoot-WiFi 1.1.1 added these (`cs_low_until` in its `tests/pio_sim.py`).
 - **On hardware:** cold boots on a console like the phase 0 one, where CS reads low when the PIO starts, should still start every time. On one like the second console, they should now start too.
+
+## 4. Also learned: CS at start-up
+
+From `~/GitHub/PicoBoot-WiFi/docs/research/cs-at-start-up.md`:
+- **The false edge isn't a release, on A2 chips [inf]:** RP2350-E9 holds a line released from high at about 2.2 V, which reads high. The edge needs CS to start low (5 in 144 boots, against 0 in 90 starting high), so the console's first rise of CS most likely isn't clean. The comment on v0.11's pull-up ("a brief release by the console reads as a CS pulse") goes with the pull-up.
+- **Where 224 comes from:** the boot ROM reads the IPL's first 0x700 bytes in 8-byte transfers (CCC 2004, "Gamecube Hacking"); 0x700 ÷ 8 = 224. The 225th transfer is the first 1024-byte block.

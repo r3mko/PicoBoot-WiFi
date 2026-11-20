@@ -49,7 +49,7 @@ Two test builds on the second console separate the two:
 
 - **With the pull-up, about half the boots get one to four extra CS transfers,** and every one of those boots fails. The extra transfers are clocked (raw equals clocked), so the clock-qualified count counts them too, and the payload goes out early [inf: where the extra transfers fall wasn't measured].
 - **With the pull-down,** both counts are exact, and the console boots 14 of 14.
-- **CS reads high at "PIO ready" on every boot here, in both modes.** On this console something holds CS high from the start: the console, a resistor on its board, or RP2350-E9, which phase 1 saw hold an undriven CS at about 2.2 V on an A2 chip [inf]. That differs from the dev console (§3).
+- **CS reads high at "PIO ready" on every boot here, in both modes.** On this console something holds CS high from the start: the console or a resistor on its board [inf]. RP2350-E9 can keep CS high but not make it high on its own ([cs-at-start-up.md](cs-at-start-up.md) §4). That differs from the dev console (§3).
 - **Not known:** how the pull-up produces clocked extra edges on this console. Only the effect is measured.
 
 ## 3. The dev console without the pull-up

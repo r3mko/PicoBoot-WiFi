@@ -13,6 +13,7 @@ The research behind [the design](../architecture.md), as the design cycle asks: 
 | [flash-from-ram.md](flash-from-ram.md) | 2026-11-15 | Reading flash during a program or erase (the chip, the QMI, the XIP cache), the phase 5 hang, a check in `storage.c` (release 1.0.2) |
 | [gekkoboot-dol.md](gekkoboot-dol.md) | 2026-11-15 | The built-in gekkoboot: a CI build of r9.4, not the release's; rebuilding the official DOL from the release (release 1.0.3) |
 | [dol-loader.md](dol-loader.md) | 2026-11-16 | A loader stub for ordinary `.dol` files (D43): the state at `0x81300000`, low memory, the caches, building it with binutils, a host test |
+| [cs-at-start-up.md](cs-at-start-up.md) | 2026-11-20 | Whether CS is meant to be high at power-up (no source says so), why the two consoles differ, RP2350-E9's part, and the false edge as a first rise that isn't clean; where the 224 comes from |
 | [cs-pull-up.md](cs-pull-up.md) | 2026-11-20 | D36's CS pull-up fails a second DOL-001; the clock-qualified count alone works on both consoles; a long ground wire as CS noise (release 1.1.1) |
 
 ## What we already run: PicoBoot-DX v0.10

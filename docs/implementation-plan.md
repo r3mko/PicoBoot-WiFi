@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.18, 2026-11-20 |
-| **Design** | [architecture.md](architecture.md), Approved v1.10 |
+| **Status** | Approved v1.19, 2026-11-20 |
+| **Design** | [architecture.md](architecture.md), Approved v1.11 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -30,6 +30,7 @@
 | v1.16 | 2026-11-16 | Approved by the owner. Release 1.1.0, ordinary `.dol` files (D43, design v1.8), from the research in [dol-loader.md](research/dol-loader.md). The owner chose a stub that starts like gekkoboot's packer and fills low memory as gekkoboot does, refusing a `.dol` that reaches the payload image or low memory, and console tests with three `.dol` files and cold boots. |
 | v1.17 | 2026-11-16 | Approved by the owner. Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
 | v1.18 | 2026-11-20 | Approved by the owner. Release 1.1.1, no CS pull-up (D36, design v1.10), from the research in [cs-pull-up.md](research/cs-pull-up.md). The owner chose CS left as reset leaves it with the clock-qualified count, the CS test mode removed entirely, a README note on the ground wire and the CS counts, a handoff note for PicoBoot-DX, and a 20-boot console test on the second console. |
+| v1.19 | 2026-11-20 | Approved by the owner. Release 1.1.1 as built (see its "As built" note): its code review and fixes, the owner's choices from it (bit 7 cleared on both Picos; release notes worded to the two test consoles), and the console test, which passed. |
 
 ## How this plan works
 
@@ -629,6 +630,47 @@ The other later-releases items aren't in 1.1.1.
 | R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | R4 | **Console test** on the second console, on the build after R3:<br>• on both Picos, while still on the test build: "CS pull-up" on the test page, to clear bit 7;<br>• 1.1.0 first, then the update over Wi-Fi to 1.1.1; a power-on keeps it;<br>• 20 cold boots, each starting its payload: Swiss (an IPL build) and the built-in gekkoboot, each count exact (1544 and 285), or with a glitch that the injection survived;<br>• the page up | Owner | Passed; results in `docs/research/release-1.1.1-results.md` |
 | R5 | **Merge and tag `v1.1.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**As built (2026-11-20):**
+- **The steps:**
+  - R1 in `0219553`. Its CI run passed.
+  - R2 in `e9c145b`. The owner approved the notes.
+  - R3 in `b7dc50b`: the code review and its fixes.
+  - After R4, in `98af5a1`: the PIO simulator refuses `jmp pin` without a JMP_PIN, as PicoBoot-DX `0ed9e8b` does (the owner's choice). Tests only; no result changes.
+- **R4 passed on R3's build,** on the second console:
+  - bit 7 cleared on the test page first;
+  - 1.1.0 over Wi-Fi, then the update to 1.1.1, kept by a power-on;
+  - 21 cold boots, each starting its payload: Swiss on 16, the built-in gekkoboot on 5, every count exact, no glitch;
+  - margins of 159.4–160.1 ms;
+  - the page up.
+
+Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-results.md).
+
+**Differences from the plan:**
+- **21 cold boots, not 20:** the trial's power-on, and 20 after it.
+- **The update to 1.1.1 came while 1.1.0 was still on trial,** before any power-on. It worked.
+- **Bit 7 on the dev console's Pico,** which ran its series in pull-down mode, was cleared on its test page after the test (the owner).
+- **The README's check is "225 more than the payload's transfers"** (R3), not the two counts R1 names.
+- **One more pull-up failure:** boot 29, the test build's last, showed the console's own menu with 635 CS transfers (285 expected). The cause of so many isn't known.
+
+**Code review of release 1.1.1** (a fresh Opus 5.5 reviewer, 2026-11-20):
+- **Overall:** no bug in the firmware; the removal is complete.
+  - The boot report is 60 bytes in the Pico's build before and after, with every offset the same (from the ELF's debug info). An old entry's set byte is now unread padding. R4 read the test build's entries in 1.1.1.
+  - Bit 7 is ignored everywhere: only "original IPL once" is ever tested.
+  - Nothing needs CS high at start: each program waits for CS high first.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Risk on hardware, later:** 1.1.1 ignores bit 7 but never clears it, an update over Wi-Fi keeps it, and the plan freed the bit for a later flag. The dev console's Pico has it set | Fixed in the plan (the owner's choice): the owner clears it on both Picos' test page before they leave the test build. Done on both: the second console's in R4, the dev console's after it |
+| 2 | **Test gap:** the simulated console started CS high, so no test covered CS low at the start, now the normal start on the dev console | Fixed: `cs_low_until` in `tests/pio_sim.py`. The injection and the counters are tested with CS low, then high, with and without a clockless glitch. PicoBoot-DX v0.10's count fails the glitch case. The handoff names the gap for PicoBoot-DX |
+| 3 | **Doc error:** the release notes promised that a console booting with 1.1.0 boots with 1.1.1, on two consoles' evidence. Without the pull-up, D36's known limit is unguarded | Fixed (the owner's choice): "both test consoles boot every time", the promise dropped. D36 says the limit is unguarded |
+| 4 | **Doc error:** `docs/api.md`'s rule says `api` counts up when a field goes away | Fixed: a field only test builds set can go without it |
+| 5 | **Note:** two comments still described the CS test mode | Fixed |
+| 6 | **Test gap:** nothing pinned the boot report's size in the Pico's build, and the plan quoted the host's 68 bytes | Fixed: an assert at 60 bytes in `storage.c`; the plan gives both sizes |
+| 7 | **Doc error:** "tens of thousands" CS edges, where most were hundreds of thousands; 1544 holds for one Swiss build only; the noise table had no payload column | Fixed: "tens or hundreds of thousands"; "225 more than the payload's transfers"; the column |
+| 8 | **Doc error:** inferences stated as fact in the research and handoff notes | Fixed: marked [inf]; RP2350-E9 named as a possible cause of CS reading high |
+| 9 | **Note:** the test page printed "LOW" for CS at "PIO ready", now a normal reading | Fixed: "low" |
+| 10 | **Note:** the plan's header named design v1.7 | Fixed: v1.10 |
 
 ## Local builds and CI
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.10, 2026-11-20 |
+| **Status** | Approved v1.11, 2026-11-20 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -24,6 +24,7 @@
 | v1.8 | 2026-11-16 | Approved by the owner. D43, a loader stub for ordinary `.dol` files, for release 1.1.0, from the research in [dol-loader.md](research/dol-loader.md). The owner chose a start like gekkoboot's packer, low memory filled as gekkoboot does, and refusing a `.dol` that reaches the payload image or low memory. D16 and D25 updated to match. |
 | v1.9 | 2026-11-16 | Approved by the owner. D43 as built (release 1.1.0): the stub is linked at `0x01300000`; the BSS is zeroed before the sections; the system-call vector returns (`rfi`), from the code review. D16: a `.dol` at `0x81300000` with another entry point is refused as before. |
 | v1.10 | 2026-11-20 | Approved by the owner. D36 without the CS pull-up, for release 1.1.1, from the research in [cs-pull-up.md](research/cs-pull-up.md): the pull-up makes a second DOL-001 fail, and the clock-qualified count alone guards the 224 skipped transfers on both consoles. The CS test mode goes with it. |
+| v1.11 | 2026-11-20 | Approved by the owner. D36 as built (release 1.1.1), from its code review: without the pull-up, the known limit is unguarded; the expected CS count is 225 more than the payload's transfers; the dev console's series has 48 logged boots. From the console test: the second console booted 21 of 21 cold boots on 1.1.1 ([release-1.1.1-results.md](research/release-1.1.1-results.md)). |
 
 ## How to read the decisions
 
@@ -242,7 +243,7 @@ These follow from the research and bind every decision below.
 - **Fix 1, a pull-up on CS (1.0.0 to 1.1.0; removed in 1.1.1):**
   - PicoBoot never sets the pad pulls, so CS keeps the RP2350's reset pull-down. That holds the undriven CS low ("selected") for the console's first ~42 ms.
   - Up to 1.1.0 the firmware turned on the CS pull-up instead. Phase 0 had 0 failures in 50 boots that way.
-  - **On a second DOL-001 it fails** ([cs-pull-up.md](research/cs-pull-up.md)). With the pull-up, about half the boots get one to four extra CS transfers. They're clocked, so fix 2 counts them too, and the console boots its own IPL. Without it, that console booted every time in the tests (14 of 14). PicoBoot-DX has the same pull-up from v0.11, and fails there the same way.
+  - **On a second DOL-001 it fails** ([cs-pull-up.md](research/cs-pull-up.md)). With the pull-up, about half the boots get one to four extra CS transfers. They're clocked, so fix 2 counts them too, and the console boots its own IPL. Without it, that console booted every time in the tests: 14 of 14 on test builds, and 21 of 21 on 1.1.1 ([release-1.1.1-results.md](research/release-1.1.1-results.md)). PicoBoot-DX has the same pull-up from v0.11, and fails there the same way.
   - **Since 1.1.1, CS is left as reset leaves it,** as PicoBoot does, and fix 2 alone guards the 224. On the dev console, 3 power-up glitches in 91 boots without the pull-up were all ignored (phase 1, and the 1.1.1 series).
 - **Fix 2, a clock-qualified count:**
   - `on_transfer` counts a CS low period among the 224 only once CLK rises in it **while CS is still low** (`jmp pin` on CS). A pulse without clocks merges with the next real transfer.

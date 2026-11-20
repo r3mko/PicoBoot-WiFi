@@ -177,6 +177,8 @@ class StateMachine:
             elif a == JMP_X_ZERO:
                 taken = self.x == 0                   # "!X: scratch X zero"
             elif a == JMP_PIN:
+                if self.jmp_pin is None:              # else the console would read the unknown pin as 0
+                    raise ValueError("jmp pin without a JMP_PIN: pass jmp_pin to add_sm()")
                 taken = pio.synced_input(self.jmp_pin, t) == 1   # "PIN: branch on input pin"
             elif a == JMP_X_DEC:
                 taken = self.x != 0                   # "non-zero, prior to decrement"

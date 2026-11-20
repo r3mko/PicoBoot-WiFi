@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.17, 2026-11-16 |
+| **Status** | Approved v1.18, 2026-11-20 |
 | **Design** | [architecture.md](architecture.md), Approved v1.7 |
 | **Owner** | Remko Kleinjan |
 
@@ -29,6 +29,7 @@
 | v1.15 | 2026-11-15 | Approved by the owner. Release 1.0.3 as built (see its "As built" note): its code review and its fixes (a test in CI that pins the asset, the research notes corrected, one sentence of the release notes reworded), and the re-test, which passed. |
 | v1.16 | 2026-11-16 | Approved by the owner. Release 1.1.0, ordinary `.dol` files (D43, design v1.8), from the research in [dol-loader.md](research/dol-loader.md). The owner chose a stub that starts like gekkoboot's packer and fills low memory as gekkoboot does, refusing a `.dol` that reaches the payload image or low memory, and console tests with three `.dol` files and cold boots. |
 | v1.17 | 2026-11-16 | Approved by the owner. Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
+| v1.18 | 2026-11-20 | Approved by the owner. Release 1.1.1, no CS pull-up (D36, design v1.10), from the research in [cs-pull-up.md](research/cs-pull-up.md). The owner chose CS left as reset leaves it with the clock-qualified count, the CS test mode removed entirely, a README note on the ground wire and the CS counts, a handoff note for PicoBoot-DX, and a 20-boot console test on the second console. |
 
 ## How this plan works
 
@@ -607,6 +608,27 @@ Results and SHA-256s in [release-1.1.0-results.md](research/release-1.1.0-result
 | 9 | **Note:** D43, D16 and the README's wording | Fixed: design draft v1.9 |
 | 10 | **Note:** the interpreter ignored record and link forms the stub doesn't use, and the time base's carry was untested | Fixed: they halt the run; a test with a low word of 0 |
 | 11 | **Note:** `tools/dolstub.py` on its own can name a different first fault than the converters, for a file with several | Accepted by the owner: every converter refuses such a file |
+
+## Release 1.1.1: no CS pull-up
+
+**Branch:** `release-1.1.1`. **Research:** [cs-pull-up.md](research/cs-pull-up.md). **Design:** D36 (v1.10). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-20):**
+- CS is left as reset leaves it; D36's clock-qualified count stays;
+- the CS test mode goes, all of it;
+- the README asks for a short ground wire near U10, and says how the CS counts show a wiring problem;
+- a handoff note for PicoBoot-DX;
+- the console test on the second console only, 20 boots (the dev console's 51-boot series counts for it).
+
+The other later-releases items aren't in 1.1.1.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The code and docs:**<br>• `injection_pio.c` no longer pulls CS up. The `cs_pullup` parameter goes from `on_transfer_program_init()`, `injection_prepare()` and `inject()`;<br>• the CS test mode goes: the test page's line and its two actions (`page.c`), `main.c`'s reading of boot control's bit 7, and the Diagnostics tab's "CS pull-down test" row;<br>• boot control's bit 7 (`BOOTCTL_FLAG_TEST_CS_PULLDOWN`) goes. A test build may have left it set, so the owner clears it on the test page ("CS pull-up") before updating, and a later flag can use the bit;<br>• the boot report's `cs_pulldown_test` goes, from the API and `docs/api.md` too, with `api` still 1: the field only ever meant something in test builds. It's the report's last field, so the boot log's size (68 bytes on the host) and offsets don't change, and its entries stay readable without a format bump;<br>• the PIO simulator's setup and the tests follow;<br>• the README's install notes: a short ground wire from the Pico's GND to a ground point near U10, and the boot log's CS counts (285 for the built-in, 1544 for Swiss) as the check;<br>• `docs/handoff/picoboot-dx-cs-pull-up.md`: the finding, the evidence from both consoles, and the change for PicoBoot-DX | Opus | Host tests, the PIO simulator, the layout check and CI pass |
+| R2 | **Version and notes:** `CMakeLists.txt` at `1.1.1`, the release notes in `docs/releases/1.1.1.md` | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Console test** on the second console, on the build after R3:<br>• while still on the test build: "CS pull-up" on the test page, to clear bit 7;<br>• 1.1.0 first, then the update over Wi-Fi to 1.1.1; a power-on keeps it;<br>• 20 cold boots, each starting its payload: Swiss (an IPL build) and the built-in gekkoboot, each count exact (1544 and 285), or with a glitch that the injection survived;<br>• the page up | Owner | Passed; results in `docs/research/release-1.1.1-results.md` |
+| R5 | **Merge and tag `v1.1.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
 ## Local builds and CI
 

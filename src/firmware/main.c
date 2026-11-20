@@ -128,8 +128,8 @@ static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
 
 // Runs the injection and measures it into the report. Nothing slow may run before "PIO ready",
 // and nothing may write flash until the injection has ended (design C1, C6).
-static void inject(const injection_payload_t *payload, bool cs_pullup) {
-    injection_prepare(payload, cs_pullup);
+static void inject(const injection_payload_t *payload) {
+    injection_prepare(payload);
     counters_init();
     counters_start();           // The counters run before the injection, so they see every edge
     injection_go();
@@ -309,9 +309,6 @@ int main(void) {
     if (report.power_on) {
         bootctl_t bootctl;
         const bool stored = storage_bootctl_load(&bootctl);
-#if PICOBOOT_WIFI_TEST_BUILD
-        report.cs_pulldown_test = bootctl.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN;
-#endif
         const injection_payload_t payload = choose_payload(&bootctl, stored);
         if (bootctl.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) {
             // "Original IPL once" (D22): no injection, so the console starts its own IPL (to set
@@ -324,9 +321,8 @@ int main(void) {
             report.payload_words = 0;
             sleep_ms(SKIPPED_IPL_WAIT_MS);
         } else {
-            TRACE("payload %d, %lu words, CS %s\n", report.payload, (unsigned long)report.payload_words,
-                  report.cs_pulldown_test ? "pull-down (test)" : "pull-up");
-            inject(&payload, !report.cs_pulldown_test);
+            TRACE("payload %d, %lu words\n", report.payload, (unsigned long)report.payload_words);
+            inject(&payload);
             TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
                   (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
         }

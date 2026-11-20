@@ -233,7 +233,6 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_int(j, "cs_raw", (long)r->cs_raw);
     json_int(j, "cs_clocked", (long)r->cs_clocked);
     json_bool(j, "cs_high_at_ready", r->cs_high_at_ready);
-    json_bool(j, "cs_pulldown_test", r->cs_pulldown_test);
     json_int(j, "chip_stepping", r->chip_version);
     json_int(j, "rom", r->rom_version);
     json_int(j, "loader", r->loader_version);

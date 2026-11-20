@@ -7,24 +7,19 @@
 #include "injection_pio.h"
 #include "injection.pio.h"
 
-// From PicoBoot-DX v0.10 (src/pio.c). Changed: the CS pull-up and the jump pin (design D36).
+// From PicoBoot-DX v0.10 (src/pio.c). Changed: the jump pin (design D36).
 // tests/test_pio_programs.py mirrors this state machine setup for its PIO simulator: keep both in sync
 
-void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, bool cs_pullup) {
+void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin) {
     pio_sm_config c = on_transfer_program_get_default_config(offset);
 
     pio_gpio_init(pio, clk_pin);
     pio_gpio_init(pio, cs_pin);
 
-    // Pull CS up (design D36): the console leaves CS undriven for ~42 ms after power-on, and the
-    // pad's reset pull-down would hold it low ("selected"), so a brief release by the console
-    // would read as a CS pulse and shift the 224 skipped transfers by one.
-    // The test mode (plan step 1.10) leaves the pad exactly as reset left it, as PicoBoot does:
-    // switching the pull-up on and then back to the pull-down isn't the same on RP2350 A2, where
-    // erratum E9 then holds the released pin at about 2.2 V, which reads high.
-    if (cs_pullup) {
-        gpio_pull_up(cs_pin);
-    }
+    // CS keeps the pad's reset pull-down, as PicoBoot leaves it. A pull-up (1.0.0 to 1.1.0) made a
+    // second DOL-001 count clocked extra transfers and fail; the clock-qualified count below handles
+    // the false edge the pull-down lets through as the console first drives CS (design D36,
+    // docs/research/cs-pull-up.md).
 
     // JMP PIN reads CS: a skipped transfer only counts if CLK rises while CS is still low (D36)
     sm_config_set_jmp_pin(&c, cs_pin);

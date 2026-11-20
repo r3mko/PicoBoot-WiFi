@@ -29,7 +29,8 @@ The counts and the boot results come from the owner's boot logs and reports of 2
 
 - **The noise came from the Pico's own data output:** a stronger drive gave two to six times more CS edges, and shortening the data wire changed nothing. The owner then shortened the **ground** wire, and the counts dropped to the expected 285 to 289.
 - **So it was ground bounce [inf]:** the data line's switching current through a long ground wire moved the Pico's ground, and CS crossed its threshold during transfers.
-- **The noise didn't move the injection's start,** because the Pico drives the data line only after the 224 skipped transfers. But it hid the real cause until the ground was fixed.
+- **The noise didn't move the injection's start,** because the Pico drives the data line only after the 224 skipped transfers.
+- **But the long ground wire was a cause of its own:** with it, the console didn't boot even with the pull-down (boots 14–18, 30–32). After it was shortened, the pull-down boots worked (§2). A bouncing ground probably let U10 win the data line over the Pico [inf].
 - **12 mA**, as upstream PicoBoot drives its single data pin since `e9f420b` (2024), didn't help.
 
 ## 2. After the ground fix: the pull-up

@@ -131,7 +131,7 @@ static void put_log(out_t *o) {
             snprintf(xfers, sizeof(xfers), "%lu", (unsigned long)(r->payload_words / WORDS_PER_TRANSFER));
         }
         if (r->result != INJECTION_NOT_RUN && !skipped) {
-            snprintf(cs, sizeof(cs), "%s%s", r->cs_high_at_ready ? "high" : "low", r->cs_pulldown_test ? " (pd)" : "");
+            snprintf(cs, sizeof(cs), "%s", r->cs_high_at_ready ? "high" : "low");
         }
         put(o, "  %4lu  %c   %-5s %-9s %5s  %9s  %11s  %-12s  %s\n", (unsigned long)log_seq[i],
             r->slot == BOOTCTL_SLOT_B ? 'B' : 'A', r->power_on ? reset_reason(r->chip_reset) : "warm",
@@ -153,10 +153,6 @@ bool page_action(const char *path) {
         b.active_payload = BOOTCTL_PAYLOAD_2;
     } else if (strcmp(path, "/builtin") == 0) {
         b.active_payload = BOOTCTL_PAYLOAD_BUILTIN;
-    } else if (strcmp(path, "/cs-pullup") == 0) {
-        b.flags &= (uint8_t)~BOOTCTL_FLAG_TEST_CS_PULLDOWN;
-    } else if (strcmp(path, "/cs-pulldown") == 0) {
-        b.flags |= BOOTCTL_FLAG_TEST_CS_PULLDOWN;
     } else {
         return false;
     }
@@ -302,10 +298,9 @@ size_t page_render(char *buf, size_t size) {
         b.slot_state[0] < 5 ? states[b.slot_state[0]] : "?", b.slot_state[1] < 5 ? states[b.slot_state[1]] : "?",
         b.pending_slot == BOOTCTL_SLOT_A ? " (A pending)" : b.pending_slot == BOOTCTL_SLOT_B ? " (B pending)" : "",
         r->slot == BOOTCTL_SLOT_B ? 'B' : 'A');
-    put(&o, "  Next power-on      : %s; CS %s%s\n",
+    put(&o, "  Next power-on      : %s%s\n",
         b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in gekkoboot" :
         b.active_payload == BOOTCTL_PAYLOAD_2 ? "payload 2 (built-in if not valid)" : "payload 1 (built-in if not valid)",
-        (b.flags & BOOTCTL_FLAG_TEST_CS_PULLDOWN) ? "PULL-DOWN (test, as PicoBoot)" : "pull-up (D36)",
         stored ? "" : " (boot control empty: defaults)");
 
     put_log(&o);
@@ -314,8 +309,6 @@ size_t page_render(char *buf, size_t size) {
             "<form method=post action=/payload1><button>Next: payload 1</button></form>"
             "<form method=post action=/payload2><button>Next: payload 2</button></form>"
             "<form method=post action=/builtin><button>Next: built-in gekkoboot</button></form><br>"
-            "<form method=post action=/cs-pullup><button>CS pull-up (normal)</button></form>"
-            "<form method=post action=/cs-pulldown><button>CS pull-down (test)</button></form><br>"
             "<form method=post action=/reboot-wd><button>Reboot (watchdog)</button></form>"
             "<form method=post action=/reboot-rom><button>Reboot (ROM)</button></form>"
             "<a href=\"/test\">Refresh</a> <a href=\"/\">Web UI</a></body></html>\n");

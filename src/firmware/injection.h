@@ -20,8 +20,8 @@ typedef struct {
 } injection_payload_t;
 
 // Boosts the clock and sets up both state machines and the DMA, which starts filling the PIO FIFO.
-// The state machines don't run yet. CS gets the D36 pull-up, or for tests PicoBoot's pull-down.
-void injection_prepare(const injection_payload_t *payload, bool cs_pullup);
+// The state machines don't run yet. CS keeps the pad's reset pull-down, as PicoBoot leaves it (D36).
+void injection_prepare(const injection_payload_t *payload);
 
 // Starts the state machines ("PIO ready"); the console's first CS may come any time after that.
 void injection_go(void);

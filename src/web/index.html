@@ -620,7 +620,6 @@ async function loadDiag() {
     row("Margin", margin(b), "How long before the console's first read PicoBoot-WiFi was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
     row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), glitch ? "Glitch ignored by the injection" : "") +
-    (b.cs_pulldown_test ? row("CS pull-down test", "on") : "") +
     row("Wi-Fi blob", esc(w.blob)) +
     row("Wi-Fi up after", us(w.up_ms * 1000)) + `</dl></div>` +
     `<h2>Boot log</h2><div class="scroll"><table><thead><tr><th>Boot</th><th>Slot</th><th>Start</th><th>Payload</th>` +

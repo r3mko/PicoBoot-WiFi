@@ -33,7 +33,7 @@ set(PICOBOOT_WIFI_INJECTION_KHZ 250000 CACHE STRING "CPU clock during the inject
 set(PICOBOOT_WIFI_FLASH_CLKDIV 3 CACHE STRING "Flash clock divider, from clk_sys (design D27)")
 
 # Test builds are 0.N.0-dev (N = the phase) plus the git hash; the first release is 1.0.0 (design D35)
-set(PICOBOOT_WIFI_VERSION "1.1.0")
+set(PICOBOOT_WIFI_VERSION "1.1.1")
 execute_process(
     COMMAND git -c safe.directory=* rev-parse --short HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -72,8 +72,7 @@ elseif(NOT PICOBOOT_WIFI_BLOB STREQUAL "wifi")
     message(FATAL_ERROR "PICOBOOT_WIFI_BLOB must be wifi or marked")
 endif()
 
-# Test builds keep the test page at /test and honour boot control's CS pull-down test flag; release
-# builds have neither (phase 1 review finding 6)
+# Test builds keep the test page at /test; release builds don't (phase 1 review finding 6)
 if(PICOBOOT_WIFI_VERSION MATCHES "-dev$")
     set(PICOBOOT_WIFI_TEST_BUILD 1)
 else()

@@ -21,7 +21,7 @@ The web UI and the CLI tool use this API: the status, settings, diagnostics and 
 - **One transfer of a file at a time:** while a backup downloads, uploads and payload deletes get 503 `busy`, so what it sends can't change under it; a backup asked for during an upload or another backup gets 503 `busy` too.
 - **Compatibility:**
   - Later phases add fields; clients ignore fields they don't know.
-  - `api` in the status counts up only when a field changes meaning or goes away.
+  - `api` in the status counts up only when a field changes meaning or goes away. A field that only test builds set can go without it: 1.1.1 dropped the boot reports' `cs_pulldown_test`, which releases always reported false.
 - **Unknown paths:**
   - under `/api/`, 404;
   - elsewhere, a 302 to the start page (the captive portal, D18).
@@ -195,8 +195,7 @@ The last boot and the boot log (D22, D39).
 | `margin_raw_us`, `margin_clocked_us` | "PIO ready" to the first CS edge, and to the first real transfer; −1 if none (D31, D36) |
 | `injection_us` | From the first CS to the end of the injection |
 | `cs_raw`, `cs_clocked` | CS edges and real transfers counted; more edges than transfers is a glitch the injection ignored (D36) |
-| `cs_high_at_ready` | CS level at "PIO ready" |
-| `cs_pulldown_test` | The boot ran in the CS pull-down test mode |
+| `cs_high_at_ready` | CS level at "PIO ready": low where the console leaves CS undriven at first |
 | `chip_stepping`, `rom` | As in the status |
 | `payload_usb_install` | Payload 1 had changed since it was recorded, as a USB install changes it, so it booted (D17); on a `skipped` boot, it boots at the next power-on |
 | `loader` | The loader's version |

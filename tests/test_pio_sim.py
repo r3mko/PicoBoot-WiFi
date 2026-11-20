@@ -107,6 +107,12 @@ class InstructionTest(unittest.TestCase):
         pio.step(12)
         self.assertEqual(sm.pc, 0, "taken once the pin is high")
 
+    def test_jmp_pin_without_a_jmp_pin_raises(self):
+        """A setup that forgets jmp_pin must fail, not read the pin as 0 (PicoBoot-DX 0ed9e8b)."""
+        pio, sm = machine([JMP_PIN_0, JMP_0], autopull=False)
+        with self.assertRaises(ValueError):
+            pio.step(0)
+
     def test_mov_inverted_null_sets_all_ones(self):          # p.328
         pio, sm = machine([JMP_0, JMP_0], autopull=False)
         sm.exec_instruction(MOV_X_NOT_NULL)

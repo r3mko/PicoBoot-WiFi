@@ -177,6 +177,8 @@ class StateMachine:
             elif a == JMP_X_ZERO:
                 taken = self.x == 0                   # "!X: scratch X zero"
             elif a == JMP_PIN:
+                if self.jmp_pin is None:              # else the console would read the unknown pin as 0
+                    raise ValueError("jmp pin without a JMP_PIN: pass jmp_pin to add_sm()")
                 taken = pio.synced_input(self.jmp_pin, t) == 1   # "PIN: branch on input pin"
             elif a == JMP_X_DEC:
                 taken = self.x != 0                   # "non-zero, prior to decrement"
@@ -295,11 +297,15 @@ class Console:
     GameCube side of the EXI bus at logic level: drives CS (active low) and CLK (idle low),
     and reads DATA at the rising edge of every data clock. Each transfer is CS low, 32
     address clocks, the given number of data clocks, CS high.
+    CS starts high, or with `cs_low_until`, low until then: undriven at first and held low by the
+    pad's reset pull-down, as on a console that drives CS only later (design D36).
     """
 
-    def __init__(self, cs_pin, clk_pin, data_clocks, half_period=4, gap=16):
+    def __init__(self, cs_pin, clk_pin, data_clocks, half_period=4, gap=16, cs_low_until=None):
         self.cs_pin, self.clk_pin = cs_pin, clk_pin
-        events = {cs_pin: [(-10**9, 1)], clk_pin: [(-10**9, 0)]}
+        cs_start = [(-10**9, 1)] if cs_low_until is None else [(-10**9, 0), (cs_low_until, 1)]
+        assert cs_low_until is None or cs_low_until < gap, "CS must rise before the first transfer"
+        events = {cs_pin: cs_start, clk_pin: [(-10**9, 0)]}
         self.samples = []                             # (time, transfer, bit)
         self.cs_falls, self.cs_rises = [], []
         t = gap

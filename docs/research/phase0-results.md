@@ -107,7 +107,7 @@ Hardware checks from implementation plan phase 0, measured by the owner with the
 
 1. **Nobody drives CS during the console's first ~42 ms.**
    - With a pull-up the line reads high, so the low level seen before came from the Pico's own reset pull-down, not from the console. This is explanation (b) from 0.7.
-   - Boot 12's extra falling edge, 2.5 ms after the console first drove CS, was most likely a moment the console's driver let go of the line. The pull-down then pulled CS low [inference].
+   - Boot 12's extra falling edge, 2.5 ms after the console first drove CS, was most likely a moment the console's driver let go of the line. The pull-down then pulled CS low [inference; unlikely on this A2 chip, where RP2350-E9 holds a released line high: [cs-at-start-up.md](cs-at-start-up.md) §5].
 2. **The pull-up doesn't change the injection:** same margin, same counts, all boots good. It costs about 17 µs before "PIO ready" (code fetched from flash), against a 167 ms margin.
 3. **Candidate fixes for phase 1, independent of each other:**
    - a pull-up on CS, which prevents the glitch;

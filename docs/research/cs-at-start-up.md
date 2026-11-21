@@ -18,6 +18,11 @@ The measurements are the owner's, from the boot logs of phases 0 and 1, the 1.1.
 
 All three Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS once at "PIO ready", about 0.4 ms after `main()` starts.
 
+**The wiring:**
+- **The dev console's Pico** is on a quick-solder flex cable for the DOL-001 (Helder Game Tech), with no components on it and 3V3 for power (the owner).
+- **The second console's** was loose wires, then the CubeSB board with new wires ([main-console-tv.md](main-console-tv.md)).
+- [inf] Neither wiring has a part that could pull CS, so the levels above are the consoles' own.
+
 ## 2. The board
 
 - **U10:** "MX RTC/IPL (8013108-M RTCN-DOL 1R6022A1)", with pin 1 clock, 5 CS, 6 serial in, 7 ground and 9 serial out (YAGCD, chapter 2, https://gc-forever.com/yagcd/chap2.html).
@@ -29,6 +34,7 @@ All three Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS 
   - The second console's board is DOL-CPU(P)-01, the first PAL revision (the owner, 2026-11-21). The dev console's isn't known yet.
 - **The power boards:** the console's DC-DC board comes from three makers: Mitsumi (LSJB1091-1), Sharp (DUQ1230A) and TDK. Its electrolytic capacitors are a known problem "on Mitsumi LSJB1091-1 and Sharp DUQ1230A boards only"; "TDK boards are all polymer" (https://retrotechwiki.com/Nintendo_GameCube_Troubleshooting_Guide). The owner has seen at least two versions.
   - **The rails differ:** the second console's 3V3 at the Pico (pin 36 to GND) reads 3.38 V with the access point up at medium Tx power (the owner, 2026-11-21). The dev console's read 3.15–3.16 V with the access point up and 3.21 V with the radio off ([phase0-results.md](phase0-results.md) 0.5).
+  - Both Picos take the console's 3V3, the dev console's through the flex cable. [inf] A flex trace would drop only some tens of millivolts at the Pico's current, so the difference is in the rails.
   - [inf] A different or younger power board in the second console would fit both its higher rail and its earlier drive of CS. That's not proof; the power boards' makers would tell more.
   - [inf] A different board, or ageing capacitors on one, could bring the rails up at a different pace, and with them the moment Flipper starts driving CS. No source measures this.
 - **A bound from the dev console [inf]:** CS reads low there against the Pico's pull-down (36–113 kΩ). So a pull-up on that board's CS, if there is one, is weaker than about 112–353 kΩ.

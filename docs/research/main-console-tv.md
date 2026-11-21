@@ -111,3 +111,7 @@ Upstream PicoBoot's troubleshooting page (https://support.webhdx.dev/gc/picoboot
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
 4. **For the README, the owner's call:** upstream's wire advice, under about 10 cm of 26–28 AWG stranded wire (§5), plus what this console showed: each signal next to the ground wire, the ground taken at U10, and solid joints. Not 24 AWG: it suits the CubeSB's pads, but upstream warns that thick wires can damage the motherboard's pads.
 5. **Quick power cycles:** give the console a few seconds off before switching it on again (§4) [inf].
+6. **The dev console's wiring is a flex cable:** Helder Game Tech's quick-solder flex for the DOL-001, with no components and 3V3 for power (the owner). Its traces are short, close together and fixed.
+   - No results note from phase 0 to release 1.1.0 reports an extra CS transfer on it, with the pull-up throughout.
+   - On the second console's loose wires, the pull-up gave extras on 8 of 14 boots at the bench, and the pull-down on 0 of 35 ([cs-pull-up.md](cs-pull-up.md) §2, [release-1.1.1-results.md](release-1.1.1-results.md)).
+   - So the pull-up's harm may have needed marginal wiring [inf]. The pull-up wasn't tried on the second console's new wiring.

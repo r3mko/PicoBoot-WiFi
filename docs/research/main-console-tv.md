@@ -5,7 +5,7 @@ Why the owner's second DOL-001 booted only now and then once it was back at its 
 **Setup:**
 - **The console:** the second console from [cs-pull-up.md](cs-pull-up.md), the owner's main DOL-001, with a GC2SD. Its board is DOL-CPU(P)-01, the first PAL revision.
 - **At the TV:** its own GCVideo HDMI adapter in the digital AV port. Release 1.1.1's console test at the bench used the dev console's adapter, from the same vendor.
-- **The Pico, at first:** `PicoBoot-AE52`, on loose wires to U10 with the short ground wire, as in release 1.1.1's test.
+- **The Pico, at first:** `PicoBoot-AE52`, on wires straight to U10's pins with the short ground wire, as in release 1.1.1's test.
 - **The payloads:**
   - the built-in gekkoboot, 60 transfers, so 285 CS transfers on a clean boot;
   - Swiss r2174 in payload 2, 885 transfers, so 1110;
@@ -36,22 +36,22 @@ The owner tried each of these at the TV, one at a time, and none fixed it (no lo
 - the HDMI cable unplugged from the TV, the adapter still in the console;
 - the bench adapter in place of the TV's;
 - the bench power brick;
-- a CubeSB board at U10, with the same wires to the Pico. The CubeSB board is a quick-solder board for the DOL-001 (PicoBoot-DX's `CubeSB_DOL-001` folder, after KunaiGC's QSB design). Its connector brings out U10's +3.3V, GND, `EXI.CLK`, `EXI.~{CS}`, `EXI.OUT` and `EXI.IN`, so the Pico's ground is taken at U10. `EXI.IN` stays unconnected;
+- a CubeSB board at U10, the Pico's wires now going to the board, shorter than before. The CubeSB board is a quick-solder board for the DOL-001 (PicoBoot-DX's `CubeSB_DOL-001` folder, after KunaiGC's QSB design). Its connector brings out U10's +3.3V, GND, `EXI.CLK`, `EXI.~{CS}`, `EXI.OUT` and `EXI.IN`, so the Pico's ground is taken at U10. `EXI.IN` stays unconnected;
 - then a new Pico (an RP2350 A2 too), on the CubeSB board.
 
 ## 3. The fix: new wires
 
-The third change, with the CubeSB board and the new Pico already in place: new, thicker wires between the CubeSB board and the Pico, 24 AWG. That fixed it (the owner). The old wires' gauge isn't recorded.
+The third change, with the CubeSB board and the new Pico already in place: new, thicker wires between the CubeSB board and the Pico, 24 AWG, shorter again and on the same route. That fixed it (the owner). The old wires' gauge isn't recorded.
 - Whether thicker wires alone, without the CubeSB board, would have been enough isn't known.
 - **The gauge itself is probably not the cause [inf]:**
   - for 10 cm of wire, 24 AWG has 8 mΩ against 30 AWG's 34 mΩ, about 1 mV less drop at the Pico's ~30 mA during the injection (Wi-Fi is still off then);
   - its inductance is only about 10% lower;
   - both are far from the well over a volt that CS's noise had to cross.
+- **The route didn't change,** so routing is ruled out.
 - **More likely, what came with the rewire [inf]:**
-  - the wires' length and routing;
-  - how close each signal runs to the ground wire, since the loop area between them picks up noise;
-  - the joints: a cracked joint or a broken strand in the old wires, the ground especially, would give this noise.
-- **Not recorded:** whether the new wires are shorter or routed differently.
+  - **the length:** shorter wires enclose a smaller loop with the ground wire, and that loop is what picks up the noise. The noise only just crossed CS's threshold, a few extra transfers per boot, so a modest cut could be enough. The first shortening, in step 1, wasn't;
+  - **the joints:** a cracked joint or a broken strand in the old wires, the ground especially, would give this noise, and new wires replace both.
+- **Which of the two it was isn't known.**
 
 The results at the TV, with the new Pico, the CubeSB board and the thicker wires:
 
@@ -88,7 +88,7 @@ The results at the TV, with the new Pico, the CubeSB board and the thicker wires
 
 1. **At its TV, the wiring between the Pico and U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
    - A CubeSB board at U10 didn't fix it, and a new Pico didn't either.
-   - New, thicker wires (24 AWG) did, with both already in place. Most likely through their routing or joints rather than their gauge (§3) [inf].
+   - New, thicker wires (24 AWG) did, with both already in place. Most likely through their length or their new joints rather than their gauge; the route stayed the same (§3) [inf].
 2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known.
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
 4. **For the README, the owner's call:** short wires, each signal next to the ground wire, the ground taken at U10, and solid joints. Not a gauge: 24 AWG suits the CubeSB's pads, but it's stiff on U10's 1.27 mm pins or on the Pico, where 26–30 AWG is usual.

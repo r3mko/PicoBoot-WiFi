@@ -84,12 +84,30 @@ The results at the TV, with the new Pico, the CubeSB board and the thicker wires
   - Not a bounce of the switch or a reset, as far as the owner knows. One boot, not explained.
 - **"main() to PIO ready"** is 320–327 µs while payload 1 is empty, and 593–607 µs once it holds cubiboot. That's payload 1's fingerprint before the injection (`main.c`, D17), not the hardware. It explains the old Pico's 591–604 µs at the TV against 382–396 µs at the bench.
 
-## 5. Conclusions
+## 5. Upstream's advice
+
+Upstream PicoBoot's troubleshooting page (https://support.webhdx.dev/gc/picoboot/troubleshooting, read 2026-11-21) has two sections that fit:
+- **"Incompatible HDMI adapter"** (under "Stuck at gekkoboot debug screen"):
+  - "The console may boot into Swiss once but return to the stock menu on subsequent power cycles";
+  - the cause is some inexpensive GCVideo-based HDMI adapters, which "aren't electrically safe (however there is no evidence of these adapters being harmful to the hardware)". It doesn't say what makes them unsafe;
+  - the fixes: stop using them, "the recommended solution", or power PicoBoot from 5 V through a diode, as its wiring diagram shows.
+- **"Excessive wire length"** (under "Orange light on, no display"):
+  - "The maximum recommended length is approx. 10 centimeters (or 4 inches)";
+  - 26–28 AWG stranded wire, since single-core or thick wires can break or damage the motherboard's pads.
+
+**What this adds [inf]:**
+- The second console's GCVideo-based adapter and its "stock menu" boots match upstream's known adapter problem.
+- Our tests add two things:
+  - the adapter unit alone didn't decide it: the bench adapter failed at the TV too (§2);
+  - shorter new wires fixed it with the adapter still in place (§3).
+- Upstream's wire advice points the same way as the fix (short wires). It also warns against thick wires, so 24 AWG is no gauge to recommend.
+
+## 6. Conclusions
 
 1. **At its TV, the wiring between the Pico and U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
    - A CubeSB board at U10 didn't fix it, and a new Pico didn't either.
    - New, thicker wires (24 AWG) did, with both already in place. Most likely through their length or their new joints rather than their gauge; the route stayed the same (§3) [inf].
-2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known.
+2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known. Upstream knows the symptom from GCVideo-based adapters (§5).
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
-4. **For the README, the owner's call:** short wires, each signal next to the ground wire, the ground taken at U10, and solid joints. Not a gauge: 24 AWG suits the CubeSB's pads, but it's stiff on U10's 1.27 mm pins or on the Pico, where 26–30 AWG is usual.
+4. **For the README, the owner's call:** upstream's wire advice, under about 10 cm of 26–28 AWG stranded wire (§5), plus what this console showed: each signal next to the ground wire, the ground taken at U10, and solid joints. Not 24 AWG: it suits the CubeSB's pads, but upstream warns that thick wires can damage the motherboard's pads.
 5. **Quick power cycles:** give the console a few seconds off before switching it on again (§4) [inf].

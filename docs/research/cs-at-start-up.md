@@ -88,6 +88,13 @@ Upstream PicoBoot has console-dependent intermittent failures that were never ex
 
 No report ties a failure to the board revision or to CS's level at start-up. Upstream has no CS counter, so a glitch can't be told apart from other causes there.
 
+**Upstream's code and docs say nothing about CS at start-up** (checked 2026-11-21: `main` at `d6f5230`, the README, and the installation and troubleshooting pages at https://support.webhdx.dev/gc/picoboot/):
+- `src/pio.c` sets no pull on CS, so it keeps the reset pull-down;
+- `on_transfer` counts every falling CS edge, 224 times. It sets a jmp pin on CS but never uses it;
+- no comment or page mentions how CS behaves at start-up, glitches or pulls.
+
+The troubleshooting page puts boots that return to "the stock menu" down to GCVideo-based HDMI adapters, power and wire length ([main-console-tv.md](main-console-tv.md) §5). On a console like the dev console, upstream's count would fail on about 1 cold boot in 30 (5 in 144, §5), and that would look the same. So upstream's reports can't show how common either start is [inf].
+
 ## 7. Checks the owner could do
 
 1. **Free:** remove the GC2SD and the HDMI adapter, or use another power brick, and read "CS at PIO ready" in the boot log.

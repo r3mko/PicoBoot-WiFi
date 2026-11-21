@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.19, 2026-11-20 |
-| **Design** | [architecture.md](architecture.md), Approved v1.11 |
+| **Status** | Approved v1.20, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.13 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -31,6 +31,7 @@
 | v1.17 | 2026-11-16 | Approved by the owner. Release 1.1.0 as built (see its "As built" note): its code review and fixes, the owner's choices from it (finding 2 watched in the console test; a `.dol` too big for its slot refused by the Pico, as before), gekkoboot's lowmem build as the third test `.dol`, and the console test, which passed. With design draft v1.9 (D43 as built). For later releases: larger ordinary `.dol` files. |
 | v1.18 | 2026-11-20 | Approved by the owner. Release 1.1.1, no CS pull-up (D36, design v1.10), from the research in [cs-pull-up.md](research/cs-pull-up.md). The owner chose CS left as reset leaves it with the clock-qualified count, the CS test mode removed entirely, a README note on the ground wire and the CS counts, a handoff note for PicoBoot-DX, and a 20-boot console test on the second console. |
 | v1.19 | 2026-11-20 | Approved by the owner. Release 1.1.1 as built (see its "As built" note): its code review and fixes, the owner's choices from it (bit 7 cleared on both Picos; release notes worded to the two test consoles), and the console test, which passed. |
+| v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
 
 ## How this plan works
 
@@ -673,6 +674,24 @@ Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-result
 | 8 | **Doc error:** inferences stated as fact in the research and handoff notes | Fixed: marked [inf]; RP2350-E9 named as a possible cause of CS reading high |
 | 9 | **Note:** the test page printed "LOW" for CS at "PIO ready", now a normal reading | Fixed: "low" |
 | 10 | **Note:** the plan's header named design v1.7 | Fixed: v1.10 |
+
+## Diagnostic build: CS timing (D44)
+
+**Branch:** `diag-cs-timing`. **Research:** [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md). **Design:** D44 (v1.13). **Done when:** the console series ran on both consoles, its results are written up, and the owner has decided what follows.
+
+**The owner's choices (2026-11-22):**
+- a summary per boot in the test builds' boot log, plus the current boot's raw record as a download;
+- CLK's level recorded at each falling CS edge;
+- clean setups only, no deliberately poor wiring;
+- a test build first; what goes into a release is decided from its numbers.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| T1 | **The code, test builds only:**<br>• `cs_timing` in `pio/counters.pio` (9 instructions; pio1 then holds 19 of its 32), its set-up, start and stop with the counters, and a DMA channel into a 16 KB buffer in `.uninitialized_data`;<br>• the summary as a pure C function, after the injection and before Wi-Fi;<br>• the test builds' boot report with the summary, under its own log version;<br>• the summary in `/api/diagnostics`, the raw record at `/api/test/cs-timing`, and the summary on the test page;<br>• PIO simulator tests of the recorder: known transfers and gaps, a low CS start, a clockless glitch, a short CS-high blip inside a transfer, and CLK high at a CS fall; host tests of the summary | Opus | Host tests, the PIO simulator, the layout check and CI pass. A release build of the branch is byte for byte v1.1.1's (update `714140b8…`, UF2 `cfaed293…`) |
+| T2 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| T3 | **Console series** with the test build `1.1.2-dev`, installed over Wi-Fi on both consoles:<br>• 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on the second console, 3 quick power cycles as well;<br>• the boot log read once per console, and the raw record of a few boots downloaded;<br>• afterwards back to 1.1.1 (a downgrade; the log starts afresh) | Owner | The logs and records are in |
+| T4 | **Results** in `docs/research/cs-timing-results.md`: the real gaps in BS1 and in the payload, any blips, the CLK bit, and transfers 225 and 226 of the quick power cycles | Opus | The owner approved the note |
+| T5 | **The owner decides** what follows: a minimum CS-high gap for D36, a wiring-quality number in the releases, the fourth wire, or nothing; and whether the diagnostic code merges into `main` for later test builds or stays on its branch | Owner | Decided; the plan updated |
 
 ## Local builds and CI
 

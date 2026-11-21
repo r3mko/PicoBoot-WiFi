@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.12, 2026-11-22 |
+| **Status** | Approved v1.13, 2026-11-22 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -26,6 +26,7 @@
 | v1.10 | 2026-11-20 | Approved by the owner. D36 without the CS pull-up, for release 1.1.1, from the research in [cs-pull-up.md](research/cs-pull-up.md): the pull-up makes a second DOL-001 fail, and the clock-qualified count alone guards the 224 skipped transfers on both consoles. The CS test mode goes with it. |
 | v1.11 | 2026-11-20 | Approved by the owner. D36 as built (release 1.1.1), from its code review: without the pull-up, the known limit is unguarded; the expected CS count is 225 more than the payload's transfers; the dev console's series has 48 logged boots. From the console test: the second console booted 21 of 21 cold boots on 1.1.1 ([release-1.1.1-results.md](research/release-1.1.1-results.md)). |
 | v1.12 | 2026-11-22 | Approved by the owner. D36's evidence, from the research on the second console ([main-console-tv.md](research/main-console-tv.md)): the pull-up failed on that console's marginal wiring of the time, which the dev console's flex cable never showed, so its harm may need such wiring; and a few extra CS transfers on most boots point at wiring that picks up noise. The decision doesn't change. |
+| v1.13 | 2026-11-22 | Approved by the owner. D44, CS timing diagnostics in test builds, from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): a passive recorder in pio1 times every CS period and notes CLK at each CS fall; a summary per boot in the test builds' boot log; releases unchanged. The owner chose a per-boot summary in flash, the CLK bit, clean setups only, and a test build first. |
 
 ## How to read the decisions
 
@@ -82,6 +83,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D41 | Settings changes | Decision | At once; Wi-Fi changes restart the AP and stay on trial until a client joins; the password is write-only |
 | D42 | Payload uploads | Decision | Names you choose; into payload 2 while the built-in boots; the chosen payload can't be deleted; backups without the password; boot control format 2 with loader 3 |
 | D43 | Ordinary `.dol` files | Decision | A loader stub in the payload (release 1.1.0): real mode, low memory as gekkoboot fills it, the sections, the cache sync; `.dol` files that reach the payload image or low memory are refused |
+| D44 | CS timing diagnostics | Decision | Test builds time every CS period of the IPL read with a passive recorder, and keep a summary per boot; releases unchanged |
 
 ## 1. Goal and scope
 
@@ -263,6 +265,24 @@ These follow from the research and bind every decision below.
   - **Since 1.1.1 this limit is unguarded:** without the pull-up, the false edge comes on every console that leaves CS undriven at first, and nothing else stops it if CLK reads high then.
   - The fix, if it's ever needed, is one `wait 0 gpio CLK` before each of the two waits (`on_transfer` and the passive counter).
 - **Compatibility:** the injection programs now differ from PicoBoot-DX v0.10. D4's compatibility covers the wiring, the payload format and the address, not the PIO code.
+
+**D44 (Decision): CS timing diagnostics in test builds** (2026-11-22, the owner's choices; research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md)).
+- **What it measures:** every CS-high and CS-low period during the IPL read, at 8 ns per count, and CLK's level at each falling CS edge.
+  - A third passive state machine in pio1, `cs_timing`, next to D31's counters, writes one 32-bit word per transfer: the CLK bit, the CS-high time (15 bits) and the CS-low time (16 bits).
+  - A DMA channel copies the words into a 16 KB buffer in `.uninitialized_data` (4096 transfers), so nothing more is zeroed before the injection.
+- **Passive:** it only reads CS and CLK. It starts with the counters before "PIO ready" and stops with them after their snapshot. pio0 and the injection are untouched.
+- **Test builds only** (`-dev`, like the test page). A release build of the same source is byte for byte the release.
+- **The summary,** computed after the injection and before Wi-Fi:
+  - the shortest and the longest CS-high gap in BS1 (transfers 1–224), and in the payload;
+  - the number of CS-high gaps under 500 ns, and the first one's transfer number;
+  - the CS-low times of transfers 225 and 226;
+  - the number of falling CS edges with CLK high.
+- **Where it shows:**
+  - the test page;
+  - `/api/diagnostics` in test builds;
+  - the raw record of the current boot, as a download (`/api/test/cs-timing`).
+- **The boot log in test builds:** the report gains the summary, under the log's own version for test builds, so test builds and releases don't read each other's entries. Switching between a test build and a release starts the log afresh.
+- **What it decides, after the console series (the owner):** a minimum CS-high gap for D36's skip count, a wiring-quality number in the releases' boot log, or the fourth wire (plan, later releases). Measured on clean setups only; blips are measured if a setup shows them.
 
 **Boot flow:**
 

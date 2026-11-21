@@ -205,6 +205,21 @@ The last boot and the boot log (D22, D39).
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
 
+**Test builds** (`-dev`) add D44's CS timing to each report, as a `cs_timing` object. Times are in nanoseconds, `null` where there was nothing to measure:
+
+| Field | Meaning |
+|---|---|
+| `transfers` | CS low periods recorded, after the undriven start if CS was low |
+| `first_gap_ns` | CS high before the first one: from "PIO ready", or from the console's first drive of CS |
+| `bs1_gap_min_ns`, `bs1_gap_max_ns` | CS high between transfers 1 and 224 |
+| `bs1_low_min_ns`, `bs1_low_max_ns` | CS low of transfers 1 to 224 |
+| `payload_gap_min_ns`, `payload_gap_max_ns` | CS high before transfers 225 on |
+| `low_225_ns`, `low_226_ns` | CS low of transfers 225 and 226: about 257 µs for a 1 KB block, about 3 µs for a BS1-sized one |
+| `short_gaps`, `first_short_gap` | CS-high gaps under 500 ns after the first transfer (blips), and the transfer after the first one |
+| `clk_high_falls` | CS falls with CLK high (D36's known limit) |
+
+A boot with a glitch or a blip shifts the split at transfer 224 by those. `GET /api/test/cs-timing` downloads the current boot's raw record (two 32-bit little-endian words per CS low period, `src/firmware/timing_summary.h`); it's in RAM, so the next power-on replaces it. Each time reads up to 24 ns short.
+
 ## POST /api/firmware
 
 An over-the-air update (D11). The body is an update file ([update-format.md](update-format.md)), sent with `Content-Type: application/octet-stream`; the Host rule applies as for every POST. The 1024-byte body limit doesn't apply.

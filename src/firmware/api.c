@@ -19,6 +19,10 @@
 #include "slots.h"
 #include "payloads.h"
 #include "updater.h"
+#if PICOBOOT_WIFI_TEST_BUILD
+#include <stdio.h>
+#include "timing.h"
+#endif
 #include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/powman.h"
@@ -210,6 +214,35 @@ static int get_settings(char *out, size_t size, size_t *len) {
     return finish(&j, out, size, len);
 }
 
+#if PICOBOOT_WIFI_TEST_BUILD
+// Test builds: D44's CS timing summary, times in nanoseconds; null where there was nothing to measure
+static void put_ns(json_out_t *j, const char *key, uint32_t v) {
+    if (v == TIMING_NONE) {
+        json_null(j, key);
+    } else {
+        json_int(j, key, (long)v);
+    }
+}
+
+static void put_timing(json_out_t *j, const timing_summary_t *t) {
+    json_object_begin(j, "cs_timing");
+    json_int(j, "transfers", (long)t->transfers);
+    put_ns(j, "first_gap_ns", t->first_gap_ns);
+    put_ns(j, "bs1_gap_min_ns", t->bs1_gap_min_ns);
+    put_ns(j, "bs1_gap_max_ns", t->bs1_gap_max_ns);
+    put_ns(j, "bs1_low_min_ns", t->bs1_low_min_ns);
+    put_ns(j, "bs1_low_max_ns", t->bs1_low_max_ns);
+    put_ns(j, "payload_gap_min_ns", t->payload_gap_min_ns);
+    put_ns(j, "payload_gap_max_ns", t->payload_gap_max_ns);
+    put_ns(j, "low_225_ns", t->low_225_ns);
+    put_ns(j, "low_226_ns", t->low_226_ns);
+    json_int(j, "short_gaps", (long)t->short_gaps);
+    put_ns(j, "first_short_gap", t->first_short_gap);
+    json_int(j, "clk_high_falls", (long)t->clk_high_falls);
+    json_object_end(j);
+}
+#endif
+
 static void put_report(json_out_t *j, const char *key, const boot_report_t *r, uint32_t boot) {
     json_object_begin(j, key);
     json_int(j, "boot", (long)boot);
@@ -239,6 +272,9 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "trial", r->loader_flags & BOOTINFO_TRIAL);
     json_bool(j, "trial_failed", r->loader_flags & BOOTINFO_TRIAL_FAILED);
     json_bool(j, "crash_fallback", r->loader_flags & BOOTINFO_CRASH_FALLBACK);
+#if PICOBOOT_WIFI_TEST_BUILD
+    put_timing(j, &r->timing);
+#endif
     json_object_end(j);
 }
 
@@ -563,7 +599,32 @@ static int backup_open(const char *path, net_file_t *file, char *out, size_t siz
     return error(out, size, len, 404, "not_found", "the backups are payload1, payload2, firmware and settings", NULL);
 }
 
+#if PICOBOOT_WIFI_TEST_BUILD
+// Test builds: GET /api/test/cs-timing, this boot's raw CS timing record (D44, timing_summary.h)
+#define TIMING_PATH "/api/test/cs-timing"
+
+static bool test_handles(const char *path) {
+    return backup_handles(path) || strcmp(path, TIMING_PATH) == 0;
+}
+
+static int test_open(const char *path, net_file_t *file, char *out, size_t size, size_t *len) {
+    if (strcmp(path, TIMING_PATH) == 0) {
+        uint32_t words;
+        const uint32_t *record = timing_record(&words);     // Stays put until the next power-on
+        file->type = "application/octet-stream";
+        snprintf(file->filename, sizeof(file->filename), "picoboot-cs-timing-boot-%lu.bin",
+                 (unsigned long)info->boot_number);
+        file->parts[0].data = (const uint8_t *)record;
+        file->parts[0].length = words * 4;
+        return 200;
+    }
+    return backup_open(path, file, out, size, len);
+}
+
+const net_download_t API_DOWNLOAD = {test_handles, test_open};
+#else
 const net_download_t API_DOWNLOAD = {backup_handles, backup_open};
+#endif
 
 // --- Routing --------------------------------------------------------------------------------------
 

@@ -25,6 +25,12 @@ WAIT_1_IRQ_0 = 0x20C0       # wait 1 irq, 0
 IRQ_SET_0 = 0xC000          # irq nowait 0
 MOV_Y_Y = 0xA042            # mov y, y
 PULL_IFEMPTY_BLOCK = 0x80E0  # pio_encode_pull(true, true)
+JMP_Y_DEC_0 = 0x0080        # jmp y--, 0
+IN_PINS_1 = 0x4001          # in pins, 1
+IN_PINS_2 = 0x4002          # in pins, 2
+IN_X_32 = 0x4020            # in x, 32
+IN_Y_31 = 0x405F            # in y, 31
+IN_X_4 = 0x4024             # in x, 4
 
 WORD = 0x12345678
 
@@ -113,6 +119,63 @@ class InstructionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             pio.step(0)
 
+    def test_jmp_y_dec_always_decrements(self):              # p.323, as for X
+        pio, sm = machine([JMP_Y_DEC_0, JMP_0], autopull=False)
+        sm.y = 0
+        pio.step(0)
+        self.assertEqual((sm.pc, sm.y), (1, 0xFFFFFFFF), "not taken, but Y still decremented")
+        sm.pc, sm.y = 0, 2
+        pio.step(1)
+        self.assertEqual((sm.pc, sm.y), (0, 1), "taken: Y was non-zero")
+
+    def test_in_shifts_the_least_significant_bits_into_the_isr(self):   # "IN"
+        # 0x5, then 0xA: shifted left they read 0x5A; shifted right they enter at the top, 0xA5000000
+        for shift_right, isr in ((False, 0x0000005A), (True, 0xA5000000)):
+            with self.subTest(shift_right=shift_right):
+                pio, sm = machine([IN_X_4, IN_X_4, JMP_0], autopull=False, in_shift_right=shift_right)
+                sm.wrap_target, sm.wrap = 0, 2
+                sm.x = 0xFFFFFFF5
+                pio.step(0)
+                sm.x = 0x0000000A
+                pio.step(1)
+                self.assertEqual((sm.isr, sm.isr_count), (isr, 8))
+
+    def test_in_32_replaces_the_isr(self):                   # "IN": a count of 0 encodes 32
+        pio, sm = machine([IN_X_32, JMP_0], autopull=False)
+        sm.isr, sm.x = 0x12345678, 0x9ABCDEF0
+        pio.step(0)
+        self.assertEqual((sm.isr, sm.isr_count), (0x9ABCDEF0, 32))
+
+    def test_in_pins_reads_from_in_base_through_the_synchroniser(self):   # "IN", p.342
+        level = lambda gpio, t: int((gpio == 5 and t >= 10) or gpio == 6)
+        pio, sm = machine([IN_PINS_2, JMP_0], autopull=False, in_base=5, in_shift_right=False,
+                          input_level=level)
+        pio.step(11)
+        self.assertEqual(sm.isr, 0b10, "GPIO 5's rise isn't visible yet at t=11; GPIO 6 is bit 1")
+        sm.pc, sm.isr = 0, 0
+        pio.step(12)
+        self.assertEqual(sm.isr, 0b11)
+
+    def test_autopush_pushes_at_the_threshold_and_clears_the_isr(self):   # "Autopush Details"
+        pio, sm = machine([IN_PINS_1, IN_Y_31, JMP_0], autopull=False, autopush=True, push_threshold=32,
+                          in_shift_right=False, in_base=5, input_level=lambda gpio, t: 1)
+        sm.y = 0xFFFFFFF0
+        pio.step(0)
+        self.assertEqual((list(sm.rx), sm.isr_count), ([], 1), "1 bit in: below the threshold")
+        pio.step(1)
+        self.assertEqual((list(sm.rx), sm.isr, sm.isr_count), ([0xFFFFFFF0], 0, 0),
+                         "the pin's 1 in bit 31, then Y's low 31 bits; pushed and cleared")
+
+    def test_autopush_stalls_on_a_full_rx_fifo(self):        # "Autopush Details"
+        pio, sm = machine([IN_X_32, JMP_0], autopull=False, autopush=True, rx_depth=8)
+        sm.rx.extend(range(8))
+        sm.x = 7
+        pio.step(0)
+        self.assertEqual((sm.pc, sm.isr_count), (0, 0), "stalled: nothing shifted")
+        sm.rx.popleft()
+        pio.step(1)
+        self.assertEqual((sm.pc, sm.rx[-1]), (1, 7))
+
     def test_mov_inverted_null_sets_all_ones(self):          # p.328
         pio, sm = machine([JMP_0, JMP_0], autopull=False)
         sm.exec_instruction(MOV_X_NOT_NULL)
@@ -161,7 +224,7 @@ class InstructionTest(unittest.TestCase):
         self.assertEqual((sm.pc, sm.osr, sm.osr_count), (2, WORD, 0))
 
     def test_unsupported_instructions_raise(self):
-        for name, word in [("IN pins, 1", 0x4001), ("delay", 0x0100), ("jmp !y", 0x0060),
+        for name, word in [("IN isr", 0x40C1), ("delay", 0x0100), ("jmp !y", 0x0060),
                            ("wait pin", 0x20A0), ("irq clear", 0xC040), ("mov pins, x", 0xA001)]:
             with self.subTest(name), self.assertRaises(UnsupportedInstruction):
                 decode(word)

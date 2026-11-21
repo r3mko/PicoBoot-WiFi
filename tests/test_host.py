@@ -35,6 +35,7 @@ PROGRAMS = {
     "test_payloadup.c": ["firmware/payloadup.c", "firmware/payload.c", "common/records.c"],
     "test_wifiblob.c": [],
     "test_dhcpserver.c": ["firmware/net/dhcpserver/dhcpserver.c"],
+    "test_timing_summary.c": ["firmware/timing_summary.c"],
 }
 
 

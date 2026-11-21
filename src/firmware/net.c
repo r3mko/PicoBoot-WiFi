@@ -39,8 +39,12 @@
 #include "bootinfo.h"
 
 #define PAGE_MAX        10240       // Rendered test page (with the boot log table)
+#if PICOBOOT_WIFI_TEST_BUILD
+#define API_GET_MAX     49152       // Test builds: the reports also carry D44's timing summary
+#else
 #define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
                                     // about 18 KB today (phase 2 review), with room for more fields
+#endif
 #define API_POST_MAX    512         // POST answers are short
 #define API_BODY_MAX    1024        // docs/api.md
 #define POSTS_MAX       4           // POSTs being received at once

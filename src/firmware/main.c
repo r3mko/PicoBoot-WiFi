@@ -24,6 +24,9 @@
 #include "payload.h"
 #include "injection.h"
 #include "counters.h"
+#if PICOBOOT_WIFI_TEST_BUILD
+#include "timing.h"
+#endif
 #include "report.h"
 #include "wifiblob.h"
 #include "net.h"
@@ -131,7 +134,13 @@ static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
 static void inject(const injection_payload_t *payload) {
     injection_prepare(payload);
     counters_init();
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_init();              // D44: next to the counters, and as passive
+#endif
     counters_start();           // The counters run before the injection, so they see every edge
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_start();
+#endif
     injection_go();
 
     const uint64_t t_ready = time_us_64();
@@ -164,8 +173,14 @@ static void inject(const injection_payload_t *payload) {
 
     counters_snapshot(&report.cs_raw, &report.cs_clocked);
     counters_stop();
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_stop();
+#endif
     report.words_delivered = (uint32_t)(payload->count - injection_words_left());
     injection_finish();
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_summary(!report.cs_high_at_ready, &report.timing);
+#endif
 }
 
 // How fast the DMA reads payload 1 through the untranslated, uncached XIP window: the path the

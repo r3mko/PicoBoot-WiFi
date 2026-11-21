@@ -1,5 +1,6 @@
 """
-Minimal RP2040 PIO simulator for the PicoBoot-DX PIO programs (Python standard library only).
+Minimal RP2040 PIO simulator for the PicoBoot-DX PIO programs and design D44's CS timing
+recorder (Python standard library only).
 
 It runs the real machine code that pioasm generates (build/src/firmware/injection.pio.h) at
 logic level: one instruction per enabled state machine per PIO cycle. Only the instructions
@@ -15,10 +16,11 @@ import re
 from collections import deque
 
 # Decoded instruction kinds
-JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET, PUSH = range(9)
+JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET, PUSH, IN = range(10)
 
-JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b110, 0b111
+JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_Y_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b100, 0b110, 0b111
 OUT_PINS, OUT_NULL = 0b000, 0b011
+IN_PINS, IN_X, IN_Y, IN_NULL = 0b000, 0b001, 0b010, 0b011     # IN sources (design D44's recorder)
 REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR = 0b001, 0b010, 0b011, 0b110, 0b111   # MOV destination/source codes
 MOV_NONE, MOV_INVERT = 0b00, 0b01                    # MOV operations
 RX_FIFO_DEPTH = 4
@@ -39,7 +41,7 @@ def decode(word):
         raise unsupported("delay/side-set bits are not supported")
     if op == 0b000:                                   # JMP, p.322-323
         cond, addr = arg >> 5, arg & 0x1F
-        if cond not in (JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE):
+        if cond not in (JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_Y_DEC, JMP_PIN, JMP_NOT_OSRE):
             raise unsupported(f"JMP condition {cond:03b}")
         return (JMP, cond, addr)
     if op == 0b001:                                   # WAIT, p.324
@@ -49,6 +51,11 @@ def decode(word):
         if source == 0b10 and not index & 0x18:
             return (WAIT_IRQ, polarity, index & 0x7)
         raise unsupported("WAIT source other than GPIO or a plain IRQ flag")
+    if op == 0b010:                                   # IN, datasheet section "IN"
+        source, count = arg >> 5, (arg & 0x1F) or 32
+        if source not in (IN_PINS, IN_X, IN_Y, IN_NULL):
+            raise unsupported(f"IN source {source:03b}")
+        return (IN, source, count)
     if op == 0b011:                                   # OUT, p.325
         dest, count = arg >> 5, (arg & 0x1F) or 32
         if dest not in (OUT_PINS, OUT_NULL):
@@ -74,7 +81,7 @@ def decode(word):
         if dest not in (SET_X, SET_Y, SET_PINDIRS):
             raise unsupported(f"SET destination {dest:03b}")
         return (SET, dest, data)
-    raise unsupported("IN")
+    raise unsupported("reserved opcode")
 
 
 def parse_pio_header(text):
@@ -102,7 +109,8 @@ def program(words, wrap_target=0, wrap=None, labels=None):
 
 class StateMachine:
     def __init__(self, pio, prog, *, autopull=False, threshold=32, shift_right=True,
-                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4, jmp_pin=None):
+                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4, jmp_pin=None,
+                 autopush=False, push_threshold=32, in_shift_right=True, in_base=0, rx_depth=RX_FIFO_DEPTH):
         self.pio = pio
         self.words = list(prog["instructions"])
         self.instructions = [decode(w) for w in self.words]
@@ -112,6 +120,10 @@ class StateMachine:
         self.set_base, self.set_count = set_base, set_count
         self.fifo_depth = fifo_depth                  # 8 when the TX FIFO is joined, p.335
         self.jmp_pin = jmp_pin                        # EXECCTRL.JMP_PIN, p.322
+        self.autopush, self.push_threshold, self.in_shift_right = autopush, push_threshold, in_shift_right
+        self.in_base = in_base                        # PINCTRL.IN_BASE
+        self.rx_depth = rx_depth                      # 8 when the RX FIFO is joined
+        self.isr_count = 0                            # input shift count
         self.fifo = deque()
         self.pc = self.x = self.y = self.osr = self.isr = 0
         self.rx = deque()                             # RX FIFO, filled by PUSH
@@ -183,6 +195,9 @@ class StateMachine:
             elif a == JMP_X_DEC:
                 taken = self.x != 0                   # "non-zero, prior to decrement"
                 self.x = (self.x - 1) & 0xFFFFFFFF    # X is always decremented
+            elif a == JMP_Y_DEC:
+                taken = self.y != 0                   # the same for Y
+                self.y = (self.y - 1) & 0xFFFFFFFF
             else:
                 taken = self.osr_count < self.threshold   # !OSRE
             if taken:
@@ -222,13 +237,33 @@ class StateMachine:
                 self.isr = value
             self._next()
         elif kind == PUSH:                            # p.326
-            if len(self.rx) < RX_FIFO_DEPTH:
+            if len(self.rx) < self.rx_depth:
                 self.rx.append(self.isr)
-                self.isr = 0
+                self.isr, self.isr_count = 0, 0
                 self._next()
             elif not a:                               # noblock on a full FIFO: the data is lost
-                self.isr = 0
+                self.isr, self.isr_count = 0, 0
                 self._next()
+        elif kind == IN:                              # datasheet sections "IN" and "Autopush Details"
+            source, count = a, b
+            if self.autopush and min(32, self.isr_count + count) >= self.push_threshold and len(self.rx) >= self.rx_depth:
+                return                                # stall: the autopush has no room in the RX FIFO
+            if source == IN_PINS:                     # from IN_BASE up, through the synchroniser
+                data = sum(pio.synced_input(self.in_base + i, t) << i for i in range(count))
+            else:
+                data = {IN_X: self.x, IN_Y: self.y, IN_NULL: 0}[source]
+            data &= (1 << count) - 1                  # the least significant `count` bits
+            if count == 32:
+                self.isr = data
+            elif self.in_shift_right:
+                self.isr = (self.isr >> count) | (data << (32 - count))
+            else:
+                self.isr = ((self.isr << count) | data) & 0xFFFFFFFF
+            self.isr_count = min(32, self.isr_count + count)    # saturating
+            if self.autopush and self.isr_count >= self.push_threshold:
+                self.rx.append(self.isr)              # the push clears the ISR and its count
+                self.isr, self.isr_count = 0, 0
+            self._next()
         elif kind == PULL:                            # p.327; with autopull: no-op unless empty, p.339
             if_empty, block = a, b
             if (if_empty or self.autopull) and self.osr_count < self.threshold:

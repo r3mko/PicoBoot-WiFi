@@ -7,6 +7,9 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#if PICOBOOT_WIFI_TEST_BUILD
+#include "timing_summary.h"
+#endif
 
 // What happened at this boot (design D22 diagnostics, D31), kept in RAM for the report page.
 
@@ -53,4 +56,7 @@ typedef struct {
     uint32_t cs_raw;            // CS falling edges counted at the end of the injection
     uint32_t cs_clocked;        // Real transfers counted then; fewer than cs_raw: a glitch (D36)
     bool cs_high_at_ready;      // CS level at "PIO ready" (low where the console leaves CS undriven at first)
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_summary_t timing;    // Test builds only: the CS timing summary (design D44)
+#endif
 } boot_report_t;

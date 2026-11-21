@@ -15,6 +15,9 @@
 #include "settings.h"
 #include "payload.h"
 #include "layout.h"
+#if PICOBOOT_WIFI_TEST_BUILD
+#include "timing_summary.h"
+#endif
 #include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
 
@@ -176,6 +179,37 @@ static void put_counts(out_t *o, const boot_report_t *r) {
     }
 }
 
+#if PICOBOOT_WIFI_TEST_BUILD
+// D44's CS timing summary, as microseconds (ms above 1 ms), "-" where there was nothing to measure
+static const char *fmt_ns(char *buf, size_t size, uint32_t v) {
+    if (v == TIMING_NONE) {
+        snprintf(buf, size, "-");
+    } else if (v >= 1000000) {
+        snprintf(buf, size, "%lu.%lu ms", (unsigned long)(v / 1000000), (unsigned long)(v / 100000 % 10));
+    } else {
+        snprintf(buf, size, "%lu.%02lu us", (unsigned long)(v / 1000), (unsigned long)(v / 10 % 100));
+    }
+    return buf;
+}
+
+static void put_timing(out_t *o, const timing_summary_t *t) {
+    char a[16], b[16], c[16], d[16];
+    put(o, "  CS timing (D44)    : %lu CS low periods; the first after %s\n", (unsigned long)t->transfers,
+        fmt_ns(a, sizeof(a), t->first_gap_ns));
+    put(o, "    BS1 (1-224)      : gaps %s to %s, lows %s to %s\n", fmt_ns(a, sizeof(a), t->bs1_gap_min_ns),
+        fmt_ns(b, sizeof(b), t->bs1_gap_max_ns), fmt_ns(c, sizeof(c), t->bs1_low_min_ns),
+        fmt_ns(d, sizeof(d), t->bs1_low_max_ns));
+    put(o, "    From 225         : gaps %s to %s; 225 low %s, 226 low %s\n", fmt_ns(a, sizeof(a), t->payload_gap_min_ns),
+        fmt_ns(b, sizeof(b), t->payload_gap_max_ns), fmt_ns(c, sizeof(c), t->low_225_ns),
+        fmt_ns(d, sizeof(d), t->low_226_ns));
+    put(o, "    Short gaps       : %lu under 500 ns", (unsigned long)t->short_gaps);
+    if (t->short_gaps) {
+        put(o, ", the first before transfer %lu", (unsigned long)t->first_short_gap);
+    }
+    put(o, "; CS falls with CLK high: %lu\n", (unsigned long)t->clk_high_falls);
+}
+#endif
+
 static void put_settings(out_t *o, const char *label, const settings_t *s, bool stored) {
     char off[16] = "never";
     if (s->auto_off_minutes != SETTINGS_AUTO_OFF_NEVER) {
@@ -256,6 +290,9 @@ size_t page_render(char *buf, size_t size) {
             (long)r->margin_raw_us, (long)r->margin_clocked_us);
         put(&o, "  Injection time     : %lu ms from the first CS\n", (unsigned long)(r->injection_us / 1000));
         put_counts(&o, r);
+#if PICOBOOT_WIFI_TEST_BUILD
+        put_timing(&o, &r->timing);
+#endif
     }
 
     put(&o, "\nNOW\n");

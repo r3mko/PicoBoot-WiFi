@@ -41,7 +41,7 @@ The owner tried each of these at the TV, one at a time, and none fixed it (no lo
 
 ## 3. The fix: thicker wires
 
-The third change, with the CubeSB board and the new Pico already in place: new, thicker wires between the CubeSB board and the Pico. That fixed it (the owner).
+The third change, with the CubeSB board and the new Pico already in place: new, thicker wires between the CubeSB board and the Pico, 24 AWG. That fixed it (the owner). The old wires' gauge isn't recorded.
 - Whether thicker wires alone, without the CubeSB board, would have been enough isn't known.
 - [inf] A thicker wire has less resistance and inductance, so the ground and the signals between the Pico and U10 move less when currents change.
 
@@ -80,8 +80,8 @@ The results at the TV, with the new Pico, the CubeSB board and the thicker wires
 
 1. **At its TV, the wiring between the Pico and U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
    - A CubeSB board at U10 didn't fix it, and a new Pico didn't either.
-   - New, thicker wires did, with both already in place.
+   - New, thicker wires (24 AWG) did, with both already in place.
 2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known.
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
-4. **For the README, the owner's call:** thicker wires between the Pico and U10, next to the short ground wire it already asks for.
+4. **For the README, the owner's call:** thicker wires between the Pico and U10, such as the 24 AWG that worked here, next to the short ground wire it already asks for.
 5. **Quick power cycles:** give the console a few seconds off before switching it on again (§4) [inf].

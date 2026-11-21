@@ -2,7 +2,7 @@
 
 Whether the IPL chip's CS is meant to be high when the console powers up, why the owner's two DOL-001s differ, and what that says about phase 0's false CS edge. Asked by the owner after release 1.1.1's console test. Nothing in the firmware changes.
 
-**Short answer:** no source shows anything that holds CS high from power-on. On the dev console, CS is undriven until the console first drives it high, about 40 ms after "PIO ready". The second console's CS is already high 0.4 ms after the Pico starts, and why isn't known.
+**Short answer:** no source shows anything that holds CS high from power-on. On the dev console, CS is undriven until the console first drives it high, about 40 ms after "PIO ready". The second console's CS is already high 0.4 ms after the Pico starts, with either of two Picos, so it comes from the console; why isn't known.
 
 The measurements are the owner's, from the boot logs of phases 0 and 1, the 1.1.1 series and release 1.1.1's console test. **[inf]** marks a conclusion rather than a sourced or measured fact.
 
@@ -12,10 +12,11 @@ The measurements are the owner's, from the boot logs of phases 0 and 1, the 1.1.
 |---|---|---|
 | CS at "PIO ready", reset pull-down | **low** on every boot (phase 0; phase 1 from boot 56; the 1.1.1 series, 48 logged boots) | **high** on every boot ([cs-pull-up.md](cs-pull-up.md) §2, [release-1.1.1-results.md](release-1.1.1-results.md)) |
 | CS at "PIO ready", pull-up | high | high |
+| CS at "PIO ready", another Pico with new wires and a CubeSB board at U10 (2026-11-21) | — | **high** on every boot (boots 76–116, [main-console-tv.md](main-console-tv.md)) |
 | The console first drives CS high | about 42 ms after "PIO ready" ([phase0-results.md](phase0-results.md) 0.7); the glitches came at 36–44 ms | not seen: CS is already high |
-| The first IPL transfer | 158–168 ms after "PIO ready" | 157–160 ms |
+| The first IPL transfer | 158–168 ms after "PIO ready" | 157–160 ms; 155–157 ms with the other Pico |
 
-Both Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS once at "PIO ready", about 0.4 ms after `main()` starts.
+All three Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS once at "PIO ready", about 0.4 ms after `main()` starts.
 
 ## 2. The board
 
@@ -25,6 +26,7 @@ Both Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS once 
 - **The CS net:** no traced schematic, service document or modchip guide found shows the parts on it.
   - PicoBoot's wiring photos show resistors near U10 (on the DOL-001, for example RA14, marked "332"), but nobody documents their nets.
 - **Board revisions:** the DOL-001 came with boards DOL-CPU, -01, -10, -11, -20 and -30 (NTSC) and DOL-CPU(P)-01 and -10 (PAL) (https://consoleartisan.com/reference/gamecube/). No source names a change on the CS net.
+  - The second console's board is DOL-CPU(P)-01, the first PAL revision (the owner, 2026-11-21). The dev console's isn't known yet.
 - **The power boards:** the console's DC-DC board comes from three makers: Mitsumi (LSJB1091-1), Sharp (DUQ1230A) and TDK. Its electrolytic capacitors are a known problem "on Mitsumi LSJB1091-1 and Sharp DUQ1230A boards only"; "TDK boards are all polymer" (https://retrotechwiki.com/Nintendo_GameCube_Troubleshooting_Guide). The owner has seen at least two versions.
   - [inf] A different board, or ageing capacitors on one, could bring the rails up at a different pace, and with them the moment Flipper starts driving CS. No source measures this.
 - **A bound from the dev console [inf]:** CS reads low there against the Pico's pull-down (36–113 kΩ). So a pull-up on that board's CS, if there is one, is weaker than about 112–353 kΩ.
@@ -91,12 +93,13 @@ No report ties a failure to the board revision or to CS's level at start-up. Ups
 3. **With the console unplugged and the Pico's CS wire lifted:** on both consoles, the resistance from U10 pin 5 (CS) to 3V3 and from pin 5 to GND, with pin 6 as a reference. Check that pin 5 reads 0 V first.
    - A steady reading of a few kΩ to a few hundred kΩ to 3V3, the same in both probe directions, on the second console only, means a resistor on that board.
    - Megohms or a reading that drifts, like pin 6, means none.
-4. **The power boards:** note which maker's board each console has, when it's open. If they differ, swapping them settles the power board's part, through "CS at PIO ready" again.
+4. **The power boards and the dev console's board revision:** note which maker's power board each console has, and the dev console's DOL-CPU label, when it's open. If the dev console is a DOL-CPU(P)-10, the revision becomes a candidate. If they differ, swapping them settles the power board's part, through "CS at PIO ready" again.
 5. **Swap the Picos** between the consoles. Whether CS high follows the console or the Pico settles the Pico's part. This is the most work.
+   - **Partly done (2026-11-21):** another Pico, with new wires and a CubeSB board, reads CS high in the second console too (§1). So the high doesn't come from the Pico or the wiring. That Pico in the dev console would complete the swap.
 
 ## 8. Conclusions
 
 1. **CS isn't meant to be high from the start,** as far as any source or measurement shows. On the dev console it's undriven until the console drives it.
-2. **The second console holds CS high from at least 0.4 ms after the Pico starts:** the console drives it early, for example because its power board brings the rails up differently, or a resistor on its board pulls it up. E9 alone can't do it. The checks in §7 would tell.
+2. **The second console holds CS high from at least 0.4 ms after the Pico starts,** and it follows the console: another Pico with new wiring reads it high too. The console drives it early, for example because its power board brings the rails up differently, or a resistor on its DOL-CPU(P)-01 board pulls it up. E9 alone can't do it. The checks in §7 would tell.
 3. **1.1.1 doesn't depend on which:** CS keeps the reset pull-down, and the clock-qualified count ignores the false edge.
 4. **The false edge needs CS to start low,** and on an A2 chip it's most likely a first rise that isn't clean, not a release. The notes that gave the release explanation point here.

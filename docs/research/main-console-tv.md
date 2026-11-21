@@ -57,6 +57,9 @@ The results at the TV, with the new Pico (an RP2350 A2 too):
 - **Exact on 32 of 33 complete boots,** with raw equal to clocked.
 - **Margins of 155.3–156.7 ms,** about 3 ms below the old Pico's 157.9–160.1 ms in this console [inf: the new Pico starts a little later after power-on]. The lowest seen before was 154.7 ms, once, on the dev console in phase 3.
 - **CS reads high at "PIO ready" on every power-on,** as with the old Pico ([cs-at-start-up.md](cs-at-start-up.md)).
+- **3V3 at the Pico:** 3.38 V with the access point up at medium Tx power (the owner's multimeter, pin 36 to GND).
+  - That's above the 3.2 V at which the CYW43439 guarantees full RF performance, so on this console the Pico's 3V3 wiring is fine for the radio.
+  - The dev console's read 3.15–3.16 V in phase 0, which is why D38 recommends 5 V wiring ([phase0-results.md](phase0-results.md) 0.5).
 - **Between boots 96 and 101,** the owner put the firmware into slot B and switched back to slot A, twice (boots 97–100, warm restarts). The log shows each update on trial in B and each switch back.
 
 ## 4. Left over

@@ -28,6 +28,8 @@ All three Picos are RP2350 A2s, powered from the console's 3V3. Each samples CS 
 - **Board revisions:** the DOL-001 came with boards DOL-CPU, -01, -10, -11, -20 and -30 (NTSC) and DOL-CPU(P)-01 and -10 (PAL) (https://consoleartisan.com/reference/gamecube/). No source names a change on the CS net.
   - The second console's board is DOL-CPU(P)-01, the first PAL revision (the owner, 2026-11-21). The dev console's isn't known yet.
 - **The power boards:** the console's DC-DC board comes from three makers: Mitsumi (LSJB1091-1), Sharp (DUQ1230A) and TDK. Its electrolytic capacitors are a known problem "on Mitsumi LSJB1091-1 and Sharp DUQ1230A boards only"; "TDK boards are all polymer" (https://retrotechwiki.com/Nintendo_GameCube_Troubleshooting_Guide). The owner has seen at least two versions.
+  - **The rails differ:** the second console's 3V3 at the Pico (pin 36 to GND) reads 3.38 V with the access point up at medium Tx power (the owner, 2026-11-21). The dev console's read 3.15–3.16 V with the access point up and 3.21 V with the radio off ([phase0-results.md](phase0-results.md) 0.5).
+  - [inf] A different or younger power board in the second console would fit both its higher rail and its earlier drive of CS. That's not proof; the power boards' makers would tell more.
   - [inf] A different board, or ageing capacitors on one, could bring the rails up at a different pace, and with them the moment Flipper starts driving CS. No source measures this.
 - **A bound from the dev console [inf]:** CS reads low there against the Pico's pull-down (36–113 kΩ). So a pull-up on that board's CS, if there is one, is weaker than about 112–353 kΩ.
   - A stronger one would put CS high, at 23–73 kΩ or less, or in the undefined region, where E9 lifts it high (§4).

@@ -2,6 +2,8 @@
 
 Why PicoBoot-WiFi, and PicoBoot-DX from v0.11, don't boot the owner's second DOL-001, and what that means for D36's pull-up. For release 1.1.1; the owner chooses the scope from this note.
 
+**Later finding (2026-11-21):** the second console's wires (loose wires straight to U10) turned out to be marginal. At its TV they picked up noise even with the pull-down, until new, shorter wires fixed it ([main-console-tv.md](main-console-tv.md)). Every pull-up result below was measured on those wires. Whether the pull-up harms a console with good wiring isn't known; on the dev console's flex cable it never did. The pull-up wasn't tried on the second console's new wiring.
+
 **Setup:**
 - **The second console:** the owner's main DOL-001, with a GC2SD in a memory-card slot and an HDMI adapter.
   - It used to have a Pico with PicoBoot-DX, which worked.
@@ -50,7 +52,7 @@ Two test builds on the second console separate the two:
 - **With the pull-up, about half the boots get one to four extra CS transfers,** and every one of those boots fails. The extra transfers are clocked (raw equals clocked), so the clock-qualified count counts them too, and the payload goes out early [inf: where the extra transfers fall wasn't measured].
 - **With the pull-down,** both counts are exact, and the console boots 14 of 14.
 - **CS reads high at "PIO ready" on every boot here, in both modes.** On this console something holds CS high from the start: the console or a resistor on its board [inf]. RP2350-E9 can keep CS high but not make it high on its own ([cs-at-start-up.md](cs-at-start-up.md) §4). That differs from the dev console (§3).
-- **Not known:** how the pull-up produces clocked extra edges on this console. Only the effect is measured.
+- **Not known:** how the pull-up produces clocked extra edges on this console. Only the effect is measured, on its wiring of the time (see the later finding at the top) [inf: the pull-up may need marginal wiring to do harm].
 
 ## 3. The dev console without the pull-up
 
@@ -65,8 +67,8 @@ The pull-up was added for the dev console (phase 0). There, the reset pull-down 
 
 ## 4. Conclusions for release 1.1.1
 
-1. **Drop D36's pull-up and keep its clock-qualified count.** On the dev console the clock check does the pull-up's job: 3 glitches caught in 91 boots over phases 1 and 1.1.1, none missed. On the second console the pull-up is the cause of the failures.
-2. **No count can protect against clocked extra edges.** Leaving CS as reset leaves it is the only measured setting that works on both consoles.
+1. **Drop D36's pull-up and keep its clock-qualified count.** On the dev console the clock check does the pull-up's job: 3 glitches caught in 91 boots over phases 1 and 1.1.1, none missed. On the second console, on its wiring of the time, the pull-up is the cause of the failures.
+2. **No count can protect against clocked extra edges.** Leaving CS as reset leaves it is the only measured setting that works on both consoles, and it also worked on the second console's marginal wiring (35 of 35 boots at the bench).
 3. **The test page's switch** could stay, inverted, as a way to turn the pull-up on for a diagnosis.
 4. **The wiring matters:** a long ground wire made the data line's switching show up as CS edges. The README's install notes could ask for a short ground wire near U10. The boot log's CS counts show the problem: far more transfers than expected.
 5. **PicoBoot-DX has had the same pull-up since v0.11,** with the same effect on the second console. A handoff note, like phase 0's, would bring the finding back.

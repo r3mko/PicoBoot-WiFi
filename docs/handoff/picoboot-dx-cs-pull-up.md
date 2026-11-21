@@ -5,7 +5,7 @@
 
 **In short:**
 - **The failure:** on the owner's second DOL-001, PicoBoot-DX **v0.9 and v0.10 boot, v0.11 and v0.12 don't**. The console starts its own IPL menu instead of the payload.
-- **The cause, very likely [inf: v0.11 without the pull-up wasn't tested]:** the CS pull-up from v0.11 (`0158695`, `gpio_pull_up(cs_pin)` in `src/pio.c`). With it, that console shows one to four extra CS transfers on about half the boots. They're clocked, so the clock-qualified count from v0.11 (`0be9e59`) counts them too, and the payload goes out early.
+- **The cause, very likely [inf: v0.11 without the pull-up wasn't tested], on that console's wiring of the time (§5):** the CS pull-up from v0.11 (`0158695`, `gpio_pull_up(cs_pin)` in `src/pio.c`). With it, that console shows one to four extra CS transfers on about half the boots. They're clocked, so the clock-qualified count from v0.11 (`0be9e59`) counts them too, and the payload goes out early.
 - **The change:** remove the pull-up, so CS keeps the pad's reset pull-down as before v0.11. **Keep the clock-qualified count:** on the phase 0 console it ignores the false edge that the pull-up was added for.
 - **Status:** PicoBoot-WiFi 1.1.1 makes this change. Nothing has changed in PicoBoot-DX; whether and how to take it is up to the owner.
 
@@ -44,3 +44,10 @@ Before the bisect, the second console also failed with the pull-down. The CS cou
 From `~/GitHub/PicoBoot-WiFi/docs/research/cs-at-start-up.md`:
 - **The false edge isn't a release, on A2 chips [inf]:** RP2350-E9 holds a line released from high at about 2.2 V, which reads high. The edge needs CS to start low (5 in 144 boots, against 0 in 90 starting high), so the console's first rise of CS most likely isn't clean. The comment on v0.11's pull-up ("a brief release by the console reads as a CS pulse") goes with the pull-up.
 - **Where 224 comes from:** the boot ROM reads the IPL's first 0x700 bytes in 8-byte transfers (CCC 2004, "Gamecube Hacking"); 0x700 ÷ 8 = 224. The 225th transfer is the first 1024-byte block.
+
+## 5. Later finding: the second console's wiring (2026-11-21)
+
+From `docs/research/main-console-tv.md` in PicoBoot-WiFi:
+- **The second console's wires were marginal.** They were loose wires straight to U10, and the bisect and the pull-up tests above ran on them. At its TV they picked up noise even with the pull-down, until new, shorter wires fixed it.
+- **So the pull-up's harm may have needed marginal wiring [inf].** The phase 0 console's quick-solder flex cable never showed extra transfers with the pull-up. The pull-up wasn't tried on the second console's new wiring.
+- **The change still stands:** without the pull-up, with the clock-qualified count, both consoles boot, and the second console did on its marginal wires too (35 of 35 boots at the bench). The pull-up adds nothing the count doesn't already do.

@@ -35,15 +35,17 @@ Boot numbers are each Pico's own boot log, and the two Picos' numbers overlap. T
 The owner tried each of these at the TV, one at a time, and none fixed it (no logs kept):
 - the HDMI cable unplugged from the TV, the adapter still in the console;
 - the bench adapter in place of the TV's;
-- the bench power brick.
+- the bench power brick;
+- a CubeSB board at U10, with the same wires to the Pico. The CubeSB board is a quick-solder board for the DOL-001 (PicoBoot-DX's `CubeSB_DOL-001` folder, after KunaiGC's QSB design). Its connector brings out U10's +3.3V, GND, `EXI.CLK`, `EXI.~{CS}`, `EXI.OUT` and `EXI.IN`, so the Pico's ground is taken at U10. `EXI.IN` stays unconnected;
+- then a new Pico (an RP2350 A2 too), on the CubeSB board.
 
-## 3. The fix
+## 3. The fix: thicker wires
 
-The owner replaced the Pico and all the wires, and fitted a CubeSB board at U10.
-- **The CubeSB board:** a quick-solder board for the DOL-001 (PicoBoot-DX's `CubeSB_DOL-001` folder, after KunaiGC's QSB design). Its connector brings out U10's +3.3V, GND, `EXI.CLK`, `EXI.~{CS}`, `EXI.OUT` and `EXI.IN`, so the Pico's ground is taken at U10. `EXI.IN` stays unconnected.
-- **Three changes at once,** so which of them mattered isn't known.
+The third change, with the CubeSB board and the new Pico already in place: new, thicker wires between the CubeSB board and the Pico. That fixed it (the owner).
+- Whether thicker wires alone, without the CubeSB board, would have been enough isn't known.
+- [inf] A thicker wire has less resistance and inductance, so the ground and the signals between the Pico and U10 move less when currents change.
 
-The results at the TV, with the new Pico (an RP2350 A2 too):
+The results at the TV, with the new Pico, the CubeSB board and the thicker wires:
 
 | Boots | Payload | Result |
 |---|---|---|
@@ -76,10 +78,10 @@ The results at the TV, with the new Pico (an RP2350 A2 too):
 
 ## 5. Conclusions
 
-1. **At its TV, the loose wires to U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
-   - A CubeSB board, a new Pico and new wires removed it.
-   - Which of the three mattered isn't known.
+1. **At its TV, the wiring between the Pico and U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
+   - A CubeSB board at U10 didn't fix it, and a new Pico didn't either.
+   - New, thicker wires did, with both already in place.
 2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known.
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
-4. **For the README, the owner's call:** a quick-solder board at U10 as the better way to wire the Pico.
+4. **For the README, the owner's call:** thicker wires between the Pico and U10, next to the short ground wire it already asks for.
 5. **Quick power cycles:** give the console a few seconds off before switching it on again (§4) [inf].

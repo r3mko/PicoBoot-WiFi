@@ -2,7 +2,7 @@
 
 The console test of release 1.1.2 (the plan's step R4), run by the owner on 2026-11-22 on both consoles, with the noise warning's hand check and the weak-link test on the Mac. **[inf]** marks a conclusion rather than a measured or sourced fact.
 
-**Status:** draft, for the owner's approval with plan v1.26.
+**Status:** R4 passed. Approved by the owner with plan v1.26.
 
 **Setup:**
 - **The dev console:** the owner's DOL-001 with the quick-solder flex cable ([main-console-tv.md](main-console-tv.md) §6). Before the test: 1.1.1 in slot A, and T3's test build in slot B. Payload 1: Swiss r2174 (885 transfers, so 1110 CS transfers expected).

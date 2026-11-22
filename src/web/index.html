@@ -265,9 +265,18 @@ function nextBoot(s) {
   return p.chosen !== "builtin" && p[p.chosen].valid ? plLabel(p, p.chosen) : "Built-in gekkoboot";
 }
 
-async function loadStatus() {
+// One /api/status request at a time (D46): a call while one is on its way gets that one's answer.
+// statusFailures counts the failed or timed-out ones in a row, for the polling's back-off.
+let statusPending = null;
+let statusFailures = 0;
+function loadStatus() {
+  if (!statusPending) statusPending = fetchStatus().finally(() => { statusPending = null; });
+  return statusPending;
+}
+async function fetchStatus() {
   const r = await api("/api/status");
-  if (!r || !r.ok) return false;
+  if (!r || !r.ok) { statusFailures++; return false; }
+  statusFailures = 0;
   const s = lastStatus = r.data;
   banners();
   if (tab === "status") {
@@ -286,10 +295,14 @@ async function loadStatus() {
   if (tab === "pl") renderPl();
   return true;
 }
-// Refresh every 5 s while the Status tab and the page are visible
-setInterval(() => {
-  if ((tab === "status" || tab === "pl") && document.visibilityState === "visible" && !restarting && !uploading) loadStatus();
-}, 5000);
+// Refresh while the Status or Payloads tab and the page are visible: each request after the last one
+// has finished, every 5 s, and after failures in a row every 10, 20, then 30 s (D46)
+const pollDelay = failures => failures <= 0 ? 5000 : failures === 1 ? 10000 : failures === 2 ? 20000 : 30000;
+async function poll() {
+  if ((tab === "status" || tab === "pl") && document.visibilityState === "visible" && !restarting && !uploading) await loadStatus();
+  setTimeout(poll, pollDelay(statusFailures));
+}
+setTimeout(poll, 5000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && (tab === "status" || tab === "pl") && !restarting && !uploading) loadStatus();
 });
@@ -602,11 +615,23 @@ const PAYLOADS = { payload1: "payload 1", payload2: "payload 2", builtin: "built
 const us = v => v < 1000 ? v + " µs" : (v / 1000).toFixed(1) + " ms";
 const margin = b => b.margin_clocked_us >= 0 ? us(b.margin_clocked_us) : b.margin_raw_us >= 0 ? us(b.margin_raw_us) : "none";
 
+// D45: a clean boot counts 224 or 225 CS transfers plus the payload's (payload_words / 256): the 224
+// skipped ones, the payload's, and often the next one. Clocked transfers above that are noise on CS.
+// 0 for boots without an injection, which count nothing.
+const noise = b => (b.result === "complete" || b.result === "stalled") ?
+  Math.max(0, b.cs_clocked - (225 + Math.floor(b.payload_words / 256))) : 0;
+// In the boot log table: "+N noise" after the counts of such a boot
+const noiseMark = e => noise(e) ? ` <span class="err">+${esc(noise(e))} noise</span>` : "";
+
 async function loadDiag() {
   const r = await api("/api/diagnostics", undefined, 15000);
   if (!r || !r.ok) return;
   const { boot: b, wifi: w, log } = r.data;
-  const glitch = b.cs_raw > b.cs_clocked;
+  // D45: more CS transfers than a clean boot is noise on CS; raw above clocked a glitch (D36)
+  const extra = noise(b);
+  const csNote = [
+    extra ? `<span class="err">Noise on CS: ${esc(extra)} transfer${extra > 1 ? "s" : ""} more than a clean boot. Check the wiring (README, Wiring)</span>` : "",
+    b.cs_raw > b.cs_clocked ? "Glitch ignored by the injection" : ""].filter(Boolean).join("; ");
   $("diag-body").innerHTML = `<h2>This boot</h2><div class="card"><dl>` +
     row("Boot", "#" + esc(b.boot) + (b.power_on ? ", power-on (injects)" : ", warm boot"), esc(RESETS[b.reset] || b.reset)) +
     row("Loader", "slot " + esc(b.slot) + (b.from_loader ? "" : " (not started by the loader)"),
@@ -619,13 +644,13 @@ async function loadDiag() {
     row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
     row("Margin", margin(b), "How long before the console's first read PicoBoot-WiFi was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
-    row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), glitch ? "Glitch ignored by the injection" : "") +
+    row("CS edges raw / clocked", esc(b.cs_raw) + " / " + esc(b.cs_clocked), csNote) +
     row("Wi-Fi blob", esc(w.blob)) +
     row("Wi-Fi up after", us(w.up_ms * 1000)) + `</dl></div>` +
     `<h2>Boot log</h2><div class="scroll"><table><thead><tr><th>Boot</th><th>Slot</th><th>Start</th><th>Payload</th>` +
     `<th>Transfers</th><th>Margin</th><th>Raw/clocked</th><th>Result</th></tr></thead><tbody>` +
     log.map(e => { const nr = e.result === "skipped" || e.result === "not_run"; return `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${nr ? "—" : esc(PAYLOADS[e.payload] || e.payload)}</td>` +
-      `<td>${nr ? "—" : Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}</td>` +
+      `<td>${nr ? "—" : Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}${noiseMark(e)}</td>` +
       `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`; }).join("") + `</tbody></table></div>`;
 }
 $("diag-refresh").onclick = loadDiag;

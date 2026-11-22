@@ -784,6 +784,8 @@ The reviewer's failure scenarios, replayed against the fix in a scratch harness:
   - the noise warning by hand on the Mac, with made-up diagnostics: every mark and note where it should be;
   - the weak-link test on the main console: after 2 minutes of 80% loss, a reload went through at once on 1.1.2, and took 30 s to 2 minutes on 1.1.1's page.
 
+CI passed on every push of the branch, the last on `1570675`. R5: merged into `main` on 2026-11-22 (`072ce9d`); the owner had it pushed and tagged `v1.1.2`, and published the release. Its files are R4's byte for byte.
+
 **Differences from the plan:**
 - **The main console's update came from a test build,** not from 1.1.1: the one in its slot B. The dev console's came from 1.1.1.
 - **The weak-link baseline was that test build,** whose page and network code are 1.1.1's.

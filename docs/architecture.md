@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.16, 2026-11-22 |
+| **Status** | Approved v1.17, 2026-11-22 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -30,6 +30,7 @@
 | v1.14 | 2026-11-22 | Approved by the owner. D44 as built (step T1) and after its code review (T2): two words per CS low period in its own `timing.pio`, so no time wraps; a 32 KB record; the test builds' boot-log rows in uninitialized RAM too (the owner's choice); the record shows the undriven start itself (the owner's choice); "nothing measured" on boots without an injection; the dead time; what a switch of build does to the boot log. |
 | v1.15 | 2026-11-22 | Approved by the owner. D44 decided (step T5), from the console series in [cs-timing-results.md](research/cs-timing-results.md): the short-gap threshold is 100 ns, as real gaps are 136 ns or more; the code stays on its branch, not in `main` (the owner's choice); a wiring-quality number for the releases follows. |
 | v1.16 | 2026-11-22 | Approved by the owner. Release 1.1.2: D45, a noise warning from the CS counts, from the research in [wiring-quality.md](research/wiring-quality.md): the Diagnostics tab compares each boot's count with a clean boot's and warns of noise on CS (the owner chose it over the shortest CS-high gap, which adds little to the counts); D46, the page's status polling one request at a time with a back-off, from the research in [weak-link.md](research/weak-link.md). |
+| v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
 
 ## How to read the decisions
 
@@ -300,7 +301,8 @@ These follow from the research and bind every decision below.
   - "This boot" gives the number of extra transfers, and points to the README's wiring advice.
   - The boot log table marks such boots.
   - A glitch (raw above clocked) keeps its own note.
-- **The page only:** the rule is in `src/web/rules.js`, from fields the API already has (`payload_words`, `cs_raw`, `cs_clocked`, `result`). No firmware logic, API or boot-log change, and older log entries get it too.
+- **The page only:** the rule is in the page's own script, from fields the API already has (`payload_words`, `cs_raw`, `cs_clocked`, `result`). No firmware logic, API or boot-log change, and older log entries get it too.
+- **Checked by hand,** like the page's other warnings. Neither console has noisy wiring now, so the page is shown made-up diagnostics with the recorded counts.
 - **For boots with an injection only** (complete or stalled): the others count nothing.
 - **Not the shortest CS-high gap** (D44) in the releases: every blip that shortens a gap is an extra transfer, which the counts already show.
 
@@ -312,7 +314,7 @@ These follow from the research and bind every decision below.
   - lwIP drops a connection only after 12 retransmissions, each time-out doubling (`TCP_MAXRTX`).
   - The web server closes a stalled connection gracefully, after about 8 s.
   - All its connections share one priority, so a new one can't push out a stuck one.
-- **The page only:** the schedule is in `src/web/rules.js`, with D45's rule.
+- **The page only:** the schedule is a one-line function next to the poller, in the page's own script.
 - **Not changed for now:** lwIP's `TCP_MAXRTX`, the web server's close, the number of connections.
 
 **Boot flow:**

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.23, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.16 |
+| **Status** | Approved v1.24, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.17 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -35,6 +35,7 @@
 | v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
 | v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
 | v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
+| v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
 
 ## How this plan works
 
@@ -749,10 +750,10 @@ The other later-releases items aren't in 1.1.2.
 
 | # | Step | Who | Done when |
 |---|---|---|---|
-| R1 | **The page and the docs:**<br>• `src/web/rules.js`, which the page loads like `dol.js`: D45's rule and D46's back-off schedule;<br>• the Diagnostics tab: the number of extra transfers on "This boot", with a pointer to the README, and a mark in the boot log table;<br>• the status polling: one request at a time, with D46's back-off;<br>• Node tests: D45's rule with the recorded cases (clean 285, 1110, 1544, 942; the TV's 287, 362, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot), and D46's schedule;<br>• the README: the wiring advice, and the recovery table pointing at the warning | Opus | Host tests, the Node tests, the layout check and CI pass |
+| R1 | **The page and the docs,** both rules in the page's own script:<br>• the Diagnostics tab: the number of extra transfers on "This boot", with a pointer to the README, and a mark in the boot log table;<br>• the status polling: one request at a time, with D46's back-off;<br>• a syntax check of the page's script, in Node;<br>• the README: the wiring advice, and the recovery table pointing at the warning | Opus | Host tests, the Node tests, the layout check and CI pass |
 | R2 | **Version and notes:** `CMakeLists.txt` at `1.1.2`, the release notes in `docs/releases/1.1.2.md` | Opus | The owner approved the notes |
 | R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
-| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>Neither console has noisy wiring now, so R1's test shows the warning itself | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
+| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>• the noise warning by hand: the page, opened on the Mac, shown made-up diagnostics with the recorded counts (clean 285, 1110, 1544, 942; the TV's 287, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot). The warning and the log's marks show exactly where they should.<br>Neither console has noisy wiring now, hence the made-up diagnostics | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
 | R5 | **Merge and tag `v1.1.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
 ## Local builds and CI

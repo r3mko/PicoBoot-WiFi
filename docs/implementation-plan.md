@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.25, 2026-11-22 |
+| **Status** | Approved v1.25, 2026-11-22; draft v1.26 (R4, the console test) for approval |
 | **Design** | [architecture.md](architecture.md), Approved v1.18 |
 | **Owner** | Remko Kleinjan |
 
@@ -37,6 +37,7 @@
 | v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
 | v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
 | v1.25 | 2026-11-22 | Approved by the owner. Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
+| v1.26 draft | 2026-11-22 | Release 1.1.2 as built (see its "As built" note): the console test, which passed on both consoles, the noise warning's hand check, and the weak-link test, where a reload after the loss went through at once on 1.1.2 and took 30 s to 2 minutes on 1.1.1's page. |
 
 ## How this plan works
 
@@ -771,6 +772,22 @@ The other later-releases items aren't in 1.1.2.
 | 7 | **Note:** the research proposed two more wiring points than the README took | Noted in the research: release 1.1.2 took upstream's advice and the flex cable or quick-solder board |
 
 The reviewer's failure scenarios, replayed against the fix in a scratch harness: all as intended.
+
+**As built (2026-11-22):**
+- **The steps:**
+  - R1 in `aa30aba`, with design v1.17 and plan v1.24 (`3cd2b4b`).
+  - R2 in `bf00cc4`. The owner approved the notes, with "1.1.x" for the versions it updates from.
+  - R3 in `359088c`: the code review and its fixes, with design v1.18 and plan v1.25 (`260d79b`).
+- **R4 passed on R3's build** ([release-1.1.2-results.md](research/release-1.1.2-results.md)):
+  - the update over Wi-Fi on both consoles, kept by a power-on;
+  - 12 cold boots on 1.1.2, the built-in and Swiss r2174 on each console, every count a clean boot's, so no warning;
+  - the noise warning by hand on the Mac, with made-up diagnostics: every mark and note where it should be;
+  - the weak-link test on the main console: after 2 minutes of 80% loss, a reload went through at once on 1.1.2, and took 30 s to 2 minutes on 1.1.1's page.
+
+**Differences from the plan:**
+- **The main console's update came from a test build,** not from 1.1.1: the one in its slot B. The dev console's came from 1.1.1.
+- **The weak-link baseline was that test build,** whose page and network code are 1.1.1's.
+- **The weak-link profile:** 80% loss both ways for 2 minutes, with a power cycle before the first of each firmware's 3 runs. 100% loss would have tested nothing, as no request would reach the Pico.
 
 ## Local builds and CI
 

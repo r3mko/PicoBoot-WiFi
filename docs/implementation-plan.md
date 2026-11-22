@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.24, 2026-11-22; draft v1.25 (R3, the code review) for approval |
-| **Design** | [architecture.md](architecture.md), Approved v1.17; draft v1.18 |
+| **Status** | Approved v1.25, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.18 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -36,7 +36,7 @@
 | v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
 | v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
 | v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
-| v1.25 draft | 2026-11-22 | Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
+| v1.25 | 2026-11-22 | Approved by the owner. Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
 
 ## How this plan works
 

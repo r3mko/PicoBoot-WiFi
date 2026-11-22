@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.17, 2026-11-22; draft v1.18 (D45 and D46 after R3) for approval |
+| **Status** | Approved v1.18, 2026-11-22 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -31,7 +31,7 @@
 | v1.15 | 2026-11-22 | Approved by the owner. D44 decided (step T5), from the console series in [cs-timing-results.md](research/cs-timing-results.md): the short-gap threshold is 100 ns, as real gaps are 136 ns or more; the code stays on its branch, not in `main` (the owner's choice); a wiring-quality number for the releases follows. |
 | v1.16 | 2026-11-22 | Approved by the owner. Release 1.1.2: D45, a noise warning from the CS counts, from the research in [wiring-quality.md](research/wiring-quality.md): the Diagnostics tab compares each boot's count with a clean boot's and warns of noise on CS (the owner chose it over the shortest CS-high gap, which adds little to the counts); D46, the page's status polling one request at a time with a back-off, from the research in [weak-link.md](research/weak-link.md). |
 | v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
-| v1.18 draft | 2026-11-22 | D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
+| v1.18 | 2026-11-22 | Approved by the owner. D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
 
 ## How to read the decisions
 

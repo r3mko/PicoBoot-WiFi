@@ -28,6 +28,8 @@ What a test build could measure about the console's CS line during the IPL read,
   - at 16 MHz, a BS1 transfer alone would take 6.0 µs, more than the 4.28 µs measured.
 - **So a filter for CS-high blips** would have to stay well under about 1.3 µs [inf]. The real gaps, and how short the noise blips are, need measuring.
 
+**Corrected by the measurements ([cs-timing-results.md](cs-timing-results.md) §2):** the clock is about 26.8 MHz, not 32 MHz, and BS1's gaps are about 150 ns, not 1.3 µs. The fit above holds, but its split into transfers and gaps doesn't: BS1's 0.96 ms includes a 93 µs pause, and a block's 307.7 µs is nearly all CS low.
+
 ## 3. The recorder
 
 A third passive state machine in pio1, next to `cs_raw` and `cs_clocked`. It times every CS-high and CS-low period, 2 cycles per count (8 ns at the injection's 250 MHz):

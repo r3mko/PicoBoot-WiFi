@@ -48,7 +48,7 @@ static void clean_boot(uint32_t blocks) {
 static void test_clean_boot(void) {
     timing_summary_t s;
     clean_boot(60);
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 285);
     CHECK(s.first_gap_ns == 160000000);
     CHECK(s.bs1_gap_min_ns == 1296 && s.bs1_gap_max_ns == 1304);
@@ -60,18 +60,20 @@ static void test_clean_boot(void) {
 }
 
 static void test_low_start_is_skipped(void) {
-    // The dev console since 1.1.1: CS undriven and low at first, then driven high
+    // The dev console since 1.1.1: CS undriven and low at first, so the first pair has a CS-high time
+    // of 0, then driven high
     timing_summary_t s;
     n = 0;
     period(0, 0, 5000000);                          // The undriven start: 40 ms low
     append_clean_boot(60);
-    timing_summarize(rec, n, true, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 285);
     CHECK(s.first_gap_ns == 160000000);
     CHECK(s.bs1_low_max_ns == 3000);
-    // Without the flag, the start counts as a transfer, and everything shifts by one
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
-    CHECK(s.transfers == 286 && s.first_gap_ns == 0 && s.bs1_low_max_ns == 40000000);
+    // A first pair that counted even once while CS was high is a transfer
+    rec[0] = 0x7FFFFFFFu - 1;
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    CHECK(s.transfers == 286 && s.first_gap_ns == 8 && s.bs1_low_max_ns == 40000000);
 }
 
 static void test_blip_shifts_the_split(void) {
@@ -85,7 +87,7 @@ static void test_blip_shifts_the_split(void) {
     rec[2 * 100 + 1] = 0xFFFFFFFFu - 100;           // the first part, 0.8 us
     rec[2 * 101] = (1u << 31) | (0x7FFFFFFFu - 3);  // the blip, CLK high
     rec[2 * 101 + 1] = 0xFFFFFFFFu - 272;           // the second part
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 286);
     CHECK(s.short_gaps == 1 && s.first_short_gap == 102);
     CHECK(s.bs1_gap_min_ns == 24);
@@ -98,23 +100,25 @@ static void test_blip_shifts_the_split(void) {
 static void test_short_records(void) {
     timing_summary_t s;
     n = 0;
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 0 && s.first_gap_ns == TIMING_NONE && s.bs1_gap_min_ns == TIMING_NONE);
     CHECK(s.low_225_ns == TIMING_NONE && s.payload_gap_max_ns == TIMING_NONE);
     period(100, 1, 200);
     rec[n++] = 0x7FFFFFFFu;                         // An incomplete last pair: CS fell, not risen yet
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 1 && s.first_gap_ns == 800 && s.bs1_low_min_ns == 1600 && s.clk_high_falls == 1);
     CHECK(s.bs1_gap_min_ns == TIMING_NONE && s.short_gaps == 0);
-    timing_summarize(rec, 2, true, NS_PER_COUNT, SHORT_GAP_NS, &s);  // only the start
-    CHECK(s.transfers == 0);
+    n = 0;
+    period(0, 0, 200);                              // Only the undriven start
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    CHECK(s.transfers == 0 && s.first_gap_ns == TIMING_NONE);
 }
 
 static void test_saturation(void) {
     timing_summary_t s;
     n = 0;
     period(0x7FFFFFFFu, 0, 0xFFFFFFFFu);           // 17 s high and 34 s low: past the JSON's range
-    timing_summarize(rec, n, false, NS_PER_COUNT, SHORT_GAP_NS, &s);
+    timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.first_gap_ns == TIMING_NS_MAX && s.bs1_low_max_ns == TIMING_NS_MAX);
 }
 

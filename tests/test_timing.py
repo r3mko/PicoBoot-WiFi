@@ -36,7 +36,8 @@ def low_cycles(word):
 
 
 def add_recorder(pio, cs, clk):
-    """Like timing_init(): JMP_PIN = CS, IN_BASE = CLK, shift left, autopush at 32, RX FIFO joined."""
+    """Like timing_init(): JMP_PIN = CS, IN_BASE = CLK, shift left, autopush at 32, RX FIFO joined.
+    Mirrors src/firmware/timing.c by hand; keep both in sync."""
     timing, _ = load("timing.pio.h")
     return pio.add_sm(timing["cs_timing"], jmp_pin=cs, in_base=clk, autopush=True, push_threshold=32,
                       in_shift_right=False, rx_depth=8)
@@ -109,8 +110,9 @@ class RecorderTest(unittest.TestCase):
         self.assertEqual([w1 >> 31 for w1, _ in pairs[1:]], [0])
 
     def test_next_to_the_injection_and_the_counters(self):
-        """In pio1 with the counters, while pio0 injects: the payload still arrives, every transfer is
-        recorded, and the counts are unchanged."""
+        """In pio1 with the counters, while pio0 injects: every transfer is recorded and counted, and the
+        injection delivers its payload. The simulator has no DMA, bus or shared instruction memory, so
+        this shows the programs agree, not that the recorder can't slow the injection down."""
         injection, defines = load("injection.pio.h")
         counters, _ = load("counters.pio.h")
         cs, clk = defines["CS_PIN"], defines["CLK_PIN"]

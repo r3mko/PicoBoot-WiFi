@@ -205,11 +205,11 @@ The last boot and the boot log (D22, D39).
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
 
-**Test builds** (`-dev`) add D44's CS timing to each report, as a `cs_timing` object. Times are in nanoseconds, `null` where there was nothing to measure:
+**Test builds** (`-dev`) add D44's CS timing to each report, as a `cs_timing` object. Times are in nanoseconds, `null` where there was nothing to measure, as on every boot without an injection:
 
 | Field | Meaning |
 |---|---|
-| `transfers` | CS low periods recorded, after the undriven start if CS was low |
+| `transfers` | CS low periods recorded, after the undriven start if CS was low (a first period with no CS-high time) |
 | `first_gap_ns` | CS high before the first one: from "PIO ready", or from the console's first drive of CS |
 | `bs1_gap_min_ns`, `bs1_gap_max_ns` | CS high between transfers 1 and 224 |
 | `bs1_low_min_ns`, `bs1_low_max_ns` | CS low of transfers 1 to 224 |
@@ -218,7 +218,9 @@ The last boot and the boot log (D22, D39).
 | `short_gaps`, `first_short_gap` | CS-high gaps under 500 ns after the first transfer (blips), and the transfer after the first one |
 | `clk_high_falls` | CS falls with CLK high (D36's known limit) |
 
-A boot with a glitch or a blip shifts the split at transfer 224 by those. `GET /api/test/cs-timing` downloads the current boot's raw record (two 32-bit little-endian words per CS low period, `src/firmware/timing_summary.h`); it's in RAM, so the next power-on replaces it. Each time reads up to 24 ns short.
+A boot with a glitch or a blip shifts the split at transfer 224 by those. Each time between two edges reads 8–20 ns short, and a pulse within about 16 ns of an edge merges into it.
+
+`GET /api/test/cs-timing` downloads the current boot's raw record: two 32-bit little-endian words per CS low period (`src/firmware/timing_summary.h`). It's in RAM, so any restart of the Pico loses it; a boot without an injection has none (409 `not_recorded`). A POST gets 405.
 
 ## POST /api/firmware
 

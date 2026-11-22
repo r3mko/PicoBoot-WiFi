@@ -7,8 +7,11 @@
 ; 32 bits. Two words per CS low period, both counted down from all ones in steps of 2 cycles:
 ;   1. pushed as CS falls: bit 31 = CLK at that moment, bits 30-0 = the CS-high time before it;
 ;   2. pushed as CS rises: the CS-low time.
-; Each period between two edges reads up to 6 cycles (24 ns at 250 MHz) short, as the loops start
-; a few cycles after an edge; a period of 2 cycles reads 0 but still makes its own pair.
+; The loops start a few cycles after each edge: a period between two edges reads 2 to 5 cycles
+; short (8-20 ns at 250 MHz, in the simulator). A short pulse still makes its own pair if it starts
+; about 4 cycles or more after the previous edge; one closer to an edge merges into it. The first
+; period starts at timing_start(), shortly before "PIO ready"; a first CS-high time of 0 means CS
+; was low then (timing_summary.h).
 
 .program cs_timing
 .wrap_target
@@ -20,10 +23,10 @@ high:
     mov x, ~null                ; Count the CS-low time
 low:
     jmp pin low_end             ; CS rose: the period is over
-    jmp x-- low
-low_end:
+    jmp x-- low                 ; (X runs out after 34 s of CS low, which makes a false pair: unreachable,
+low_end:                        ; the firmware stops the recorder within about 13 s)
     in x, 32                    ; The CS-low time: word 2
 .wrap
 high_count:
     jmp y-- high
-    jmp high                    ; Y ran out (after 17 s): keep counting
+    jmp high                    ; Y ran out (34 s; the 31-bit field wraps at 17 s): unreachable as above

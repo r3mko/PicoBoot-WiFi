@@ -10,6 +10,7 @@
 #include "pico/platform.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
+#include "hardware/structs/dma.h"
 
 #define RECORD_WORDS    8192u       // 4096 CS low periods: BS1, the largest payload and many extras (32 KB)
 #define NS_PER_COUNT    (2000000u / PICOBOOT_WIFI_INJECTION_KHZ)     // 2 PIO cycles: 8 ns at 250 MHz
@@ -24,6 +25,7 @@ static uint timing_sm;
 static uint timing_dma;
 static uint32_t recorded;
 
+// tests/test_timing.py's add_recorder() mirrors this set-up for its PIO simulator: keep both in sync
 void timing_init(void) {
     timing_sm = pio_claim_unused_sm(timing_pio, true);
     const uint offset = pio_add_program(timing_pio, &cs_timing_program);
@@ -54,8 +56,11 @@ void timing_stop(void) {
     // The DMA takes what the state machine pushed before it stopped, unless the record is full
     while (!pio_sm_is_rx_fifo_empty(timing_pio, timing_sm) && dma_channel_is_busy(timing_dma)) {
     }
-    recorded = RECORD_WORDS - (dma_channel_hw_addr(timing_dma)->transfer_count & DMA_CH0_TRANS_COUNT_COUNT_BITS);
+    // Clear EN first (RP2350-E5), as injection_finish() does. The abort waits for a write in flight,
+    // so the write address then counts every word the record holds.
+    hw_clear_bits(&dma_hw->ch[timing_dma].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
     dma_channel_abort(timing_dma);
+    recorded = (uint32_t)((const uint32_t *)dma_hw->ch[timing_dma].write_addr - record);
 }
 
 const uint32_t *timing_record(uint32_t *words) {
@@ -63,6 +68,6 @@ const uint32_t *timing_record(uint32_t *words) {
     return record;
 }
 
-void timing_summary(bool cs_low_at_start, timing_summary_t *s) {
-    timing_summarize(record, recorded, cs_low_at_start, NS_PER_COUNT, SHORT_GAP_NS, s);
+void timing_summary(timing_summary_t *s) {
+    timing_summarize(record, recorded, NS_PER_COUNT, SHORT_GAP_NS, s);
 }

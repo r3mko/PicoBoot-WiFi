@@ -179,7 +179,7 @@ static void inject(const injection_payload_t *payload) {
     report.words_delivered = (uint32_t)(payload->count - injection_words_left());
     injection_finish();
 #if PICOBOOT_WIFI_TEST_BUILD
-    timing_summary(!report.cs_high_at_ready, &report.timing);
+    timing_summary(&report.timing);
 #endif
 }
 
@@ -321,6 +321,9 @@ int main(void) {
           report.bootctl_default, (unsigned long)report.chip_reset);
 
     report.payload_chosen = BOOTCTL_NONE;
+#if PICOBOOT_WIFI_TEST_BUILD
+    timing_summary(&report.timing);         // D44: "nothing measured", unless inject() records a read
+#endif
     if (report.power_on) {
         bootctl_t bootctl;
         const bool stored = storage_bootctl_load(&bootctl);

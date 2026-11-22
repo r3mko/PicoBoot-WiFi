@@ -234,7 +234,7 @@ class StateMachine:
             elif a == REG_Y:
                 self.y = value
             else:
-                self.isr = value
+                self.isr, self.isr_count = value, 0   # "the input shift counter is reset to 0"
             self._next()
         elif kind == PUSH:                            # p.326
             if len(self.rx) < self.rx_depth:

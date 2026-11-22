@@ -23,14 +23,14 @@ static void take_max(uint32_t *max, uint32_t v) {
     }
 }
 
-void timing_summarize(const uint32_t *record, uint32_t words, bool cs_low_at_start, uint32_t ns_per_count,
-                      uint32_t short_gap_ns, timing_summary_t *s) {
+void timing_summarize(const uint32_t *record, uint32_t words, uint32_t ns_per_count, uint32_t short_gap_ns,
+                      timing_summary_t *s) {
     *s = (timing_summary_t){
         0, TIMING_NONE, TIMING_NONE, TIMING_NONE, TIMING_NONE, TIMING_NONE, TIMING_NONE, TIMING_NONE,
         TIMING_NONE, TIMING_NONE, 0, TIMING_NONE, 0,
     };
     uint32_t pairs = words / 2;
-    if (cs_low_at_start && pairs > 0) {
+    if (pairs > 0 && (record[0] & 0x7FFFFFFFu) == 0x7FFFFFFFu) {     // CS-high time 0: the undriven start
         record += 2;
         pairs--;
     }

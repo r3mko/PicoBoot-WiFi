@@ -181,6 +181,12 @@ class InstructionTest(unittest.TestCase):
         sm.exec_instruction(MOV_X_NOT_NULL)
         self.assertEqual(sm.x, 0xFFFFFFFF)
 
+    def test_mov_to_isr_clears_the_input_shift_count(self):  # p.328
+        pio, sm = machine([IN_X_4, JMP_0], autopull=False)
+        pio.step(0)
+        sm.exec_instruction(MOV_ISR_X)
+        self.assertEqual(sm.isr_count, 0)
+
     def test_mov_isr_and_push_read_out_x(self):             # p.326, p.328
         pio, sm = machine([JMP_0, JMP_0], autopull=False)
         sm.x = 0xFFFFFF00

@@ -32,7 +32,13 @@
 #define WORDS_PER_TRANSFER 256
 
 static page_info_t info;
+#if PICOBOOT_WIFI_TEST_BUILD
+// Test builds' reports are longer (D44): kept out of .bss, which is zeroed before the injection;
+// storage_bootlog_read() fills every row that is read
+static boot_report_t __uninitialized_ram(log_rows)[STORAGE_BOOTLOG_ENTRIES];
+#else
 static boot_report_t log_rows[STORAGE_BOOTLOG_ENTRIES];
+#endif
 static uint32_t log_seq[STORAGE_BOOTLOG_ENTRIES];
 
 typedef struct {
@@ -180,10 +186,12 @@ static void put_counts(out_t *o, const boot_report_t *r) {
 }
 
 #if PICOBOOT_WIFI_TEST_BUILD
-// D44's CS timing summary, as microseconds (ms above 1 ms), "-" where there was nothing to measure
+// D44's CS timing summary: ns below 1 us, then us, then ms; "-" where there was nothing to measure
 static const char *fmt_ns(char *buf, size_t size, uint32_t v) {
     if (v == TIMING_NONE) {
         snprintf(buf, size, "-");
+    } else if (v < 1000) {
+        snprintf(buf, size, "%lu ns", (unsigned long)v);
     } else if (v >= 1000000) {
         snprintf(buf, size, "%lu.%lu ms", (unsigned long)(v / 1000000), (unsigned long)(v / 100000 % 10));
     } else {

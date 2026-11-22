@@ -19,7 +19,7 @@
 #define TIMING_NS_MAX   0x7FFFFFFFu     // Times saturate here (the API's JSON integers are signed)
 
 typedef struct {
-    uint32_t transfers;             // CS low periods recorded, after the undriven start if CS was low
+    uint32_t transfers;             // CS low periods recorded, after the undriven start if CS was low (below)
     uint32_t first_gap_ns;          // CS high before the first one: from the start, or the console's first drive
     uint32_t bs1_gap_min_ns;        // CS high between transfers 1 and 224
     uint32_t bs1_gap_max_ns;
@@ -34,9 +34,10 @@ typedef struct {
     uint32_t clk_high_falls;        // CS falls with CLK high (D36's known limit)
 } timing_summary_t;
 
-// Fills *s from `words` recorded words (an incomplete last pair is ignored). cs_low_at_start: CS
-// was low when the recorder started, so its first pair is that undriven start, not a transfer.
-// ns_per_count: the time of one count (2 PIO cycles). Values without anything to measure are
-// TIMING_NONE.
-void timing_summarize(const uint32_t *record, uint32_t words, bool cs_low_at_start, uint32_t ns_per_count,
-                      uint32_t short_gap_ns, timing_summary_t *s);
+// Fills *s from `words` recorded words (an incomplete last pair is ignored). A first pair with a
+// CS-high time of exactly 0 means CS was low when the recorder started (the dev console's undriven
+// start): it is that start, not a transfer, and is left out. Any other first pair counts at least
+// once while CS is high. ns_per_count: the time of one count (2 PIO cycles). Values without
+// anything to measure are TIMING_NONE; with no words, all of them are.
+void timing_summarize(const uint32_t *record, uint32_t words, uint32_t ns_per_count, uint32_t short_gap_ns,
+                      timing_summary_t *s);

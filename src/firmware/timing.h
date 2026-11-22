@@ -16,9 +16,10 @@ void timing_init(void);
 void timing_start(void);
 void timing_stop(void);
 
-// The record and its length in words (two per CS low period), from timing_stop() until the next
-// power-on: the download sends it as it is.
+// The record and its length in words (two per CS low period), from timing_stop() on: the download
+// sends it as it is. It lasts until the Pico restarts; a boot without an injection has none.
 const uint32_t *timing_record(uint32_t *words);
 
-// The summary of this boot's record (timing_summary.h)
-void timing_summary(bool cs_low_at_start, timing_summary_t *s);
+// The summary of this boot's record (timing_summary.h): "nothing measured" before timing_stop(), and
+// on a boot without an injection
+void timing_summary(timing_summary_t *s);

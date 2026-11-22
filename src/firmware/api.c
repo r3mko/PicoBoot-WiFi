@@ -30,7 +30,13 @@
 #include "pico/time.h"
 
 static const page_info_t *info;
+#if PICOBOOT_WIFI_TEST_BUILD
+// Test builds' reports are longer (D44): kept out of .bss, which is zeroed before the injection;
+// storage_bootlog_read() fills every row that is read
+static boot_report_t __uninitialized_ram(log_rows)[STORAGE_BOOTLOG_ENTRIES];
+#else
 static boot_report_t log_rows[STORAGE_BOOTLOG_ENTRIES];
+#endif
 static uint32_t log_seq[STORAGE_BOOTLOG_ENTRIES];
 
 void api_init(const page_info_t *i) {
@@ -610,7 +616,11 @@ static bool test_handles(const char *path) {
 static int test_open(const char *path, net_file_t *file, char *out, size_t size, size_t *len) {
     if (strcmp(path, TIMING_PATH) == 0) {
         uint32_t words;
-        const uint32_t *record = timing_record(&words);     // Stays put until the next power-on
+        const uint32_t *record = timing_record(&words);     // Stays put until the Pico restarts
+        if (!words) {
+            return error(out, size, len, 409, "not_recorded",
+                         "no CS timing record: this boot had no injection, or the Pico restarted since", NULL);
+        }
         file->type = "application/octet-stream";
         snprintf(file->filename, sizeof(file->filename), "picoboot-cs-timing-boot-%lu.bin",
                  (unsigned long)info->boot_number);
@@ -658,6 +668,11 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
     if (backup_handles(path)) {
         return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // GETs are downloads
     }
+#if PICOBOOT_WIFI_TEST_BUILD
+    if (strcmp(path, TIMING_PATH) == 0) {
+        return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // A download (D44)
+    }
+#endif
     if (strcmp(path, "/api/reboot") == 0) {
         if (!post) {
             return error(out, out_size, out_len, 405, "method_not_allowed", "use POST", NULL);

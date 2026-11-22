@@ -20,10 +20,12 @@ The research behind [the design](../architecture.md), as the design cycle asks: 
 | [main-console-tv.md](main-console-tv.md) | 2026-11-21 | The second console at its TV after release 1.1.1: clocked extra CS transfers on nearly every boot from noise outside the Pico; not the HDMI link, adapter or power brick, nor a CubeSB board at U10 or a new Pico; fixed by new, shorter wires (their length or joints, more likely than their gauge); stalls on quick power cycles |
 | [cs-at-start-up.md](cs-at-start-up.md) | 2026-11-20 | Whether CS is meant to be high at power-up (no source says so), why the two consoles differ, RP2350-E9's part, and the false edge as a first rise that isn't clean; where the 224 comes from |
 | [cs-pull-up.md](cs-pull-up.md) | 2026-11-20 | D36's CS pull-up fails a second DOL-001; the clock-qualified count alone works on both consoles; a long ground wire as CS noise (release 1.1.1) |
+| [gc-docs.md](gc-docs.md) | 2026-11-23 | GameCube documents (YAGCD, the Shuriken attack, PicoBoot's wiring diagram) against this project's measurements: BS1 is the 224 transfers, the transfer shapes give a 26.76 MHz EXI clock, U10's pins; an injection point found by length, the Shuriken board's CS pull-up, the Pico overpowering U10 on the data line, GP6 and GP7 |
+| [length-injection.md](length-injection.md) | 2026-11-23 | The Shuriken method for PicoBoot-WiFi: finding the first block by its length (a 97th clock while CS is low) instead of a count of 224; no pin lifted, no payload change; guards the BS1 phase where noise breaks boots today; a polling PIO detector, the PIO budget, a user switch, testing, options |
 
 ## What we already run: PicoBoot-DX v0.10
 
-- **Code:** about 10 KB of C and PIO (`~/GitHub/PicoBoot-DX`), plus a built-in 60 KB gekkoboot.
+- **Code:** about 10 KB of C and PIO, plus a built-in 60 KB gekkoboot.
 - **What it does:**
   - boosts the clock to 250 MHz;
   - skips 224 CS pulses, then streams the payload into the PIO with DMA;

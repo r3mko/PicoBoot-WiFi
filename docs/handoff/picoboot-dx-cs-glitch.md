@@ -1,7 +1,7 @@
 # Handoff to PicoBoot-DX: the CS glitch behind the occasional blue screens
 
-**From:** PicoBoot-WiFi (`~/GitHub/PicoBoot-WiFi`), phase 0 hardware checks, 2026-11-08.
-**For:** whoever works on PicoBoot-DX (`~/GitHub/PicoBoot-DX`, v0.10). The owner asked for these fixes to be brought back to PicoBoot-DX.
+**From:** PicoBoot-WiFi ([r3mko/PicoBoot-WiFi](https://github.com/r3mko/PicoBoot-WiFi)), phase 0 hardware checks, 2026-11-08.
+**For:** whoever works on PicoBoot-DX ([r3mko/PicoBoot-DX](https://github.com/r3mko/PicoBoot-DX), v0.10). The owner asked for these fixes to be brought back to PicoBoot-DX.
 
 **In short:**
 - **The failure:** PicoBoot's occasional blue screens at a cold boot come from **one false falling edge on CS**, about 42–44 ms after power-on, when the console first drives CS.
@@ -18,7 +18,7 @@
 - **Board:** one Pico 2 W, fed through 3V3 (the usual wiring).
 - **Console:** a DOL-001 with an SD2SP2 and an HDMI adapter.
 - **Firmware:** a measurement build that is **PicoBoot-DX v0.10 with the injection unchanged** (the `.pio` file is byte-identical, checked by SHA-256), plus passive counters in `pio1` and a boot log read over Wi-Fi.
-- **Source:** `~/GitHub/PicoBoot-WiFi/hwtest/dx-measure`. Full results: `~/GitHub/PicoBoot-WiFi/docs/research/phase0-results.md`.
+- **Source:** [`hwtest/dx-measure`](https://github.com/r3mko/PicoBoot-WiFi/tree/main/hwtest/dx-measure). Full results: [`docs/research/phase0-results.md`](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/phase0-results.md).
 
 | Measurement | Result |
 |---|---|
@@ -48,7 +48,7 @@
 5. **RP2350 A2 boards have it worse:** erratum **RP2350-E9** (datasheet Appendix D.5.1, fixed in A3) can hold a floating input with input-enable at about 2.2 V, which the pull-down can't overcome. "The pad pull-up still works."
    *Revised 2026-11-20:* not worse. E9 can keep CS high but not make it high, since right after reset the pull-down works; holding CS high, it kept the glitch away in phase 1's first part D (0 in 20 boots) ([cs-at-start-up.md](../research/cs-at-start-up.md) §4).
 
-**The simulator reproduces it:** `~/GitHub/PicoBoot-WiFi/hwtest/dx-measure/tests/test_measure.py`, `GlitchTest`. One CS low pulse without clocks before the IPL read, and PicoBoot-DX's programs deliver a shifted payload.
+**The simulator reproduces it:** [`hwtest/dx-measure/tests/test_measure.py`](https://github.com/r3mko/PicoBoot-WiFi/blob/main/hwtest/dx-measure/tests/test_measure.py), `GlitchTest`. One CS low pulse without clocks before the IPL read, and PicoBoot-DX's programs deliver a shifted payload.
 
 ## 3. Fix 1: pull CS up
 
@@ -166,7 +166,7 @@
 
 ## Sources
 
-- PicoBoot-WiFi phase 0 results: `~/GitHub/PicoBoot-WiFi/docs/research/phase0-results.md` (sections 0.3, 0.3b, 0.7)
-- PicoBoot-WiFi design decision D36: `~/GitHub/PicoBoot-WiFi/docs/architecture.md`
+- PicoBoot-WiFi phase 0 results: [`docs/research/phase0-results.md`](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/phase0-results.md) (sections 0.3, 0.3b, 0.7)
+- PicoBoot-WiFi design decision D36: [`docs/architecture.md`](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/architecture.md)
 - [RP2350 datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf): Appendix D.5.1 (RP2350-E9), pad DC characteristics (pull-up 32–86 kΩ, pull-down 36–113 kΩ at 3.3 V)
 - [webhdx/PicoBoot `src/pio.c`](https://github.com/webhdx/PicoBoot/blob/main/src/pio.c): the same pin set-up, no pulls

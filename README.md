@@ -37,6 +37,8 @@ The wiring is PicoBoot's (since its v0.4): see the wiring diagram in [PicoBoot's
 | GND | Ground |
 | VSYS (with 5 V) or 3V3 | Power, see below |
 
+**GP6 and GP7:** PicoBoot's wiring diagram joins GP6 and GP7 on the Data wire, since the first PicoBoot drove both to overpower the IPL chip's own output. A Pico wired that way works as it is: PicoBoot-WiFi drives GP6 alone, as PicoBoot now does, and leaves GP7 undriven.
+
 **Power: 5 V is recommended.** Wire the console's 5 V through a Schottky diode (e.g. 1N5819, SS110) to VSYS. The Pico's own regulator then powers the Wi-Fi chip. With the 3V3 wiring, the console's 3.3 V rail powers the radio as well: on the test console it measured 3.15 V with the radio on, below the 3.2 V where the Wi-Fi chip guarantees full radio performance. The 3V3 wiring still works, and it's supported. Use one of the two, not both.
 
 **Ground: keep the wire short.** Run the Pico's GND with a short wire to a ground point near U10. On one console, a long ground wire kept the payload from reaching the console. It showed in the boot log as far too many CS edges: tens or hundreds of thousands, where 225 more than the payload's transfers are expected (285 for the built-in gekkoboot).

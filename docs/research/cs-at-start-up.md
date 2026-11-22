@@ -94,6 +94,8 @@ Upstream PicoBoot has console-dependent intermittent failures that were never ex
 
 No report ties a failure to the board revision or to CS's level at start-up. Upstream has no CS counter, so a glitch can't be told apart from other causes there.
 
+**Another modchip pulls CS up:** the Shuriken attack's board (Steven Taffs, 2014–2016) has a 10 kΩ pull-up from 3.3 V to the console's CS. Its CPLD drives the Flipper's data input whenever CS reads low, so an undriven CS at power-up would make it drive [inf] ([gc-docs.md](gc-docs.md) §3, point 2).
+
 **Upstream's code and docs say nothing about CS at start-up** (checked 2026-11-21: `main` at `d6f5230`, the README, and the installation and troubleshooting pages at https://support.webhdx.dev/gc/picoboot/):
 - `src/pio.c` sets no pull on CS, so it keeps the reset pull-down;
 - `on_transfer` counts every falling CS edge, 224 times. It sets a jmp pin on CS but never uses it;

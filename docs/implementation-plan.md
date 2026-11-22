@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.20, 2026-11-22; draft v1.21 (T1 as built, T2's findings) for approval |
-| **Design** | [architecture.md](architecture.md), Approved v1.13; draft v1.14 |
+| **Status** | Approved v1.21, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.14 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -32,7 +32,7 @@
 | v1.18 | 2026-11-20 | Approved by the owner. Release 1.1.1, no CS pull-up (D36, design v1.10), from the research in [cs-pull-up.md](research/cs-pull-up.md). The owner chose CS left as reset leaves it with the clock-qualified count, the CS test mode removed entirely, a README note on the ground wire and the CS counts, a handoff note for PicoBoot-DX, and a 20-boot console test on the second console. |
 | v1.19 | 2026-11-20 | Approved by the owner. Release 1.1.1 as built (see its "As built" note): its code review and fixes, the owner's choices from it (bit 7 cleared on both Picos; release notes worded to the two test consoles), and the console test, which passed. |
 | v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
-| v1.21 draft | 2026-11-22 | The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
+| v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
 
 ## How this plan works
 

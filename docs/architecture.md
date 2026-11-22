@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.13, 2026-11-22; draft v1.14 (D44 as built) for approval |
+| **Status** | Approved v1.14, 2026-11-22 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -27,7 +27,7 @@
 | v1.11 | 2026-11-20 | Approved by the owner. D36 as built (release 1.1.1), from its code review: without the pull-up, the known limit is unguarded; the expected CS count is 225 more than the payload's transfers; the dev console's series has 48 logged boots. From the console test: the second console booted 21 of 21 cold boots on 1.1.1 ([release-1.1.1-results.md](research/release-1.1.1-results.md)). |
 | v1.12 | 2026-11-22 | Approved by the owner. D36's evidence, from the research on the second console ([main-console-tv.md](research/main-console-tv.md)): the pull-up failed on that console's marginal wiring of the time, which the dev console's flex cable never showed, so its harm may need such wiring; and a few extra CS transfers on most boots point at wiring that picks up noise. The decision doesn't change. |
 | v1.13 | 2026-11-22 | Approved by the owner. D44, CS timing diagnostics in test builds, from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): a passive recorder in pio1 times every CS period and notes CLK at each CS fall; a summary per boot in the test builds' boot log; releases unchanged. The owner chose a per-boot summary in flash, the CLK bit, clean setups only, and a test build first. |
-| v1.14 draft | 2026-11-22 | D44 as built (step T1) and after its code review (T2): two words per CS low period in its own `timing.pio`, so no time wraps; a 32 KB record; the test builds' boot-log rows in uninitialized RAM too (the owner's choice); the record shows the undriven start itself (the owner's choice); "nothing measured" on boots without an injection; the dead time; what a switch of build does to the boot log. |
+| v1.14 | 2026-11-22 | Approved by the owner. D44 as built (step T1) and after its code review (T2): two words per CS low period in its own `timing.pio`, so no time wraps; a 32 KB record; the test builds' boot-log rows in uninitialized RAM too (the owner's choice); the record shows the undriven start itself (the owner's choice); "nothing measured" on boots without an injection; the dead time; what a switch of build does to the boot log. |
 
 ## How to read the decisions
 

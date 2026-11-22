@@ -265,18 +265,32 @@ function nextBoot(s) {
   return p.chosen !== "builtin" && p[p.chosen].valid ? plLabel(p, p.chosen) : "Built-in gekkoboot";
 }
 
-// One /api/status request at a time (D46): a call while one is on its way gets that one's answer.
-// statusFailures counts the failed or timed-out ones in a row, for the polling's back-off.
+// /api/status (D46). The polling, tab switches and the visibility handler share one request: a call
+// while one is on its way gets that one's answer. After an action, loadStatus(true) sends a request of
+// its own, so the page shows the state after it. Each request has a number, and an answer older than
+// the one shown is dropped. statusFailures counts the failed or timed-out requests in a row, for the
+// polling's back-off. The returned promise never rejects.
 let statusPending = null;
+let statusSeq = 0;       // the newest request's number
+let statusShown = 0;     // the number of the answer the page shows
 let statusFailures = 0;
-function loadStatus() {
-  if (!statusPending) statusPending = fetchStatus().finally(() => { statusPending = null; });
+function loadStatus(fresh) {
+  if (fresh || !statusPending) {
+    const seq = ++statusSeq;
+    const p = fetchStatus(seq)
+      .catch(e => { console.error(e); if (seq > statusShown) statusFailures++; return false; })
+      .finally(() => { if (statusPending === p) statusPending = null; });
+    statusPending = p;
+  }
   return statusPending;
 }
-async function fetchStatus() {
+async function fetchStatus(seq) {
   const r = await api("/api/status");
-  if (!r || !r.ok) { statusFailures++; return false; }
+  if (!r || !r.ok || !r.data) { if (seq > statusShown) statusFailures++; return false; }
+  if (seq < statusShown) return true;      // a newer answer is shown already
+  statusShown = seq;
   statusFailures = 0;
+  pollSoon();
   const s = lastStatus = r.data;
   banners();
   if (tab === "status") {
@@ -296,13 +310,28 @@ async function fetchStatus() {
   return true;
 }
 // Refresh while the Status or Payloads tab and the page are visible: each request after the last one
-// has finished, every 5 s, and after failures in a row every 10, 20, then 30 s (D46)
+// has finished, every 5 s, and after failures in a row every 10, 20, then 30 s (D46). A success from
+// anywhere brings a longer wait back to 5 s. The timer is set again whatever happens.
 const pollDelay = failures => failures <= 0 ? 5000 : failures === 1 ? 10000 : failures === 2 ? 20000 : 30000;
-async function poll() {
-  if ((tab === "status" || tab === "pl") && document.visibilityState === "visible" && !restarting && !uploading) await loadStatus();
-  setTimeout(poll, pollDelay(statusFailures));
+let pollTimer = null;
+let pollAt = 0;
+function schedulePoll(ms) {
+  clearTimeout(pollTimer);
+  pollAt = Date.now() + ms;
+  pollTimer = setTimeout(poll, ms);
 }
-setTimeout(poll, 5000);
+function pollSoon() {
+  if (pollTimer !== null && pollAt - Date.now() > 5000) schedulePoll(5000);
+}
+async function poll() {
+  pollTimer = null;
+  try {
+    if ((tab === "status" || tab === "pl") && document.visibilityState === "visible" && !restarting && !uploading) await loadStatus();
+  } finally {
+    schedulePoll(pollDelay(statusFailures));
+  }
+}
+schedulePoll(5000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && (tab === "status" || tab === "pl") && !restarting && !uploading) loadStatus();
 });
@@ -357,7 +386,7 @@ $("boot-yes").onclick = async () => {
   const r = await api("/api/boot", { slot: bootTarget });
   if (!r || !r.ok) { $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Nothing changed."; return; }
   if (r.data && r.data.rebooting) { $("fw-err").textContent = "Rebooting into slot " + bootTarget + ". Waiting for PicoBoot-WiFi…"; await pollUntilBack(2000); }
-  else await loadStatus();
+  else await loadStatus(true);
   $("fw-err").textContent = "";
 };
 $("fw-keep").onclick = async () => {
@@ -365,7 +394,7 @@ $("fw-keep").onclick = async () => {
   $("fw-err").textContent = "";
   const r = await api("/api/boot", { keep: true });
   if (!r || !r.ok) $("fw-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Not kept.";
-  await loadStatus();
+  await loadStatus(true);
 };
 
 // "X.Y.Z[-pre][+build]": compare numerically, a pre-release before its release, the build ignored
@@ -435,7 +464,7 @@ $("up-go").onclick = () => {
   x.onload = async () => {
     let d = null;
     try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
-    if (x.status !== 200 || !d || !d.installed) { restarting = false; done((d && d.message) || "Error " + x.status); return loadStatus(); }
+    if (x.status !== 200 || !d || !d.installed) { restarting = false; done((d && d.message) || "Error " + x.status); return loadStatus(true); }
     $("up-bar").hidden = $("up-info").hidden = true;
     $("up-msg").textContent = "Installed into slot " + (d.slot || slotNote) + "; PicoBoot-WiFi restarts into it on trial…";
     await pollUntilBack(2000);
@@ -485,7 +514,7 @@ async function plPost(path, body) {
   $("pl-err").textContent = "";
   const r = await api(path, body);
   if (!r || !r.ok) $("pl-err").textContent = (r && r.data && r.data.message) || "Can't reach PicoBoot-WiFi. Nothing changed.";
-  await loadStatus();
+  await loadStatus(true);
 }
 const plNameErr = n => n.length > 24 ? "The name can be at most 24 characters." : printable(n) ? "" : "Use printable ASCII characters only (no accents or emoji).";
 
@@ -563,7 +592,7 @@ $("pl-file").onchange = async () => {
       try { const c = PicoBootDol.convertDol(new Uint8Array(await f.arrayBuffer())); blob = new Blob([c.payload]); loader = c.loader; } catch (e) { return bad(e.message); }
     }
   } catch (e) { return bad("Can't read this file."); }
-  await loadStatus();
+  await loadStatus(true);
   const p = lastStatus && lastStatus.payloads;
   if (!p) return bad("Can't reach PicoBoot-WiFi.");
   plBlob = blob;
@@ -588,7 +617,7 @@ $("pl-up-go").onclick = () => {
   const done = msg => {
     uploading = false; plBlob = null; $("pl-file").disabled = false; $("pl-file").value = "";
     $("pl-up-err").textContent = msg; $("pl-up-msg").textContent = ""; $("pl-bar").hidden = true;
-    return loadStatus();
+    return loadStatus(true);
   };
   const x = new XMLHttpRequest();
   x.open("POST", "/api/payload");
@@ -748,7 +777,7 @@ $("form").onsubmit = async e => {
     $("saved").textContent = "Saved.";
     $("saved").hidden = false;
     await loadSettings();
-    loadStatus();
+    loadStatus(true);
   }
 };
 
@@ -759,7 +788,7 @@ async function pollUntilBack(delayMs) {
   while (!(await api("/api/status", undefined, 1500))) await sleep(2000);
   restarting = false;
   await loadSettings();
-  await loadStatus();
+  await loadStatus(true);
 }
 
 async function waitForRestart(ssidHtml, newPassword, delayMs) {
@@ -791,7 +820,7 @@ $("rs-file").onchange = async () => {
   if (d.wifi_restart) return waitForRestart(esc(d.ssid_in_use || settings.ssid_in_use), "password" in body, 3000);
   $("rs-ok").textContent = "Restored."; $("rs-ok").hidden = false;
   await loadSettings();
-  loadStatus();
+  loadStatus(true);
 };
 
 // Asked inline, not with confirm(): captive-portal sheets may not show dialogs

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.24, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.17 |
+| **Status** | Approved v1.24, 2026-11-22; draft v1.25 (R3, the code review) for approval |
+| **Design** | [architecture.md](architecture.md), Approved v1.17; draft v1.18 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -36,6 +36,7 @@
 | v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
 | v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
 | v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
+| v1.25 draft | 2026-11-22 | Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
 
 ## How this plan works
 
@@ -753,8 +754,23 @@ The other later-releases items aren't in 1.1.2.
 | R1 | **The page and the docs,** both rules in the page's own script:<br>• the Diagnostics tab: the number of extra transfers on "This boot", with a pointer to the README, and a mark in the boot log table;<br>• the status polling: one request at a time, with D46's back-off;<br>• a syntax check of the page's script, in Node;<br>• the README: the wiring advice, and the recovery table pointing at the warning | Opus | Host tests, the Node tests, the layout check and CI pass |
 | R2 | **Version and notes:** `CMakeLists.txt` at `1.1.2`, the release notes in `docs/releases/1.1.2.md` | Opus | The owner approved the notes |
 | R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
-| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>• the noise warning by hand: the page, opened on the Mac, shown made-up diagnostics with the recorded counts (clean 285, 1110, 1544, 942; the TV's 287, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot). The warning and the log's marks show exactly where they should.<br>Neither console has noisy wiring now, hence the made-up diagnostics | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
+| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>• the noise warning by hand: the page, opened on the Mac, shown made-up diagnostics with the recorded counts (clean 285, 1110, 1544, 942; the TV's 287, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot; and boot 108's 5368, the known exception, which shows as noise). The warning and the log's marks show exactly where they should.<br>Neither console has noisy wiring now, hence the made-up diagnostics | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
 | R5 | **Merge and tag `v1.1.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**Code review of release 1.1.2** (R3, a fresh Opus 5.5 reviewer, 2026-11-22):
+- **Overall:** no bug in D45's rule, and the release build differs from 1.1.1 only in the page and the version (built with `SOURCE_DATE_EPOCH` fixed). Two problems in D46's new polling.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Bug:** a refresh after an action could get the answer of a status request that started before it. On a weak link the old state showed for about 17 s; after a firmware update the page could say the update failed while it ran on trial | Fixed (the owner's choice): `loadStatus(true)` after an action sends its own request; each request has a number, and an older answer is dropped |
+| 2 | **Risk:** one rejected status request stopped the polling until a reload (1.1.1's `setInterval` went on) | Fixed: a 200 without a body counts as a failure; the shared request never rejects; the timer is set again whatever happens |
+| 3 | **Doc error:** "every clean boot recorded" left out boot 108 (5368 transfers on the fixed wiring), which the rule marks as noise | Fixed: D45 and the research name it as a known exception; it's among R4's made-up cases. The warning's wording stays (the owner's choice) |
+| 4 | **Doc error:** `weak-link.md` put lwIP's 12 tries at about 7 minutes; with the 3 s start it's about half an hour, and recovery up to about 5 minutes | Fixed in the note; the conclusion stands |
+| 5 | **Note:** a success didn't shorten a back-off already set, against the notes' "every 5 seconds again once a request gets through" | Fixed (the owner's choice): a success brings a longer wait back to 5 s |
+| 6 | **Test gap:** `node --check` reads the script as a module, accepting a top-level `return` a browser rejects | Fixed: Node's `vm.Script`, as a browser parses it. No harness (the owner's choice B: the warning is checked by hand) |
+| 7 | **Note:** the research proposed two more wiring points than the README took | Noted in the research: release 1.1.2 took upstream's advice and the flex cable or quick-solder board |
+
+The reviewer's failure scenarios, replayed against the fix in a scratch harness: all as intended.
 
 ## Local builds and CI
 

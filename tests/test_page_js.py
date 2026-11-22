@@ -19,7 +19,9 @@ NODE = shutil.which("node")
 @unittest.skipUnless(NODE, "node not found")
 class PageScriptTest(unittest.TestCase):
     def test_the_pages_script_parses(self):
-        """index.html's own script (the one without src) is valid JavaScript."""
+        """index.html's own script (the one without src) parses as a browser's classic script does:
+        Node's vm.Script, not `node --check`, which reads a file as a module and accepts a top-level
+        return that a browser rejects (R3 review of release 1.1.2)."""
         with open(os.path.join(REPO, "src", "web", "index.html"), encoding="utf-8") as f:
             scripts = re.findall(r"<script>(.*?)</script>", f.read(), re.S)
         self.assertEqual(len(scripts), 1)
@@ -27,7 +29,8 @@ class PageScriptTest(unittest.TestCase):
             path = os.path.join(tmp, "page.js")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(scripts[0])
-            run = subprocess.run([NODE, "--check", path], capture_output=True, text=True, timeout=30)
+            parse = "new (require('vm').Script)(require('fs').readFileSync(process.argv[1], 'utf8'), {filename: 'index.html'})"
+            run = subprocess.run([NODE, "-e", parse, path], capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stderr)
 
 

@@ -35,7 +35,8 @@ In every case the noise was in the counts. With the TV's wiring, a boot whose ex
 
 ## 4. A warning from the counts
 
-- **The rule:** a clean boot counts 224 or 225 plus the payload's transfers. That's every clean boot recorded, hundreds of them, with the built-in, Swiss r2119 and r2174, and cubiboot. More than 225 plus the payload's transfers means noise on CS.
+- **The rule:** a clean boot counts 224 or 225 plus the payload's transfers. That's every clean boot recorded, hundreds of them, with the built-in, Swiss r2119 and r2174, and cubiboot, but one. More than 225 plus the payload's transfers means noise on CS.
+  - **The exception:** boot 108 on the second console's fixed wiring, the built-in, complete with 5368 transfers, most likely the console restarting its reads ([main-console-tv.md](main-console-tv.md) §4). The rule marks it as noise. So would a stalled boot whose console reads again within the 10 s time-out [inf]. Found by release 1.1.2's code review.
   - raw above clocked stays a glitch, which the injection ignored;
   - fewer than 224 plus the payload's transfers is a stall, which the result already shows.
 - **Where:** the Diagnostics tab, for the current boot and in the boot log table, with a pointer to the README's wiring advice. The page has every field it needs: `payload_words`, `cs_raw`, `cs_clocked` and `result`. It works on the existing log entries too.
@@ -51,6 +52,8 @@ Upstream PicoBoot's troubleshooting page asks for wires of "approx. 10 centimete
 - a flex cable or a quick-solder board at U10 as the better choice.
 
 That would replace and extend the README's ground note.
+
+**Taken up in release 1.1.2 (plan v1.23):** upstream's length and gauge, and the flex cable or quick-solder board as the better choice, next to the existing ground note. The other two points stay here.
 
 ## 6. Options
 

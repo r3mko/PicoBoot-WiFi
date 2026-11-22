@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.17, 2026-11-22 |
+| **Status** | Approved v1.17, 2026-11-22; draft v1.18 (D45 and D46 after R3) for approval |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -31,6 +31,7 @@
 | v1.15 | 2026-11-22 | Approved by the owner. D44 decided (step T5), from the console series in [cs-timing-results.md](research/cs-timing-results.md): the short-gap threshold is 100 ns, as real gaps are 136 ns or more; the code stays on its branch, not in `main` (the owner's choice); a wiring-quality number for the releases follows. |
 | v1.16 | 2026-11-22 | Approved by the owner. Release 1.1.2: D45, a noise warning from the CS counts, from the research in [wiring-quality.md](research/wiring-quality.md): the Diagnostics tab compares each boot's count with a clean boot's and warns of noise on CS (the owner chose it over the shortest CS-high gap, which adds little to the counts); D46, the page's status polling one request at a time with a back-off, from the research in [weak-link.md](research/weak-link.md). |
 | v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
+| v1.18 draft | 2026-11-22 | D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
 
 ## How to read the decisions
 
@@ -304,12 +305,15 @@ These follow from the research and bind every decision below.
 - **The page only:** the rule is in the page's own script, from fields the API already has (`payload_words`, `cs_raw`, `cs_clocked`, `result`). No firmware logic, API or boot-log change, and older log entries get it too.
 - **Checked by hand,** like the page's other warnings. Neither console has noisy wiring now, so the page is shown made-up diagnostics with the recorded counts.
 - **For boots with an injection only** (complete or stalled): the others count nothing.
+- **A known exception:** boot 108 on the second console's fixed wiring ([main-console-tv.md](research/main-console-tv.md) §4): the built-in, complete, 5368 transfers, most likely the console restarting its reads. The rule marks it as noise. A boot that stalls counts for the whole 10 s time-out, so a console that reads again in that window would look the same [inf].
 - **Not the shortest CS-high gap** (D44) in the releases: every blip that shortens a gap is an extra transfer, which the counts already show.
 
 **D46 (Decision): the page's status polling on a weak link** (release 1.1.2, the owner's choice; research in [weak-link.md](research/weak-link.md)).
 - **The polling:** the Status and Payloads tabs ask for `/api/status` one request at a time.
   - After a request fails or times out, the next comes after 10 s, then 20 s, then every 30 s.
-  - After a success, every 5 s again.
+  - After a success, every 5 s again. A success from any request brings a longer wait back to 5 s.
+  - **After an action** (a boot choice, Keep, a payload change or upload, a settings save or restore, the wait after a restart), the page sends a request of its own instead of sharing one on its way, so it shows the state after the action. Each request has a number, and an answer older than the one shown is dropped.
+  - The polling carries on after an error; a 200 answer without a body counts as a failure.
 - **Why:** on a weak link, overlapping and abandoned requests leave connections on the Pico that lwIP keeps resending for minutes. They fill its 8 TCP connections and 32 send segments, so new requests can't get through until lwIP drops them.
   - lwIP drops a connection only after 12 retransmissions, each time-out doubling (`TCP_MAXRTX`).
   - The web server closes a stalled connection gracefully, after about 8 s.

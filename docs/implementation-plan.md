@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.22, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.15 |
+| **Status** | Approved v1.23, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.16 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -34,6 +34,7 @@
 | v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
 | v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
 | v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
+| v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
 
 ## How this plan works
 
@@ -429,7 +430,7 @@ docs/                       design, plan, research, API, update-file format
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
 - **Larger ordinary `.dol` files:** D43's payload holds the program as it is, so a slot's 1.5 MB is the limit, and GCMM's 3.8 MB `.dol` doesn't fit. A stub that unpacks, as gekkoboot's and Swiss's xz packers do, would fit most homebrew. An option.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
-- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44): the shortest CS-high gap of each boot, in the boot log and on the Diagnostics tab, with a warning when it's shorter than the console's real gaps. Clean wiring read exactly 136 ns on both consoles; noise on CS would show as a shorter gap before it makes a boot fail. With it, the README's wiring advice from upstream's troubleshooting page (under about 10 cm, 26–28 AWG stranded, the ground at U10).
+- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44). It was proposed as the shortest CS-high gap of each boot: clean wiring read exactly 136 ns on both consoles. The research found that every blip that shortens a gap is also an extra CS transfer, which the counts already show ([wiring-quality.md](research/wiring-quality.md)). So it's taken up in release 1.1.2 (below) as a warning from the counts, with the README's wiring advice from upstream's troubleshooting page.
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
   - a channel from the console to the Pico: a boot menu, homebrew over Wi-Fi, debug output;
@@ -733,6 +734,26 @@ Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-result
 | 9 | **Note:** the summary found the undriven start from `cs_high_at_ready`, not from the record | Fixed (the owner's choice): a first period with no CS-high time |
 | 10 | **Doc error:** a switch of build doesn't start the boot log afresh at once | Fixed in D44 |
 | 11 | **Notes:** the coexistence test can't show the recorder slowing the injection; no sync note for the recorder's set-up; the simulator's MOV to ISR kept the shift count; the test page showed short times as 0.00 us | Fixed: the test's docstring, sync notes, the simulator and a test, ns on the page |
+
+## Release 1.1.2: a noise warning (D45) and steadier polling (D46)
+
+**Branch:** `release-1.1.2`. **Research:** [wiring-quality.md](research/wiring-quality.md), [weak-link.md](research/weak-link.md). **Design:** D45 and D46 (v1.16). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-22):**
+- the Diagnostics tab warns when a boot counts more CS transfers than a clean one, for the current boot and in the boot log table;
+- the README's wiring advice from upstream PicoBoot (wires of at most about 10 cm, 26–28 AWG stranded, no thick or single-core wire), and a flex cable or quick-solder board at U10 as the better choice, next to the ground note;
+- the page asks for the status one request at a time, and backs off after a failure (10, 20, then 30 s, back to 5 s after a success); lwIP's settings don't change;
+- the version 1.1.2.
+
+The other later-releases items aren't in 1.1.2.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The page and the docs:**<br>• `src/web/rules.js`, which the page loads like `dol.js`: D45's rule and D46's back-off schedule;<br>• the Diagnostics tab: the number of extra transfers on "This boot", with a pointer to the README, and a mark in the boot log table;<br>• the status polling: one request at a time, with D46's back-off;<br>• Node tests: D45's rule with the recorded cases (clean 285, 1110, 1544, 942; the TV's 287, 362, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot), and D46's schedule;<br>• the README: the wiring advice, and the recovery table pointing at the warning | Opus | Host tests, the Node tests, the layout check and CI pass |
+| R2 | **Version and notes:** `CMakeLists.txt` at `1.1.2`, the release notes in `docs/releases/1.1.2.md` | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>Neither console has noisy wiring now, so R1's test shows the warning itself | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
+| R5 | **Merge and tag `v1.1.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
 ## Local builds and CI
 

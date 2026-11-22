@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.20, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.13 |
+| **Status** | Approved v1.22, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.15 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -32,6 +32,8 @@
 | v1.18 | 2026-11-20 | Approved by the owner. Release 1.1.1, no CS pull-up (D36, design v1.10), from the research in [cs-pull-up.md](research/cs-pull-up.md). The owner chose CS left as reset leaves it with the clock-qualified count, the CS test mode removed entirely, a README note on the ground wire and the CS counts, a handoff note for PicoBoot-DX, and a 20-boot console test on the second console. |
 | v1.19 | 2026-11-20 | Approved by the owner. Release 1.1.1 as built (see its "As built" note): its code review and fixes, the owner's choices from it (bit 7 cleared on both Picos; release notes worded to the two test consoles), and the console test, which passed. |
 | v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
+| v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
+| v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
 
 ## How this plan works
 
@@ -427,6 +429,7 @@ docs/                       design, plan, research, API, update-file format
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
 - **Larger ordinary `.dol` files:** D43's payload holds the program as it is, so a slot's 1.5 MB is the limit, and GCMM's 3.8 MB `.dol` doesn't fit. A stub that unpacks, as gekkoboot's and Swiss's xz packers do, would fit most homebrew. An option.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
+- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44): the shortest CS-high gap of each boot, in the boot log and on the Diagnostics tab, with a warning when it's shorter than the console's real gaps. Clean wiring read exactly 136 ns on both consoles; noise on CS would show as a shorter gap before it makes a boot fail. With it, the README's wiring advice from upstream's troubleshooting page (under about 10 cm, 26–28 AWG stranded, the ground at U10).
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
   - a channel from the console to the Pico: a boot menu, homebrew over Wi-Fi, debug output;
@@ -687,11 +690,49 @@ Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-result
 
 | # | Step | Who | Done when |
 |---|---|---|---|
-| T1 | **The code, test builds only:**<br>• `cs_timing` in `pio/counters.pio` (9 instructions; pio1 then holds 19 of its 32), its set-up, start and stop with the counters, and a DMA channel into a 16 KB buffer in `.uninitialized_data`;<br>• the summary as a pure C function, after the injection and before Wi-Fi;<br>• the test builds' boot report with the summary, under its own log version;<br>• the summary in `/api/diagnostics`, the raw record at `/api/test/cs-timing`, and the summary on the test page;<br>• PIO simulator tests of the recorder: known transfers and gaps, a low CS start, a clockless glitch, a short CS-high blip inside a transfer, and CLK high at a CS fall; host tests of the summary | Opus | Host tests, the PIO simulator, the layout check and CI pass. A release build of the branch is byte for byte v1.1.1's (update `714140b8…`, UF2 `cfaed293…`) |
+| T1 | **The code, test builds only:**<br>• `cs_timing` in its own `pio/timing.pio` (10 instructions; pio1 then holds 20 of its 32), its set-up, start and stop with the counters, and a DMA channel into a 32 KB buffer in `.uninitialized_data`;<br>• the summary as a pure C function, after the injection and before Wi-Fi;<br>• the test builds' boot report with the summary, under its own log version;<br>• the summary in `/api/diagnostics`, the raw record at `/api/test/cs-timing`, and the summary on the test page;<br>• PIO simulator tests of the recorder: known transfers and gaps, a low CS start, a clockless glitch, a short CS-high blip inside a transfer, and CLK high at a CS fall; host tests of the summary | Opus | Host tests, the PIO simulator, the layout check and CI pass. A release build of the branch is byte for byte v1.1.1's (update `714140b8…`, UF2 `cfaed293…`) |
 | T2 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | T3 | **Console series** with the test build `1.1.2-dev`, installed over Wi-Fi on both consoles:<br>• 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on the second console, 3 quick power cycles as well;<br>• the boot log read once per console, and the raw record of a few boots downloaded;<br>• afterwards back to 1.1.1 (a downgrade; the log starts afresh) | Owner | The logs and records are in |
 | T4 | **Results** in `docs/research/cs-timing-results.md`: the real gaps in BS1 and in the payload, any blips, the CLK bit, and transfers 225 and 226 of the quick power cycles | Opus | The owner approved the note |
 | T5 | **The owner decides** what follows: a minimum CS-high gap for D36, a wiring-quality number in the releases, the fourth wire, or nothing; and whether the diagnostic code merges into `main` for later test builds or stays on its branch | Owner | Decided; the plan updated |
+
+**As built (2026-11-22):**
+- **The steps:**
+  - T1 in `519c7e7`; T2's fixes in `71fdd9c`, with design v1.14 and plan v1.21 (`52d2603`). CI passed on each push.
+  - T3: the test build `1.1.2-dev+52d2603`, on both consoles. The dev console: 10 cold boots. The main console: 23, of which 16–18 were quick power cycles.
+  - T4 in `4fe5361`: [cs-timing-results.md](research/cs-timing-results.md).
+  - T5: the owner's decision, and the short-gap threshold at 100 ns, on the branch.
+- **The results:**
+  - all 33 power-ons started their payload, with no stall and CLK low at every CS fall;
+  - the read's timing is the same on both consoles to the nanosecond;
+  - the dev console's glitch is an unclean first rise of CS, within about 20 ns.
+- **T5, the owner's decision:**
+  - **next:** a wiring-quality number for the releases (later releases, above);
+  - **the code stays on `diag-cs-timing`,** not merged into `main`;
+  - **both consoles back to 1.1.1.**
+
+**Differences from the plan:**
+- **The recorder writes two words per CS low period,** in its own `timing.pio`, so no time wraps around (design v1.14).
+- **"Byte for byte v1.1.1" needs the build date pinned:** the SDK's binary info embeds `__DATE__`, so the check builds with `SOURCE_DATE_EPOCH` at v1.1.1's commit.
+- **The main console ran 23 boots, not 13:** the owner added some.
+- **The short-gap threshold was wrong at 500 ns:** every real gap is shorter. It's 100 ns since T5; the shortest gaps, which the series relied on, were right throughout.
+
+**Code review of T1** (a fresh Opus 5.5 reviewer, 2026-11-22):
+- **Overall:** a clean release build of the branch is byte for byte v1.1.1 (with `SOURCE_DATE_EPOCH` at v1.1.1's commit: the SDK's binary info embeds the build date); the recorder can't disturb the injection.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Bug:** boots without an injection (warm boots, "original IPL once") logged a summary of zeros, where "nothing measured" was meant; a series' minimum gap would read 0 ns | Fixed: the summary starts as "nothing measured" in `main()` |
+| 2 | **Doc error:** D44 and T1 described one word per transfer, a 16 KB buffer and `counters.pio`; the code has two words, 32 KB and `timing.pio` | Fixed: design v1.14 and plan v1.21 drafts |
+| 3 | **Risk on hardware, small:** the longer boot reports grew two `.bss` arrays by 3.3 KB, about 0.4 ms of margin, and left 968 bytes of the 24 KB budget | Fixed (the owner's choice): in test builds those rows are in uninitialized RAM |
+| 4 | **Test gap:** CI builds releases only, so the test-build code isn't compiled there; an older host test rejects `X.Y.Z-dev+hash` versions | Accepted by the owner: test builds are compiled locally |
+| 5 | **Note:** a POST to `/api/test/cs-timing` got 404, not 405 | Fixed |
+| 6 | **Doc error:** after any restart of the Pico the download was an empty 200 | Fixed: 409 `not_recorded`; the docs say any restart loses it |
+| 7 | **Note:** `timing_stop()` read the DMA count with a write possibly in flight, and aborted without clearing EN first (RP2350-E5) | Fixed: EN cleared, the abort, then the count from the write address |
+| 8 | **Note:** the dead-time wording, and the comments on X and Y running out | Fixed: 8–20 ns, pulses near an edge merge; both run-outs unreachable |
+| 9 | **Note:** the summary found the undriven start from `cs_high_at_ready`, not from the record | Fixed (the owner's choice): a first period with no CS-high time |
+| 10 | **Doc error:** a switch of build doesn't start the boot log afresh at once | Fixed in D44 |
+| 11 | **Notes:** the coexistence test can't show the recorder slowing the injection; no sync note for the recorder's set-up; the simulator's MOV to ISR kept the shift count; the test page showed short times as 0.00 us | Fixed: the test's docstring, sync notes, the simulator and a test, ns on the page |
 
 ## Local builds and CI
 

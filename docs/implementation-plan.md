@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.21, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.14 |
+| **Status** | Approved v1.22, 2026-11-22 |
+| **Design** | [architecture.md](architecture.md), Approved v1.15 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -33,6 +33,7 @@
 | v1.19 | 2026-11-20 | Approved by the owner. Release 1.1.1 as built (see its "As built" note): its code review and fixes, the owner's choices from it (bit 7 cleared on both Picos; release notes worded to the two test consoles), and the console test, which passed. |
 | v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
 | v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
+| v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
 
 ## How this plan works
 
@@ -428,6 +429,7 @@ docs/                       design, plan, research, API, update-file format
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
 - **Larger ordinary `.dol` files:** D43's payload holds the program as it is, so a slot's 1.5 MB is the limit, and GCMM's 3.8 MB `.dol` doesn't fit. A stub that unpacks, as gekkoboot's and Swiss's xz packers do, would fit most homebrew. An option.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
+- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44): the shortest CS-high gap of each boot, in the boot log and on the Diagnostics tab, with a warning when it's shorter than the console's real gaps. Clean wiring read exactly 136 ns on both consoles; noise on CS would show as a shorter gap before it makes a boot fail. With it, the README's wiring advice from upstream's troubleshooting page (under about 10 cm, 26–28 AWG stranded, the ground at U10).
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
   - a channel from the console to the Pico: a boot menu, homebrew over Wi-Fi, debug output;
@@ -693,6 +695,27 @@ Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-result
 | T3 | **Console series** with the test build `1.1.2-dev`, installed over Wi-Fi on both consoles:<br>• 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on the second console, 3 quick power cycles as well;<br>• the boot log read once per console, and the raw record of a few boots downloaded;<br>• afterwards back to 1.1.1 (a downgrade; the log starts afresh) | Owner | The logs and records are in |
 | T4 | **Results** in `docs/research/cs-timing-results.md`: the real gaps in BS1 and in the payload, any blips, the CLK bit, and transfers 225 and 226 of the quick power cycles | Opus | The owner approved the note |
 | T5 | **The owner decides** what follows: a minimum CS-high gap for D36, a wiring-quality number in the releases, the fourth wire, or nothing; and whether the diagnostic code merges into `main` for later test builds or stays on its branch | Owner | Decided; the plan updated |
+
+**As built (2026-11-22):**
+- **The steps:**
+  - T1 in `519c7e7`; T2's fixes in `71fdd9c`, with design v1.14 and plan v1.21 (`52d2603`). CI passed on each push.
+  - T3: the test build `1.1.2-dev+52d2603`, on both consoles. The dev console: 10 cold boots. The main console: 23, of which 16–18 were quick power cycles.
+  - T4 in `4fe5361`: [cs-timing-results.md](research/cs-timing-results.md).
+  - T5: the owner's decision, and the short-gap threshold at 100 ns, on the branch.
+- **The results:**
+  - all 33 power-ons started their payload, with no stall and CLK low at every CS fall;
+  - the read's timing is the same on both consoles to the nanosecond;
+  - the dev console's glitch is an unclean first rise of CS, within about 20 ns.
+- **T5, the owner's decision:**
+  - **next:** a wiring-quality number for the releases (later releases, above);
+  - **the code stays on `diag-cs-timing`,** not merged into `main`;
+  - **both consoles back to 1.1.1.**
+
+**Differences from the plan:**
+- **The recorder writes two words per CS low period,** in its own `timing.pio`, so no time wraps around (design v1.14).
+- **"Byte for byte v1.1.1" needs the build date pinned:** the SDK's binary info embeds `__DATE__`, so the check builds with `SOURCE_DATE_EPOCH` at v1.1.1's commit.
+- **The main console ran 23 boots, not 13:** the owner added some.
+- **The short-gap threshold was wrong at 500 ns:** every real gap is shorter. It's 100 ns since T5; the shortest gaps, which the series relied on, were right throughout.
 
 **Code review of T1** (a fresh Opus 5.5 reviewer, 2026-11-22):
 - **Overall:** a clean release build of the branch is byte for byte v1.1.1 (with `SOURCE_DATE_EPOCH` at v1.1.1's commit: the SDK's binary info embeds the build date); the recorder can't disturb the injection.

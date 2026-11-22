@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.14, 2026-11-22 |
+| **Status** | Approved v1.15, 2026-11-22 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -28,6 +28,7 @@
 | v1.12 | 2026-11-22 | Approved by the owner. D36's evidence, from the research on the second console ([main-console-tv.md](research/main-console-tv.md)): the pull-up failed on that console's marginal wiring of the time, which the dev console's flex cable never showed, so its harm may need such wiring; and a few extra CS transfers on most boots point at wiring that picks up noise. The decision doesn't change. |
 | v1.13 | 2026-11-22 | Approved by the owner. D44, CS timing diagnostics in test builds, from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): a passive recorder in pio1 times every CS period and notes CLK at each CS fall; a summary per boot in the test builds' boot log; releases unchanged. The owner chose a per-boot summary in flash, the CLK bit, clean setups only, and a test build first. |
 | v1.14 | 2026-11-22 | Approved by the owner. D44 as built (step T1) and after its code review (T2): two words per CS low period in its own `timing.pio`, so no time wraps; a 32 KB record; the test builds' boot-log rows in uninitialized RAM too (the owner's choice); the record shows the undriven start itself (the owner's choice); "nothing measured" on boots without an injection; the dead time; what a switch of build does to the boot log. |
+| v1.15 | 2026-11-22 | Approved by the owner. D44 decided (step T5), from the console series in [cs-timing-results.md](research/cs-timing-results.md): the short-gap threshold is 100 ns, as real gaps are 136 ns or more; the code stays on its branch, not in `main` (the owner's choice); a wiring-quality number for the releases follows. |
 
 ## How to read the decisions
 
@@ -276,7 +277,7 @@ These follow from the research and bind every decision below.
 - **Test builds only** (`-dev`, like the test page). A release build of the same source is byte for byte the release.
 - **The summary,** computed after the injection and before Wi-Fi; "nothing measured" on boots without an injection:
   - the shortest and the longest CS-high gap in BS1 (transfers 1–224), and in the payload;
-  - the number of CS-high gaps under 500 ns, and the first one's transfer number;
+  - the number of CS-high gaps under 100 ns, and the first one's transfer number (500 ns until T3 measured the real gaps: 136 ns or more);
   - the CS-low times of transfers 225 and 226;
   - the number of falling CS edges with CLK high.
 - **Where it shows:**
@@ -284,7 +285,11 @@ These follow from the research and bind every decision below.
   - `/api/diagnostics` in test builds;
   - the raw record of the current boot, as a download (`/api/test/cs-timing`). A first period with no CS-high time means CS was low when the recorder started (the dev console's undriven start), so the record describes itself. Any restart of the Pico loses it.
 - **The boot log in test builds:** the report gains the summary, under the log's own version for test builds, so test builds and releases don't read each other's entries. After a switch, the first boot erases one of the log's two sectors and the 17th the other: switching back sooner brings the older entries back.
-- **What it decides, after the console series (the owner):** a minimum CS-high gap for D36's skip count, a wiring-quality number in the releases' boot log, or the fourth wire (plan, later releases). Measured on clean setups only; blips are measured if a setup shows them.
+- **What it decided (T5, the owner, 2026-11-22),** from 33 power-ons on both consoles ([cs-timing-results.md](research/cs-timing-results.md)):
+  - the read's timing is the same on both consoles: BS1 gaps of about 150 ns, 192 ns at the hand-over to the first block, about 330 ns between blocks, a ~26.8 MHz EXI clock [inf];
+  - **next:** a wiring-quality number for the releases, the shortest CS-high gap of each boot;
+  - **not now:** a minimum CS-high gap for D36's count, which would have only about 100 ns of room; the fourth wire stays a later-releases item;
+  - **the code stays on its branch,** `diag-cs-timing`, not merged into `main`; a later test build can take it from there. Release builds don't have it either way.
 
 **Boot flow:**
 

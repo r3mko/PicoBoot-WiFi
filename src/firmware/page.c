@@ -210,7 +210,7 @@ static void put_timing(out_t *o, const timing_summary_t *t) {
     put(o, "    From 225         : gaps %s to %s; 225 low %s, 226 low %s\n", fmt_ns(a, sizeof(a), t->payload_gap_min_ns),
         fmt_ns(b, sizeof(b), t->payload_gap_max_ns), fmt_ns(c, sizeof(c), t->low_225_ns),
         fmt_ns(d, sizeof(d), t->low_226_ns));
-    put(o, "    Short gaps       : %lu under 500 ns", (unsigned long)t->short_gaps);
+    put(o, "    Short gaps       : %lu under 100 ns", (unsigned long)t->short_gaps);
     if (t->short_gaps) {
         put(o, ", the first before transfer %lu", (unsigned long)t->first_short_gap);
     }

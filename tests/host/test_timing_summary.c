@@ -15,7 +15,7 @@ static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
 #define NS_PER_COUNT 8u                 // 2 PIO cycles at 250 MHz
-#define SHORT_GAP_NS 500u
+#define SHORT_GAP_NS 100u              // As timing.c
 #define MAX_WORDS 4096
 
 static uint32_t rec[MAX_WORDS];
@@ -27,17 +27,18 @@ static void period(uint32_t high_counts, uint32_t clk, uint32_t low_counts) {
     rec[n++] = 0xFFFFFFFFu - low_counts;
 }
 
-// A clean boot as the timing fit expects it, appended to the record: 224 BS1 transfers (1.3 us gaps,
-// 3.0 us long), then blocks (50 us gaps, 257 us long), then one more short transfer
+// A clean boot as both consoles recorded it (docs/research/cs-timing-results.md), appended to the
+// record: 224 BS1 transfers (136-144 ns gaps, 3.664 us long), the first block after a 192 ns gap,
+// blocks (320 ns gaps, 307.36-307.368 us long), then one more short transfer
 static void append_clean_boot(uint32_t blocks) {
-    period(20000000, 0, 375);                       // 160 ms after the start
+    period(20000000, 0, 458);                       // 160 ms after the start
     for (uint32_t i = 1; i < 224; i++) {
-        period(162 + i % 2, 0, 375);                // 1.296 or 1.304 us, 3.0 us
+        period(17 + i % 2, 0, 458);                 // 136 or 144 ns, 3.664 us
     }
     for (uint32_t i = 0; i < blocks; i++) {
-        period(6250, 0, 32125 + i % 3);             // 50 us, 257.0 to 257.016 us
+        period(i ? 40 : 24, 0, 38420 + i % 2);      // 192 ns at the hand-over, then 320 ns
     }
-    period(6300, 0, 375);
+    period(41, 0, 458);                             // 328 ns
 }
 
 static void clean_boot(uint32_t blocks) {
@@ -51,10 +52,10 @@ static void test_clean_boot(void) {
     timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 285);
     CHECK(s.first_gap_ns == 160000000);
-    CHECK(s.bs1_gap_min_ns == 1296 && s.bs1_gap_max_ns == 1304);
-    CHECK(s.bs1_low_min_ns == 3000 && s.bs1_low_max_ns == 3000);
-    CHECK(s.payload_gap_min_ns == 50000 && s.payload_gap_max_ns == 50400);
-    CHECK(s.low_225_ns == 257000 && s.low_226_ns == 257008);
+    CHECK(s.bs1_gap_min_ns == 136 && s.bs1_gap_max_ns == 144);
+    CHECK(s.bs1_low_min_ns == 3664 && s.bs1_low_max_ns == 3664);
+    CHECK(s.payload_gap_min_ns == 192 && s.payload_gap_max_ns == 328);
+    CHECK(s.low_225_ns == 307360 && s.low_226_ns == 307368);
     CHECK(s.short_gaps == 0 && s.first_short_gap == TIMING_NONE);
     CHECK(s.clk_high_falls == 0);
 }
@@ -69,7 +70,7 @@ static void test_low_start_is_skipped(void) {
     timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 285);
     CHECK(s.first_gap_ns == 160000000);
-    CHECK(s.bs1_low_max_ns == 3000);
+    CHECK(s.bs1_low_max_ns == 3664);
     // A first pair that counted even once while CS was high is a transfer
     rec[0] = 0x7FFFFFFFu - 1;
     timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
@@ -83,17 +84,17 @@ static void test_blip_shifts_the_split(void) {
     clean_boot(60);
     memmove(rec + 2 * 101, rec + 2 * 100, (n - 2 * 100) * sizeof(rec[0]));
     n += 2;
-    rec[2 * 100] = 0x7FFFFFFFu - 162;
+    rec[2 * 100] = 0x7FFFFFFFu - 17;
     rec[2 * 100 + 1] = 0xFFFFFFFFu - 100;           // the first part, 0.8 us
     rec[2 * 101] = (1u << 31) | (0x7FFFFFFFu - 3);  // the blip, CLK high
-    rec[2 * 101 + 1] = 0xFFFFFFFFu - 272;           // the second part
+    rec[2 * 101 + 1] = 0xFFFFFFFFu - 355;           // the second part: 3.664 us with the blip
     timing_summarize(rec, n, NS_PER_COUNT, SHORT_GAP_NS, &s);
     CHECK(s.transfers == 286);
     CHECK(s.short_gaps == 1 && s.first_short_gap == 102);
     CHECK(s.bs1_gap_min_ns == 24);
     CHECK(s.bs1_low_min_ns == 800);
-    CHECK(s.low_225_ns == 3000);                    // BS1's last real transfer, where a block should be
-    CHECK(s.low_226_ns == 257000);
+    CHECK(s.low_225_ns == 3664);                    // BS1's last real transfer, where a block should be
+    CHECK(s.low_226_ns == 307360);
     CHECK(s.clk_high_falls == 1);
 }
 

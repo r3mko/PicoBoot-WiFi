@@ -14,7 +14,7 @@
 
 #define RECORD_WORDS    8192u       // 4096 CS low periods: BS1, the largest payload and many extras (32 KB)
 #define NS_PER_COUNT    (2000000u / PICOBOOT_WIFI_INJECTION_KHZ)     // 2 PIO cycles: 8 ns at 250 MHz
-#define SHORT_GAP_NS    500u        // A CS-high gap this short is a blip: BS1's are about 1.3 us
+#define SHORT_GAP_NS    100u        // A CS-high gap this short is a blip: real ones are 136 ns or more (T3)
 
 _Static_assert(2000000u % PICOBOOT_WIFI_INJECTION_KHZ == 0, "a count must be a whole number of nanoseconds");
 

@@ -215,7 +215,7 @@ The last boot and the boot log (D22, D39).
 | `bs1_low_min_ns`, `bs1_low_max_ns` | CS low of transfers 1 to 224 |
 | `payload_gap_min_ns`, `payload_gap_max_ns` | CS high before transfers 225 on |
 | `low_225_ns`, `low_226_ns` | CS low of transfers 225 and 226: about 257 µs for a 1 KB block, about 3 µs for a BS1-sized one |
-| `short_gaps`, `first_short_gap` | CS-high gaps under 500 ns after the first transfer (blips), and the transfer after the first one |
+| `short_gaps`, `first_short_gap` | CS-high gaps under 100 ns after the first transfer (blips: real gaps are 136 ns or more), and the transfer after the first one |
 | `clk_high_falls` | CS falls with CLK high (D36's known limit) |
 
 A boot with a glitch or a blip shifts the split at transfer 224 by those. Each time between two edges reads 8–20 ns short, and a pulse within about 16 ns of an edge merges into it.

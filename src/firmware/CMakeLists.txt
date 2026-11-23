@@ -39,6 +39,8 @@ set_source_files_properties(${FIRMWARE_SOURCES} PROPERTIES
 
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/injection.pio)
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/counters.pio)
+# Length-based injection (D47, plan step L1): assembled for the PIO simulator's tests; the firmware doesn't load it yet
+pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/length.pio)
 
 # Built-in IPL: gekkoboot r9.4's release build, rebuilt from the release by tools/gekkoboot_dol.py
 # (docs/research/gekkoboot-dol.md), scrambled into ipl.h as in PicoBoot-DX; used when there is no

@@ -45,6 +45,7 @@ Times are as the recorder reads them: each one 8–20 ns short (simulator, D44).
 
 - **Identical to the nanosecond on both consoles,** with different wiring and different Picos, down to the pattern of longer gaps. The boot ROM and BS1 decide this timing, not the console's hardware or the wiring [inf].
 - **The EXI clock:** fitting CS-low time against clocks for the two kinds of transfer gives 26.76 MHz, plus about 75 ns of CS low outside the clocks [inf: assuming 96 and 8224 clocks]. That's the "27MHz SPI-like bus" of the CCC 2004 talk.
+  - *Measured in D47's step L4* ([length-injection-results.md](length-injection-results.md) §4): BS1's clock is 27.00 MHz. The 1 KB blocks pause 660 ns after their command and stretch one clock in 64, so they average 26.86 MHz: the fit measured that average. CS falls 72–76 ns before a BS1 fetch's first clock and rises 64–68 ns after its last.
 - **The earlier estimate was wrong.** [cs-timing-diagnostics.md](cs-timing-diagnostics.md) §2 inferred a 32 MHz clock and gaps of about 1.3 µs in BS1. The fit of the injection times was right (BS1 0.96 ms, a block 307.7 µs), but its split into transfers and gaps wasn't: BS1's 0.96 ms includes the 93 µs pause, and a block's 307.7 µs is nearly all CS low.
 
 ## 3. The start

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.29, 2026-11-23 |
+| **Status** | Approved v1.30, 2026-11-23 |
 | **Design** | [architecture.md](architecture.md), Approved v1.21 |
 | **Owner** | Remko Kleinjan |
 
@@ -41,6 +41,7 @@
 | v1.27 | 2026-11-23 | Approved by the owner. Length-based injection, a feasibility stage (D47, design v1.19): a simulator prototype, a CLK capture test build and its console series, a length-only test build and its console series, each test build with a code review, then the owner's decision on a release. |
 | v1.28 | 2026-11-23 | Approved by the owner. D47's step L1 as built (see the section's "As built so far"): the simulator prototype, the switch at bit 66, L1's finding about noise during the payload, and the owner's choice from it. For later releases: a wait for CS high in today's `clocked_output`. |
 | v1.29 | 2026-11-23 | Approved by the owner. D47's steps L2 and L3 as built (the section's "As built so far"): the CLK capture test build, and its code review's findings with the owner's choices. |
+| v1.30 | 2026-11-23 | Approved by the owner. D47's steps L4 and L5 as built: the CLK capture series on both consoles, and its results ([length-injection-results.md](research/length-injection-results.md)): CLK leaves the length detector room, so it stays as L1 built it. |
 
 ## How this plan works
 
@@ -851,6 +852,14 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 | 9 | **Test gaps:** no end-to-end test from the capture to the C summary; host cases missing | Fixed: an end-to-end test through `clk_summarize()`; host cases for a start with CS high, a one-sample glitch, a blip in BS1 and transfer 226; tests for a CLK glitch before BS1 and the dev console's start |
 | 10 | **Process:** the branch lacked 1.1.2, so the test build would have 1.1.1's page | Fixed (the owner's choice): `main` merged in. 1.1.2 changed only the page, its test and the version |
 | 11 | **Nit:** the capture's CLK pin wasn't tied to the injection's | Fixed: public defines, checked with a static assert |
+
+- **L4 (2026-11-23):** the capture series with `1.1.3-dev+60925ce` (update file `bcf57c1b…`), built from `60925ce` with only its version changed.
+  - On both consoles: the update over Wi-Fi, then 10 power-ons, 5 with the built-in and 5 with Swiss r2174, three raw captures and the boot log.
+  - Every power-on started its payload (the owner). Both consoles went back to 1.1.2.
+- **L5 (2026-11-23):** the results in [length-injection-results.md](research/length-injection-results.md).
+  - **No BS1 clock phase under 4 samples (16 ns)** on either console, in 20 boots, so the detector's 12 ns poll stays. The detector and the output program stay as L1 built them.
+  - **BS1's EXI clock is exactly 27.00 MHz.** The first block pauses 660 ns after its command and stretches one clock every 8 bytes, averaging 26.86 MHz: T3's estimate was that average.
+  - **The period after the first block's 97th clock is ordinary,** so the switch at bit 66 keeps its margin.
 
 ## Local builds and CI
 

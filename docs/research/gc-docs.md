@@ -34,6 +34,7 @@ They add four things:
 - T3's blocks last 307.36 µs. At 32 + 8192 clocks, that's **26.76 MHz**. T3 fitted the same figure assuming 96 and 8224 clocks ([cs-timing-results.md](cs-timing-results.md) §2); the documents now confirm those counts.
 - At that clock, T3's BS1 fetches (CS low for 3.656–3.664 µs) are 97.8–98.0 clocks: the 96, plus about 2 clocks of CS set-up and hold [inf].
 - YAGCD calls the fastest setting "32 MHz" (`EXI0CSR` CLK = 5). It gives the Gekko–Flipper bus as about 162 MHz, and 162 / 6 = 27 MHz, which fits [inf].
+- *Measured in D47's step L4* ([length-injection-results.md](length-injection-results.md) §4): BS1's clock is 27.00 MHz. The blocks average 26.86 MHz, with a pause after their command and a stretched clock every 8 bytes.
 
 **The descrambler (YAGCD 2.8, 2.8.3, 5.9):**
 - The IPL in U10 is XORed with a key stream. The Flipper removes it in hardware, between U10's output and its shift register.

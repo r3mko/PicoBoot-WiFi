@@ -22,6 +22,7 @@ The research behind [the design](../architecture.md), as the design cycle asks: 
 | [cs-pull-up.md](cs-pull-up.md) | 2026-11-20 | D36's CS pull-up fails a second DOL-001; the clock-qualified count alone works on both consoles; a long ground wire as CS noise (release 1.1.1) |
 | [gc-docs.md](gc-docs.md) | 2026-11-23 | GameCube documents (YAGCD, the Shuriken attack, PicoBoot's wiring diagram) against this project's measurements: BS1 is the 224 transfers, the transfer shapes give a 26.76 MHz EXI clock, U10's pins; an injection point found by length, the Shuriken board's CS pull-up, the Pico overpowering U10 on the data line, GP6 and GP7 |
 | [length-injection.md](length-injection.md) | 2026-11-23 | The Shuriken method for PicoBoot-WiFi: finding the first block by its length (a 97th clock while CS is low) instead of a count of 224; no pin lifted, no payload change; guards the BS1 phase where noise breaks boots today; a polling PIO detector, the PIO budget, a user switch, testing, options |
+| [length-injection-results.md](length-injection-results.md) | 2026-11-23 | D47's CLK capture series on both consoles (step L4): no BS1 clock phase under 16 ns in 20 boots, so the length detector's 12 ns poll stays; BS1's EXI clock exactly 27.00 MHz; the first block's 660 ns pause after its command and a stretched clock every 8 bytes (26.86 MHz on average, T3's estimate) |
 
 ## What we already run: PicoBoot-DX v0.10
 

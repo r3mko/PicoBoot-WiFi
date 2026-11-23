@@ -114,7 +114,7 @@ high:
 - **The API and the CLI:** a field for it.
 - **The diagnostics:**
   - **"This boot":** shows which method ran.
-  - **The boot report:** a byte for it. The report's 3 bytes of tail padding could hold it without a format change [inf: from [wiring-quality.md](wiring-quality.md) §2, to be checked].
+  - **The boot report:** a byte for it, in the report's padding, without a format change (checked: §7).
   - **The noise warning (D45) and the counters:** stay as they are. The counters are passive and count the same transfers either way.
 - **A safety net:** if the length method fails on a console, the console shows its own menu, and Wi-Fi still comes up. The user switches back on the page. A "once" option, like "original IPL once", would make trying it safer still.
 
@@ -138,7 +138,51 @@ high:
   - the update and the setting surviving it.
 - **The benefit:** shows only with noise during BS1, such as the second console's old loose wires or a long ground wire. On clean wiring both methods should boot every time. The owner ruled deliberately poor wiring out for T3.
 
-## 7. Options
+## 7. What it would take
+
+Checked against the code on 2026-11-23.
+
+**First, whether the detector works.** Three cheap steps, before any firmware change:
+1. **A simulator prototype.**
+   - **The additions:** `tests/pio_sim.py` gains `mov y, pins` with `IN_COUNT`, `jmp !y`, and an IRQ to the neighbouring PIO block (`irq prev`).
+   - **The programs:** the detector, and the output program's first-block entry.
+   - **The tests:** the cases in §6.
+
+   No firmware change, and no console.
+2. **CLK's high and low phases.** The poll assumes CLK stays high for about 18.7 ns (§3).
+   - **With a logic analyser or scope** at 200 MS/s or more, one look settles it.
+   - **Without one,** a variant of the D44 recorder on `diag-cs-timing` could time the phases in PIO, at 4 ns.
+3. **The switch point.** At data bit 65 the output program has about 30 ns of the 37 to the next clock. A later point needs a skip count, and the registers are full (§3). The simulator would settle which.
+
+**Then the build:**
+
+| Part | What it needs | Checked |
+|---|---|---|
+| The detector | About 13 instructions in pio1 | pio1 holds only the passive counters, 10 of its 32 instructions (`cs_raw` and `cs_clocked`, `src/firmware/counters.c`). Wi-Fi's driver takes pio2 after the injection ([injection-end.md](injection-end.md)) |
+| The output program | `clocked_output` with a first-block entry, about 24 instructions in pio0, loaded only when the length method is chosen | pio0 holds 27 today (`on_transfer` 10, `clocked_output` 17) |
+| The DMA | No change: the output program drops the header bits U10 has sent | `injection.c` sends the stored payload from its first word |
+| The setting | A bit in boot control's `flags`, next to "original IPL once" (bit 0) | Bits 1–7 are free (`src/common/bootctl.h`), so the format stays. The loader copies the record's first 12 bytes, flags included, but decides on the slot fields alone, so it needs no change. `main.c` loads boot control before the injection and already reads the flags there |
+| The API | A field like `original_ipl_once`: in `/api/status`'s payloads, and in the request that sets it | `payloads.c`, `api.c`, `docs/api.md` |
+| The page | A persistent choice on the Payloads tab (the owner's choice) | `src/web/index.html` |
+| The CLI | An option to set it | `tools/picoboot-wifi.py` |
+| The boot report | One byte for the method, in the padding, so the format stays | See below the table |
+| The diagnostics | "This boot", the boot log and the test page show the method | `index.html`, `page.c` |
+| Tests | The simulator cases; host tests for the flag and the API | `tests/` |
+| Console tests | Both methods on both consoles, cold boots with the built-in and Swiss; the setting surviving an update; clean wiring only (the owner's choice) | — |
+| Docs | A design decision, a plan section, the README's features and recovery table, release notes | — |
+
+**The boot report's padding, checked:**
+- **Where it is:** bytes 29–31 and 57–59, confirmed with the firmware's compiler: short enums, 60 bytes.
+- **What existing entries hold there:** `report` is a static in `main.c`, so its padding starts as zeros. A method byte with 0 for "by count" would read right in every entry so far [inf].
+- **Which bytes to use:** byte 57 held 1.1.0's `cs_pulldown_test`, set in entries logged with the CS test mode on. So bytes 29–31 are the safer place.
+
+**Risks:**
+- **The poll's timing margin,** until CLK's phases are measured.
+- **The IRQ's delay from pio1 to pio0** at the first block's switch [inf].
+- **The simulator's limit:** it models the input synchronisers, but passing there doesn't prove the timing on hardware.
+- **What the console tests can show:** on clean wiring both methods should boot. So they'd show it works as well, not that it works better.
+
+## 8. Options
 
 | Option | What | Effort | Value |
 |---|---|---|---|

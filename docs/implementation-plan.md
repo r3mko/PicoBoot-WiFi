@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.32, 2026-11-24 |
-| **Design** | [architecture.md](architecture.md), Approved v1.23 |
+| **Status** | Approved v1.33, 2026-11-24 |
+| **Design** | [architecture.md](architecture.md), Approved v1.24 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -44,6 +44,7 @@
 | v1.30 | 2026-11-23 | Approved by the owner. D47's steps L4 and L5 as built: the CLK capture series on both consoles, and its results ([length-injection-results.md](research/length-injection-results.md)): CLK leaves the length detector room, so it stays as L1 built it. |
 | v1.31 | 2026-11-23 | Approved by the owner. D47's steps L6 and L7 as built: the length test build, and its code review's findings with the owner's choice to weigh the CLK glitch risk at L9. |
 | v1.32 | 2026-11-24 | Approved by the owner. D47's step L8 as built: the length test build booted all 13 power-ons on the dev console; the main console wasn't run (the owner's choice, recorded as a difference from the plan). L9, the owner's decision: release 1.2.0, with the CS wait in today's injection and the length method as an opt-in; the CS-wait item taken up by it. |
+| v1.33 | 2026-11-24 | Approved by the owner. Release 1.2.0: the injection switch (D48), with the owner's design choices; steps R1–R6. CI drops the crash and marked-blob test builds, whose options stay for local builds. |
 
 ## How this plan works
 
@@ -446,7 +447,7 @@ docs/                       design, plan, research, API, update-file format
   - the fourth wire a U10 replacement would need.
 
   The first step is a passive build that records the commands and their timing.
-- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9).
+- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9, D48).
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -888,6 +889,32 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 
 **Differences from the plan:**
 - **L8 ran on the dev console only** (the owner's choice). L4 measured the same timing on both consoles; no BS1 can use the bytes the method leaves to U10, since every PicoBoot version sends garbage there and works; the main console's CS-high start is the simpler case; and a release would test both consoles anyway.
+
+## Release 1.2.0: the injection switch (D48)
+
+**Branch:** `release-1.2.0`, with `length-injection` merged in. **Research:** [length-injection.md](research/length-injection.md), [length-injection-results.md](research/length-injection-results.md). **Design:** D48 (v1.24). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-24):**
+- one release with both: the CS wait in today's injection, and the length method as an opt-in, standard the default (D47's L9);
+- `length-injection` merged into the release branch, then the switch; both research branches kept on GitHub afterwards;
+- the Payloads tab's note "Length-based ignores noise on CS at start-up (README)."; the noise warning unchanged, with the README naming the length method;
+- `"injection": "standard"` or `"length"` in the API, and `injection standard|length` in the CLI;
+- "This boot" shows the method, and the boot log table marks length boots;
+- CI keeps compiling a `-dev` copy on every push;
+- CI no longer builds the three test update files of steps 3.7 and 3.8 (the two crash builds and the marked Wi-Fi blob), 60 s of each run; their CMake options stay, for local builds;
+- a lighter console test: standard on both consoles, length-based on the main console only, since the dev console had L8;
+- the version 1.2.0.
+
+The other later-releases items aren't in 1.2.0.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The firmware:**<br>• `release-1.2.0` from `main`, with `length-injection` merged in;<br>• the setting: boot control's flag bit 1, read at power-on; only the chosen method's programs loaded; the build option gone;<br>• the CS wait in `clocked_output`;<br>• the method byte in every boot report;<br>• the API's `injection`, in the status and in `POST /api/boot`;<br>• tests: the simulator's split-block case for both methods, both methods set up as the firmware does, and host tests for the flag and the API;<br>• CI: the step that builds the crash and marked-blob update files goes, with their artifacts | Opus | Host tests, the simulator tests, the layout check and CI pass |
+| R2 | **The page, the CLI and the docs:**<br>• the Payloads tab's row; the method on "This boot" and the boot log's mark;<br>• the CLI's `injection` command, and its status line;<br>• `docs/api.md`; the README's features, wiring advice and recovery table | Opus | The Node tests and CI pass |
+| R3 | **Version and notes:** `CMakeLists.txt` at `1.2.0`, the release notes in `docs/releases/1.2.0.md` | Opus | The owner approved the notes |
+| R4 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R5 | **Console test** on the build after R4, on clean wiring:<br>• the update over Wi-Fi from 1.1.2 on both consoles; a power-on keeps it; the method shows "standard";<br>• standard: 2 cold boots per console, the built-in and Swiss;<br>• length-based, on the main console: 5 cold boots, the built-in and Swiss, each boot's screen noted;<br>• the slot round trip on the main console, with length-based chosen: "Boot slot" to 1.1.2 and a cold boot (by count, the bit ignored), then back to 1.2.0 and a cold boot (length-based again);<br>• the page and the boot log's marks show the method;<br>• back to standard afterwards | Owner | Passed; results in `docs/research/release-1.2.0-results.md` |
+| R6 | **Merge and tag `v1.2.0`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R5's build, then published | Owner | Released |
 
 ## Local builds and CI
 

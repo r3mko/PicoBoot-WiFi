@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.23, 2026-11-24 |
+| **Status** | Approved v1.24, 2026-11-24 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -37,6 +37,7 @@
 | v1.21 | 2026-11-23 | Approved by the owner. D47's CLK capture after its code review (plan step L3), the owner's choices: it starts at the first rising CLK edge inside a CS low period, its summary also counts BS1's phases by length, and `diag-cs-timing` has release 1.1.2 merged in, with a CI step that compiles a test build. |
 | v1.22 | 2026-11-23 | Approved by the owner. D47 after the length test build's code review (plan step L7): one CLK glitch during BS1 starts the length method's payload early, a risk the owner chose to weigh at L9; a failed boot may show a black screen; BS1's clock as measured. |
 | v1.23 | 2026-11-24 | Approved by the owner. D47 after its console series (plan step L8, the dev console only) and the owner's decision (L9): release 1.2.0, with the CS wait in today's injection and the length method as an opt-in, the count the default. |
+| v1.24 | 2026-11-24 | Approved by the owner. Release 1.2.0: D48, the injection switch, from D47's decision and the owner's design choices: standard or length-based, a persistent flag in boot control, the Payloads tab, the API and the CLI, the method in the diagnostics; the CS wait in both output programs. |
 
 ## How to read the decisions
 
@@ -97,6 +98,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D45 | Noise warning | Decision | The Diagnostics tab warns when a boot counts more CS transfers than a clean one: noise on CS (release 1.1.2) |
 | D46 | Status polling | Decision | The page asks for the status one request at a time, and backs off after a failure (release 1.1.2) |
 | D47 | Length-based injection | Decision | A second way to find the first IPL block, by its length instead of a count of 224; a feasibility stage first: a simulator prototype, a CLK capture test build, a length test build, then the owner decides on a release |
+| D48 | Injection switch | Decision | A persistent choice on the Payloads tab: standard (D36's count, the default) or length-based (D47); the CS wait in both output programs (release 1.2.0) |
 
 ## 1. Goal and scope
 
@@ -355,6 +357,38 @@ These follow from the research and bind every decision below.
 - **The release's switch** starts from the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding. 1.2.0 has its own design questions, design and plan.
 - **The code stays on its branches,** `diag-cs-timing` and `length-injection`, not merged into `main` during the stage.
 
+**D48 (Decision): the injection switch, and the CS wait** (release 1.2.0, 2026-11-24, the owner's choices; from D47's feasibility stage and [length-injection.md](research/length-injection.md) §5 and §7).
+- **Two methods, standard the default:**
+  - **Standard:** D36's count of BS1's 224 fetches, as in every release so far.
+  - **Length-based:** D47's detector, which finds the first block by its 97th clock and so ignores noise on CS in BS1. One CLK glitch in BS1 starts it early (L7), and its benefit is untested on noisy wiring, hence the default.
+- **The setting:** a persistent choice, bit 1 of boot control's flags (`BOOTCTL_FLAG_INJECTION_LENGTH`), next to "original IPL once" (bit 0). It's read at power-on with the payload choice, and applies to every payload from the next power-on.
+  - **The format stays:** bits 1–7 were free, and the loader decides on the slot fields alone.
+  - **Older firmware:** 1.1.x doesn't check the flag bits and keeps them when it writes boot control back. So a slot switch to 1.1.x injects by count, and the choice holds on the way back.
+  - **Not in the settings backup,** which holds the Wi-Fi settings only (D41), as with the payload choice.
+- **Loading:** at power-on, before "PIO ready", the firmware loads the chosen method's programs only.
+  - **Standard:** `on_transfer` and `clocked_output` in pio0, as before: 27 of its 32 instructions with the CS wait.
+  - **Length-based:** `clocked_output_length` in pio0 (26), and `length_detect` in pio1 beside the counters (24 of 32), raising pio0's IRQ 0.
+  - **The time to "PIO ready":** L8's length boots reached it 591–593 µs after `main()`, against the count's 601–606 µs in the same log, well inside the 10 ms rule.
+  - **The clock:** the length method needs the injection's clock boost; a static assert keeps it at 200 MHz or more (L7).
+- **The CS wait (D47's L1 finding), in both output programs:** each later block waits for CS high before its IRQ. So a CS blip that splits a payload block no longer makes every later block one bit late. It's one instruction in `clocked_output`, as `clocked_output_length` has had since L1.
+- **The page,** the Payloads tab:
+  - an "Injection" row after "Original IPL once": "standard" or "length-based";
+  - a button to switch, "Use length-based" or "Use standard";
+  - the note "Length-based ignores noise on CS at start-up (README)."
+- **The API:**
+  - `"injection": "standard"` or `"length"` in `/api/status`'s payloads;
+  - `POST /api/boot` takes `{"injection": "length"}` alone, like its other fields;
+  - every boot report in `/api/diagnostics` has `injection`. Older entries read as standard, as their padding byte is zero.
+- **The CLI:** `picoboot-wifi.py injection standard|length`; `status` shows the method on its Payloads line.
+- **The diagnostics:** the method byte at the boot report's byte 29 (L6), for every power-on.
+  - **"This boot"** shows "Injection: standard" or "length-based" for boots with an injection.
+  - **The boot log table** marks length boots, so standard rows look as before.
+  - **The test page** shows "Injection method".
+- **The noise warning (D45) stays as it is,** pointing at the wiring. The README's wiring and recovery sections name length-based for noise on CS at start-up that the wiring doesn't cure.
+- **Recovery:** a length boot that fails shows the console's menu or a black screen. Wi-Fi comes up either way, and the user switches back to standard on the page.
+- **Test builds:** the method is a setting there too, so the build option `PICOBOOT_WIFI_INJECTION_LENGTH` goes. CI keeps compiling a `-dev` copy on every push.
+- **The branches:** `length-injection` is merged into `release-1.2.0`, keeping its reviewed commits (L1, L6, L7). It and `diag-cs-timing` stay on GitHub afterwards (the owner's choice).
+
 **Boot flow:**
 
 ```
@@ -364,7 +398,8 @@ power on -> boot ROM -> loader (flash offset 0)
   |             else the other slot if this one keeps crashing
   |- boot info -> POWMAN scratch (power_on, slot, trial, reason)
   `- rom_chain_image(slot) -> firmware (slot A or B, mapped to 0x10000000)
-       |- if power_on: 250 MHz; PIO + DMA inject payload 1, 2 or built-in;
+       |- if power_on: 250 MHz; PIO + DMA inject payload 1, 2 or built-in,
+       |               by count or by length (D48);
        |               no flash writes; wait for disable_chip; lower the clock
        |- start the watchdog, then Wi-Fi (blob from Wi-Fi A or B)
        |- AP, DHCP, DNS, web UI; Wi-Fi auto-off (D20)
@@ -487,7 +522,7 @@ power on -> boot ROM -> loader (flash offset 0)
   - `POST /api/firmware`;
   - `POST /api/payload`;
   - `POST /api/settings`;
-  - `POST /api/boot` (switch slot or payload, "original IPL once");
+  - `POST /api/boot` (switch slot or payload, "original IPL once", the injection method);
   - `POST /api/reboot`;
   - `GET /api/backup/…`.
 
@@ -536,6 +571,7 @@ power on -> boot ROM -> loader (flash offset 0)
 | **CLI tool:** status and firmware update first, then payload upload and `.dol` conversion | 3–4 |
 | **Payloads:** upload, choose, delete, download | 4 |
 | **"Boot the original IPL once":** skip the injection at the next power-on, for changing the console's clock or language | 4 |
+| **Injection method:** standard or length-based, from the next power-on (D48) | 1.2.0 |
 | **Backup:** download payloads, the firmware slot and settings | 4 |
 
 Home Wi-Fi (D21) is left out of the first release.

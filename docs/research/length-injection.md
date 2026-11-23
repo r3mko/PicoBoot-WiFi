@@ -2,8 +2,12 @@
 
 Whether PicoBoot-WiFi could find the injection point the way the Shuriken attack does, by a transfer's length instead of a count of 224, as a second method the user can switch to (the owner, 2026-11-23). The Shuriken attack itself is in [gc-docs.md](gc-docs.md) §3. **[inf]** marks a conclusion rather than a measured or sourced fact.
 
-**Short answer:** yes, it looks possible with PicoBoot's wiring and payloads, without lifting a pin or changing the payload format [inf]. And it would guard exactly the part of the boot that noise breaks today.
-- **Today's weak point is the count, not the payload.** Extra CS transfers during BS1 send the payload early, and that's how the second console failed at its TV ([main-console-tv.md](main-console-tv.md) §1). Extras during the payload transfers are harmless, because the output program counts clocks (§2).
+**Short answer:** yes, it looks possible with PicoBoot's wiring and payloads, without lifting a pin or changing the payload format [inf]. And it would guard BS1, one of the two parts of the boot that noise breaks today.
+- **Noise breaks today's boots in two places** (§2):
+  - extra CS transfers during BS1 send the payload early;
+  - extras that split a payload block make every later block one bit late, which plan step L1 found in the simulator.
+  
+  The length method guards BS1. A one-instruction wait for CS high guards the payload, for either method.
 - **A length-based start ignores what happens during BS1:** pulses without clocks, split transfers, and a clock that's already high at the false edge, D36's known limit.
 - **The cost:**
   - a second set of PIO programs, likely over two PIO blocks;
@@ -29,11 +33,11 @@ The 255 is the Shuriken board's own choice: its flash needs a 4-byte read comman
 - `on_transfer` counts 224 clock-qualified transfers (D36), then raises IRQ 0 at every CS fall.
 - `clocked_output` waits for IRQ 0, then counts the 32 command clocks and shifts out 8192 payload bits, one per rising clock edge. The DMA feeds it the stored payload from its first word.
 
-**Noise during the payload transfers doesn't move the output [inf].**
-- A CS pulse in the middle of a block only sets IRQ 0 early. The flag is still set when the block ends.
-- `clocked_output` then counts the next block's 32 command clocks as usual. The clock doesn't run in the gap between blocks, so it stays in step.
-
-That's what the TV boots showed: only boots whose extras missed the 224 skipped transfers started, and "if the extras came only during the payload transfers … all 21 would have started" ([main-console-tv.md](main-console-tv.md) §1).
+**Noise during the payload transfers moves the output too** (found in plan step L1, in the PIO simulator; this note first said it didn't).
+- A CS blip in the middle of a block sets IRQ 0 early. When the block ends, `clocked_output` finds the flag set and starts counting command clocks at once, before the console's last clock of the block.
+- That clock counts as the next block's first command clock, so every later block arrives one bit late.
+- **The fix:** a wait for CS high before each block's IRQ. The block is over only when CS rises, and no clock runs in the gap. One instruction, for either method (L1).
+- **The TV boots fit this too:** boot 95, with no extras, started, and "a couple" of the 21 did ([main-console-tv.md](main-console-tv.md) §1).
 
 **Noise during BS1 moves the start.** One clocked extra among the 224 sends the payload one transfer early, and the console starts its own menu. D36 ignores pulses without clocks, but:
 - not split transfers, which are clocked;
@@ -88,8 +92,8 @@ high:
 - **The cost of a later point:** the skip needs a count of its own. The registers are tight: x counts, y holds 8191, ISR one more constant.
 
 **The PIO budget:**
-- pio0 holds `on_transfer` and `clocked_output`, 27 of its 32 instructions.
-- The detector is about 13 instructions; the output program with its first-block entry about 24.
+- pio0 holds `on_transfer` and `clocked_output`, 26 of its 32 instructions (10 and 16).
+- The detector is 14 instructions; the output program with its first-block entry 26 (L1).
 - Loading only the chosen method's programs at boot keeps the two methods apart. But the length method alone is over 32, so its detector would go in pio1, next to the passive counters (10 instructions). It would raise its IRQ in pio0 with the RP2350's `irq prev` [inf].
 
 ## 4. What it guards against, and what it doesn't
@@ -99,9 +103,9 @@ high:
 | The dev console's false edge, CLK low | ignored (D36) | ignored: no clocks |
 | A false edge while CLK reads high | counted: D36's known limit | ignored: no rising edges |
 | Noise that splits BS1 transfers (the TV) | counted: the payload goes early | ignored: each piece has under 97 clocks [inf] |
-| A CS blip in the first ~97 clocks of the first block | — | the switch lands at the wrong bit, a window of about 3.6 µs [inf] |
+| A CS blip in the first ~97 clocks of the first block | — | the switch lands at the wrong bit, a window of about 3.6 µs. L1: only a blip the detector sees, while CLK is low |
 | Noise that holds CS low across a gap, merging two BS1 fetches | merged: the count falls short, so the payload goes one transfer late [inf] | 192 clocks: taken for a block, so the payload goes early [inf]. Not seen |
-| Noise during the payload transfers | harmless (§2) | the same: the same output loop |
+| Noise that splits a payload block | every later block one bit late (L1) | the same, unless each block waits for CS high, as L1's prototype does |
 | An IPL whose BS1 isn't 224 fetches | breaks | works [inf]. None known: every console recorded shows 224 |
 
 **From T3's records:** in all 33 power-ons, every one of the first 224 CS-low periods lasted 3.656–3.664 µs, and the 225th was a full block ([cs-timing-results.md](cs-timing-results.md)). So on these consoles, a 97-clock threshold separates the two cleanly.
@@ -158,8 +162,8 @@ Checked against the code on 2026-11-23.
 
 | Part | What it needs | Checked |
 |---|---|---|
-| The detector | About 13 instructions in pio1 | pio1 holds only the passive counters, 10 of its 32 instructions (`cs_raw` and `cs_clocked`, `src/firmware/counters.c`). Wi-Fi's driver takes pio2 after the injection ([injection-end.md](injection-end.md)) |
-| The output program | `clocked_output` with a first-block entry, about 24 instructions in pio0, loaded only when the length method is chosen | pio0 holds 27 today (`on_transfer` 10, `clocked_output` 17) |
+| The detector | 14 instructions in pio1 (L1) | pio1 holds only the passive counters, 10 of its 32 instructions (`cs_raw` and `cs_clocked`, `src/firmware/counters.c`). Wi-Fi's driver takes pio2 after the injection ([injection-end.md](injection-end.md)) |
+| The output program | `clocked_output` with a first-block entry, 26 instructions in pio0 (L1), loaded only when the length method is chosen | pio0 holds 26 today (`on_transfer` 10, `clocked_output` 16) |
 | The DMA | No change: the output program drops the header bits U10 has sent | `injection.c` sends the stored payload from its first word |
 | The setting | A bit in boot control's `flags`, next to "original IPL once" (bit 0) | Bits 1–7 are free (`src/common/bootctl.h`), so the format stays. The loader copies the record's first 12 bytes, flags included, but decides on the slot fields alone, so it needs no change. `main.c` loads boot control before the injection and already reads the flags there |
 | The API | A field like `original_ipl_once`: in `/api/status`'s payloads, and in the request that sets it | `payloads.c`, `api.c`, `docs/api.md` |

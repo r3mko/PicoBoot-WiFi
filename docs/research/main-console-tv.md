@@ -25,10 +25,9 @@ Boot numbers are each Pico's own boot log, and the two Picos' numbers overlap. T
 - **The first CS edge came on time** (157.9–159.8 ms after "PIO ready"), so this wasn't a start-up glitch.
 - **The outcome:** boot 95, the exact one, started its payload, and "a couple" of the 21 did (the owner).
 - **Why only sometimes [inf]:** an extra transfer among the 224 skipped ones sends the payload early, and the console starts its own menu.
-- **Where the noise came from [inf]:** suppose each extra transfer falls at a random point of the read. The chance that none falls in the 224 skipped transfers then predicts about 2 starts in these 21 boots, which matches.
-  - The skipped transfers are 79% of the built-in's read and 20% of Swiss's.
-  - If the extras came only during the payload transfers, which is when the Pico drives DATA (the long ground wire's case, [cs-pull-up.md](cs-pull-up.md) §1), all 21 would have started.
-  - So the noise was also there while the Pico drove nothing: it came from outside the Pico.
+- **Where the noise came from: not known.** This note first inferred noise from outside the Pico, from the boots that started.
+  - **That inference:** suppose each extra transfer falls at a random point of the read. The chance that none falls in the 224 skipped transfers (79% of the built-in's read, 20% of Swiss's) predicted about 2 starts in these 21 boots, which matched. And extras only during the payload transfers, when the Pico drives DATA, were thought harmless.
+  - *Corrected after D47's step L1:* in the PIO simulator, an extra that splits a payload block stops the boot too, from the next block on ([length-injection.md](length-injection.md) §2). Then only boots with no extras before the last block start, like boot 95. So the outcome no longer tells noise from outside the Pico apart from noise of its own data output, the long ground wire's case ([cs-pull-up.md](cs-pull-up.md) §1).
 
 ## 2. What didn't help
 
@@ -107,7 +106,7 @@ Upstream PicoBoot's troubleshooting page (https://support.webhdx.dev/gc/picoboot
 1. **At its TV, the wiring between the Pico and U10 picked up enough noise to add clocked CS transfers on nearly every boot,** though the same wires were clean at the bench.
    - A CubeSB board at U10 didn't fix it, and a new Pico didn't either.
    - New, thicker wires (24 AWG) did, with both already in place. Most likely through their length or their new joints rather than their gauge; the route stayed the same (§3) [inf].
-2. **The noise came from outside the Pico [inf, §1],** but not from the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known. Upstream knows the symptom from GCVideo-based adapters (§5).
+2. **Where the noise came from isn't known** (§1, corrected after D47's step L1), but it wasn't the HDMI link, the adapter or the power brick alone (§2). What at the TV made the difference isn't known. Upstream knows the symptom from GCVideo-based adapters (§5).
 3. **The boot log's CS counts showed the problem every time,** and showed when it was gone: exact counts are clean, and extras point at the wiring. That is the README's check.
 4. **For the README, the owner's call:** upstream's wire advice, under about 10 cm of 26–28 AWG stranded wire (§5), plus what this console showed: each signal next to the ground wire, the ground taken at U10, and solid joints. Not 24 AWG: it suits the CubeSB's pads, but upstream warns that thick wires can damage the motherboard's pads. Release 1.1.2 took upstream's advice and the flex cable or quick-solder board (plan v1.23).
 5. **Quick power cycles:** give the console a few seconds off before switching it on again (§4) [inf].

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.19, 2026-11-23 |
+| **Status** | Approved v1.20, 2026-11-23 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -33,6 +33,7 @@
 | v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
 | v1.18 | 2026-11-22 | Approved by the owner. D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
 | v1.19 | 2026-11-23 | Approved by the owner. D47: length-based injection, a feasibility stage first, from the research in [length-injection.md](research/length-injection.md). The owner chose a simulator prototype, a CLK capture test build from `diag-cs-timing` (CS and CLK every 4 ns), a length-only test build on its own branch, console series as T3's on clean wiring, the switch point from the simulator, and the name "Injection: standard / length-based". |
+| v1.20 | 2026-11-23 | Approved by the owner. D47 after plan step L1, the simulator prototype: the detector and the output program as built (14 and 26 instructions), the switch at bit 66, and L1's finding: a CS blip that splits a payload block makes every later block one bit late, in today's `clocked_output` too. The owner's choice: the prototype waits for CS high before each later block's IRQ, and today's `clocked_output` gets the wait in a release of its own. |
 
 ## How to read the decisions
 
@@ -327,11 +328,13 @@ These follow from the research and bind every decision below.
 - **The method,** after the Shuriken attack: the first transfer still running after 96 clocks is the first IPL block. BS1's fetches are 96 clocks, a 32-bit command and 8 bytes; a block is 8224.
   - **The Pico takes the data line over inside the first block's 32-byte header,** which BS1 doesn't use. Later blocks start after the command, as now.
   - **No pin lifted and no payload change:** PicoBoot already drives the data line against U10. The DMA stays as it is, and the output program drops the header bits U10 has sent.
-  - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers, which failed the second console's boots at its TV.
-- **The programs** (the research's sketch):
-  - **The detector,** in pio1 next to D31's counters: it polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock, and raises an IRQ in pio0 (`irq prev`) at the 97th rising edge with CS still low.
-  - **The output program,** in pio0: `clocked_output` with an entry for the first block.
-  - **The switch point** inside the header is chosen in the simulator, where the output program has room to spare.
+  - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers.
+- **The programs** (`src/firmware/pio/length.pio`, plan step L1, tried in the PIO simulator):
+  - **The detector,** in pio1 next to D31's counters, 14 instructions (pio1 then holds 24 of its 32). It polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock. After the fall of the 97th clock with CS still low, it raises IRQ 0 in pio0 (`irq prev`), and then one at every CS fall, as `on_transfer` does after its count.
+  - **The output program,** in pio0, 26 instructions: `clocked_output` with an entry for the first block. It drops the first block's data bits 0–65, which U10 sends, puts bit 66 on the pin while it's still an input, and drives it one instruction after clock 97, the timing of every other bit.
+  - **The switch point (L1): bit 66.** In the simulator, both methods work from a 32 ns clock up and fail at 24 ns, the output loop's own limit; the real clock is 37.4 ns.
+  - **Each later block waits for CS high before its IRQ** (L1's finding, the owner's choice). A CS blip that splits a payload block leaves IRQ 0 set early. Without the wait, the output program takes that block's last clock as the next block's first command clock, and every later block arrives one bit late. No clock runs between blocks, so after the wait it stays in step.
+- **Today's injection has that weakness too** (L1, in the simulator): `clocked_output` has no CS wait. The owner's choice: the wait goes into today's `clocked_output` in a release of its own, with its own design questions (the plan's later releases).
 - **The name:** "Injection: standard / length-based". Standard is D36's count, and stays the default.
 - **The feasibility stage** (the owner's choices):
   1. **A simulator prototype:** the detector and the output program in `tests/pio_sim.py`, with the cases of the research's §6. Tests only.

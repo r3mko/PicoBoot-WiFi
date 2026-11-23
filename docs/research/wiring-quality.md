@@ -9,10 +9,12 @@ How a release could warn of wiring that picks up noise on CS, the owner's choice
 | Case | Wiring | What the counts showed | The boots |
 |---|---|---|---|
 | A long ground wire (second console, bench; [cs-pull-up.md](cs-pull-up.md) §1) | loose wires, a long GND | tens or hundreds of thousands of transfers (11,492–919,302) | none started |
-| At the TV ([main-console-tv.md](main-console-tv.md) §1) | loose wires, short GND | 1–25 extra transfers on 20 of 21 boots, once 77 and once 141 | "a couple" started: those whose extras missed BS1 |
+| At the TV ([main-console-tv.md](main-console-tv.md) §1) | loose wires, short GND | 1–25 extra transfers on 20 of 21 boots, once 77 and once 141 | "a couple" started; boot 95 had no extras |
 | Clean (both consoles since; [cs-timing-results.md](cs-timing-results.md)) | flex cable; CubeSB with 24 AWG | 224 or 225 plus the payload's transfers, raw equal to clocked | all |
 
-In every case the noise was in the counts. With the TV's wiring, a boot whose extras all fell after BS1 still started, and showed the extras anyway: the warning would have come before the failures it explains [inf].
+In every case the noise was in the counts.
+
+*Corrected after D47's step L1:* this note said that with the TV's wiring, a boot whose extras all fell after BS1 still started. In the PIO simulator, an extra that splits a payload block stops the boot too, from the next block on ([length-injection.md](length-injection.md) §2). The warning stands: the noise is in the counts either way.
 
 ## 2. What the shortest gap would add
 

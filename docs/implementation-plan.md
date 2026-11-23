@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.27, 2026-11-23 |
-| **Design** | [architecture.md](architecture.md), Approved v1.19 |
+| **Status** | Approved v1.28, 2026-11-23 |
+| **Design** | [architecture.md](architecture.md), Approved v1.20 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -39,6 +39,7 @@
 | v1.25 | 2026-11-22 | Approved by the owner. Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
 | v1.26 | 2026-11-22 | Approved by the owner. Release 1.1.2 as built (see its "As built" note): the console test, which passed on both consoles, the noise warning's hand check, and the weak-link test, where a reload after the loss went through at once on 1.1.2 and took 30 s to 2 minutes on 1.1.1's page. |
 | v1.27 | 2026-11-23 | Approved by the owner. Length-based injection, a feasibility stage (D47, design v1.19): a simulator prototype, a CLK capture test build and its console series, a length-only test build and its console series, each test build with a code review, then the owner's decision on a release. |
+| v1.28 | 2026-11-23 | Approved by the owner. D47's step L1 as built (see the section's "As built so far"): the simulator prototype, the switch at bit 66, L1's finding about noise during the payload, and the owner's choice from it. For later releases: a wait for CS high in today's `clocked_output`. |
 
 ## How this plan works
 
@@ -441,6 +442,7 @@ docs/                       design, plan, research, API, update-file format
   - the fourth wire a U10 replacement would need.
 
   The first step is a passive build that records the commands and their timing.
+- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test.
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -816,6 +818,18 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 | L7 | **Code review** of L6 | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | L8 | **Console series** with L6's test build, installed over Wi-Fi on both consoles, on clean wiring:<br>• about 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on one console, 3 quick power cycles as well;<br>• the boot log read once per console;<br>• afterwards back to 1.1.2 | Owner | The logs are in |
 | L9 | **Results and the decision:** the results note completed; the owner decides on a release with the switch (the research's §5 and §7), on changes, or on nothing, and where the code goes | Opus, then the owner | Decided; the plan updated |
+
+**As built so far:**
+- **L1 (2026-11-23)** in `436f837` on `length-injection`:
+  - `src/firmware/pio/length.pio`, assembled in the firmware build but not loaded: the detector (14 instructions) and the output program (26);
+  - the simulator gains `mov` from pins with `IN_COUNT`, `mov` from ISR, `jmp !y`, `irq prev` and `next` between linked PIO blocks, and a lead-in for the console model;
+  - `tests/test_length_injection.py`: a full-size clean boot, the dev console's start, a false edge while CLK is high, split BS1 fetches, noise during the payload, a blip early in the first block, CS held low across a gap, and the switch timing, each against today's count where they differ. All 295 tests pass. CI comes with the branch's first push.
+- **The results:**
+  - **The switch point: bit 66.** It goes on the line 3 cycles after clock 97 rises, as every other bit does: 5 cycles before the console reads it with a 32 ns clock, about 6.3 (25 ns) with the real 37.4 ns [inf]. Both methods fail at 24 ns, the output loop's own limit.
+  - **What the length method ignores** (in the simulator): the dev console's false edge, a false edge while CLK is high (D36's known limit, which the count takes), and noise that splits BS1 fetches (which the count takes).
+  - **Its own weak spots:** a CS blip the detector sees early in the first block, about 3.6 µs, and CS held low across a BS1 gap. A blip during CLK's high phase it doesn't see, which does no harm.
+  - **L1's finding:** a CS blip that splits a payload block makes today's `clocked_output` take that block's last clock as the next block's first command clock, so every later block is one bit late. Research notes that called noise during the payload harmless are corrected.
+- **The owner's choice:** the prototype waits for CS high before each later block's IRQ, which fixes it in the simulator. Today's `clocked_output` gets the same wait in a release of its own (later releases).
 
 ## Local builds and CI
 

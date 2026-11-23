@@ -10,7 +10,7 @@ The measurements are the owner's, from the boot logs of phases 0 and 1, the 1.1.
 
 | | Dev console (`PicoBoot-C2C4`) | Second console (`PicoBoot-AE52`) |
 |---|---|---|
-| CS at "PIO ready", reset pull-down | **low** on every boot (phase 0; phase 1 from boot 56; the 1.1.1 series, 48 logged boots) | **high** on every boot ([cs-pull-up.md](cs-pull-up.md) §2, [release-1.1.1-results.md](release-1.1.1-results.md)) |
+| CS at "PIO ready", reset pull-down | **low** on every boot (phase 0; phase 1 from boot 56; the 1.1.1 series, 48 logged boots), but two: high on two 1.1.1 boots in release 1.1.2's console test, not explained ([release-1.1.2-results.md](release-1.1.2-results.md)) | **high** on every boot ([cs-pull-up.md](cs-pull-up.md) §2, [release-1.1.1-results.md](release-1.1.1-results.md)) |
 | CS at "PIO ready", pull-up | high | high |
 | CS at "PIO ready", another Pico with new wires and a CubeSB board at U10 (2026-11-21) | — | **high** on every boot (boots 76–116, [main-console-tv.md](main-console-tv.md)) |
 | The console first drives CS high | about 42 ms after "PIO ready" ([phase0-results.md](phase0-results.md) 0.7); the glitches came at 36–44 ms | not seen: CS is already high |
@@ -94,6 +94,8 @@ Upstream PicoBoot has console-dependent intermittent failures that were never ex
 
 No report ties a failure to the board revision or to CS's level at start-up. Upstream has no CS counter, so a glitch can't be told apart from other causes there.
 
+**Another modchip pulls CS up:** the Shuriken attack's board (Steven Taffs, 2014–2016) has a 10 kΩ pull-up from 3.3 V to the console's CS. Its CPLD drives the Flipper's data input whenever CS reads low, so an undriven CS at power-up would make it drive [inf] ([gc-docs.md](gc-docs.md) §3, point 2).
+
 **Upstream's code and docs say nothing about CS at start-up** (checked 2026-11-21: `main` at `d6f5230`, the README, and the installation and troubleshooting pages at https://support.webhdx.dev/gc/picoboot/):
 - `src/pio.c` sets no pull on CS, so it keeps the reset pull-down;
 - `on_transfer` counts every falling CS edge, 224 times. It sets a jmp pin on CS but never uses it;
@@ -111,6 +113,17 @@ The troubleshooting page puts boots that return to "the stock menu" down to GCVi
 4. **The power boards and the dev console's board revision:** note which maker's power board each console has, and the dev console's DOL-CPU label, when it's open. If the dev console is a DOL-CPU(P)-10, the revision becomes a candidate. If they differ, swapping them settles the power board's part, through "CS at PIO ready" again.
 5. **Swap the Picos** between the consoles. Whether CS high follows the console or the Pico settles the Pico's part. This is the most work.
    - **Partly done (2026-11-21):** another Pico, with new wires and a CubeSB board, reads CS high in the second console too (§1). So the high doesn't come from the Pico or the wiring. That Pico in the dev console would complete the swap.
+6. **Warm against cold, on the dev console:** it read CS high on two 1.1.1 boots in release 1.1.2's console test, off for several seconds as usual (the owner, [release-1.1.2-results.md](release-1.1.2-results.md)). The owner asked whether a warmed-up console explains it.
+   - **[inf] How it could:** ageing electrolytic capacitors on the power board (§2) behave differently warm and cold. That could change how quickly the rails come up, and with them the moment Flipper first drives CS.
+   - **Against it so far:** phase 0's 0.7 run, with about 10 minutes of play and a download, then 5 power cycles with about 5 s off, read CS low on all 6 boots ([phase0-results.md](phase0-results.md)).
+   - **The other candidates [inf]:** a power-off too short for a rail or the reset to discharge, and the HDMI adapter feeding the console from the TV while it's off.
+   - **The test,** with the same payload, the TV the same way each time, and nothing else changed:
+     1. **Cold:** after several hours off, 3 power-ons with about 5 s off between them.
+     2. **Warm:** after 1–2 hours of play with the case closed, 3 power-ons with about 5 s off.
+     3. **Warm, longer off:** then 3 power-ons with 60 s off, to tell warmth from an incomplete power-down.
+   - **Each boot:**
+     - save `/api/diagnostics` and read `cs_high_at_ready`, which only the API shows;
+     - note the Status tab's temperature while the uptime is under a minute. It tells how warm the Pico starts, and reads low on this console's low rail (§2), so compare the readings with each other only.
 
 ## 8. Conclusions
 

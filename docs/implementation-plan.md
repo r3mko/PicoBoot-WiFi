@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.22, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.15 |
+| **Status** | Approved v1.28, 2026-11-23 |
+| **Design** | [architecture.md](architecture.md), Approved v1.20 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -34,6 +34,12 @@
 | v1.20 | 2026-11-22 | Approved by the owner. A diagnostic build for CS timing (D44, design v1.13), from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): steps T1–T5, a test build and a console series on both consoles, then the owner's decision on what follows. The header names design v1.12, which it had missed. |
 | v1.21 | 2026-11-22 | Approved by the owner. The diagnostic build's T1 as built (its own `timing.pio`, two words per period, a 32 KB record) and T2's code review with the owner's choices: the boot-log rows out of `.bss` in test builds, the record shows the undriven start itself, CI left as it is (test builds are compiled locally only). |
 | v1.22 | 2026-11-22 | Approved by the owner. The diagnostic build as built (see its "As built" note): the console series and its results, and the owner's decision at T5: a wiring-quality number for the releases next, the code staying on its branch, both consoles back to 1.1.1. For later releases: the wiring-quality number. |
+| v1.23 | 2026-11-22 | Approved by the owner. Release 1.1.2, a noise warning (D45) and the page's status polling on a weak link (D46), design v1.16, from the research in [wiring-quality.md](research/wiring-quality.md) and [weak-link.md](research/weak-link.md). The owner chose the warning from the CS counts on the Diagnostics tab, the README's wiring advice from upstream with a flex cable or quick-solder board as the better choice, the polling one request at a time with a back-off, and the version 1.1.2. |
+| v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
+| v1.25 | 2026-11-22 | Approved by the owner. Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
+| v1.26 | 2026-11-22 | Approved by the owner. Release 1.1.2 as built (see its "As built" note): the console test, which passed on both consoles, the noise warning's hand check, and the weak-link test, where a reload after the loss went through at once on 1.1.2 and took 30 s to 2 minutes on 1.1.1's page. |
+| v1.27 | 2026-11-23 | Approved by the owner. Length-based injection, a feasibility stage (D47, design v1.19): a simulator prototype, a CLK capture test build and its console series, a length-only test build and its console series, each test build with a code review, then the owner's decision on a release. |
+| v1.28 | 2026-11-23 | Approved by the owner. D47's step L1 as built (see the section's "As built so far"): the simulator prototype, the switch at bit 66, L1's finding about noise during the payload, and the owner's choice from it. For later releases: a wait for CS high in today's `clocked_output`. |
 
 ## How this plan works
 
@@ -429,13 +435,14 @@ docs/                       design, plan, research, API, update-file format
 - **D43**, a loader stub for ordinary `.dol` files, the owner's choice in phase 4. Taken up in release 1.1.0 (below).
 - **Larger ordinary `.dol` files:** D43's payload holds the program as it is, so a slot's 1.5 MB is the limit, and GCMM's 3.8 MB `.dol` doesn't fit. A stub that unpacks, as gekkoboot's and Swiss's xz packers do, would fit most homebrew. An option.
 - **A tidy end to the injection,** the owner's choice after the release. `injection_finish()` puts the clock back to 150 MHz and stops pio0's two state machines, but pio1's two CS counters keep running until power-off, and the bus priority stays on "DMA first". Both are harmless: the counters only read pins, and Wi-Fi was tested this way. The fix stops the counters and resets the priority. The counters could instead stay on, to notice the console reading U10 again (a reset). Re-test on the Pico: a console boot and Wi-Fi. Taken up in release 1.0.1 (below), with DATA's input off too.
-- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44): the shortest CS-high gap of each boot, in the boot log and on the Diagnostics tab, with a warning when it's shorter than the console's real gaps. Clean wiring read exactly 136 ns on both consoles; noise on CS would show as a shorter gap before it makes a boot fail. With it, the README's wiring advice from upstream's troubleshooting page (under about 10 cm, 26–28 AWG stranded, the ground at U10).
+- **A wiring-quality number,** the owner's choice after the CS timing series ([cs-timing-results.md](research/cs-timing-results.md), D44). It was proposed as the shortest CS-high gap of each boot: clean wiring read exactly 136 ns on both consoles. The research found that every blip that shortens a gap is also an extra CS transfer, which the counts already show ([wiring-quality.md](research/wiring-quality.md)). So it's taken up in release 1.1.2 (below) as a warning from the counts, with the README's wiring advice from upstream's troubleshooting page.
 - **A fourth wire: the console's data to U10,** an option the owner has. The owner's CubeSB overlay board for DOL-001 (PicoBoot-DX, `CubeSB_DOL-001`) brings U10's EXI-IN (pin 6) out on pad 4, marked "GPX". A wire from there to a free Pico input (not GP4–GP7) would show each transfer's command: read or write, and the address. The Pico must only read it, since the console drives it. Uses:
   - starting the injection on the IPL's address, instead of counting 224 CS pulses;
   - a channel from the console to the Pico: a boot menu, homebrew over Wi-Fi, debug output;
   - the fourth wire a U10 replacement would need.
 
   The first step is a passive build that records the commands and their timing.
+- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test.
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -733,6 +740,96 @@ Results and SHA-256s in [release-1.1.1-results.md](research/release-1.1.1-result
 | 9 | **Note:** the summary found the undriven start from `cs_high_at_ready`, not from the record | Fixed (the owner's choice): a first period with no CS-high time |
 | 10 | **Doc error:** a switch of build doesn't start the boot log afresh at once | Fixed in D44 |
 | 11 | **Notes:** the coexistence test can't show the recorder slowing the injection; no sync note for the recorder's set-up; the simulator's MOV to ISR kept the shift count; the test page showed short times as 0.00 us | Fixed: the test's docstring, sync notes, the simulator and a test, ns on the page |
+
+## Release 1.1.2: a noise warning (D45) and steadier polling (D46)
+
+**Branch:** `release-1.1.2`. **Research:** [wiring-quality.md](research/wiring-quality.md), [weak-link.md](research/weak-link.md). **Design:** D45 and D46 (v1.16). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-22):**
+- the Diagnostics tab warns when a boot counts more CS transfers than a clean one, for the current boot and in the boot log table;
+- the README's wiring advice from upstream PicoBoot (wires of at most about 10 cm, 26–28 AWG stranded, no thick or single-core wire), and a flex cable or quick-solder board at U10 as the better choice, next to the ground note;
+- the page asks for the status one request at a time, and backs off after a failure (10, 20, then 30 s, back to 5 s after a success); lwIP's settings don't change;
+- the version 1.1.2.
+
+The other later-releases items aren't in 1.1.2.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The page and the docs,** both rules in the page's own script:<br>• the Diagnostics tab: the number of extra transfers on "This boot", with a pointer to the README, and a mark in the boot log table;<br>• the status polling: one request at a time, with D46's back-off;<br>• a syntax check of the page's script, in Node;<br>• the README: the wiring advice, and the recovery table pointing at the warning | Opus | Host tests, the Node tests, the layout check and CI pass |
+| R2 | **Version and notes:** `CMakeLists.txt` at `1.1.2`, the release notes in `docs/releases/1.1.2.md` | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Console test** on both consoles, on the build after R3:<br>• the update over Wi-Fi from 1.1.1; a power-on keeps it;<br>• a few cold boots each, with the built-in and Swiss, and no warning;<br>• the Diagnostics tab and the boot log otherwise as before;<br>• on the Mac, with packet loss from Apple's Network Link Conditioner: the page stalls; with the loss off, how long until it answers again, on 1.1.1 and on 1.1.2 ([weak-link.md](research/weak-link.md) §3).<br>• the noise warning by hand: the page, opened on the Mac, shown made-up diagnostics with the recorded counts (clean 285, 1110, 1544, 942; the TV's 287, 1127, 1251; the long ground wire's; a glitch, 286/285; a stall; a warm boot; and boot 108's 5368, the known exception, which shows as noise). The warning and the log's marks show exactly where they should.<br>Neither console has noisy wiring now, hence the made-up diagnostics | Owner | Passed; results in `docs/research/release-1.1.2-results.md` |
+| R5 | **Merge and tag `v1.1.2`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**Code review of release 1.1.2** (R3, a fresh Opus 5.5 reviewer, 2026-11-22):
+- **Overall:** no bug in D45's rule, and the release build differs from 1.1.1 only in the page and the version (built with `SOURCE_DATE_EPOCH` fixed). Two problems in D46's new polling.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Bug:** a refresh after an action could get the answer of a status request that started before it. On a weak link the old state showed for about 17 s; after a firmware update the page could say the update failed while it ran on trial | Fixed (the owner's choice): `loadStatus(true)` after an action sends its own request; each request has a number, and an older answer is dropped |
+| 2 | **Risk:** one rejected status request stopped the polling until a reload (1.1.1's `setInterval` went on) | Fixed: a 200 without a body counts as a failure; the shared request never rejects; the timer is set again whatever happens |
+| 3 | **Doc error:** "every clean boot recorded" left out boot 108 (5368 transfers on the fixed wiring), which the rule marks as noise | Fixed: D45 and the research name it as a known exception; it's among R4's made-up cases. The warning's wording stays (the owner's choice) |
+| 4 | **Doc error:** `weak-link.md` put lwIP's 12 tries at about 7 minutes; with the 3 s start it's about half an hour, and recovery up to about 5 minutes | Fixed in the note; the conclusion stands |
+| 5 | **Note:** a success didn't shorten a back-off already set, against the notes' "every 5 seconds again once a request gets through" | Fixed (the owner's choice): a success brings a longer wait back to 5 s |
+| 6 | **Test gap:** `node --check` reads the script as a module, accepting a top-level `return` a browser rejects | Fixed: Node's `vm.Script`, as a browser parses it. No harness (the owner's choice B: the warning is checked by hand) |
+| 7 | **Note:** the research proposed two more wiring points than the README took | Noted in the research: release 1.1.2 took upstream's advice and the flex cable or quick-solder board |
+
+The reviewer's failure scenarios, replayed against the fix in a scratch harness: all as intended.
+
+**As built (2026-11-22):**
+- **The steps:**
+  - R1 in `aa30aba`, with design v1.17 and plan v1.24 (`3cd2b4b`).
+  - R2 in `bf00cc4`. The owner approved the notes, with "1.1.x" for the versions it updates from.
+  - R3 in `359088c`: the code review and its fixes, with design v1.18 and plan v1.25 (`260d79b`).
+- **R4 passed on R3's build** ([release-1.1.2-results.md](research/release-1.1.2-results.md)):
+  - the update over Wi-Fi on both consoles, kept by a power-on;
+  - 12 cold boots on 1.1.2, the built-in and Swiss r2174 on each console, every count a clean boot's, so no warning;
+  - the noise warning by hand on the Mac, with made-up diagnostics: every mark and note where it should be;
+  - the weak-link test on the main console: after 2 minutes of 80% loss, a reload went through at once on 1.1.2, and took 30 s to 2 minutes on 1.1.1's page.
+
+CI passed on every push of the branch, the last on `1570675`. R5: merged into `main` on 2026-11-22 (`072ce9d`); the owner had it pushed and tagged `v1.1.2`, and published the release. Its files are R4's byte for byte.
+
+**Differences from the plan:**
+- **The main console's update came from a test build,** not from 1.1.1: the one in its slot B. The dev console's came from 1.1.1.
+- **The weak-link baseline was that test build,** whose page and network code are 1.1.1's.
+- **The weak-link profile:** 80% loss both ways for 2 minutes, with a power cycle before the first of each firmware's 3 runs. 100% loss would have tested nothing, as no request would reach the Pico.
+
+## Length-based injection: feasibility (D47)
+
+**Branches:** `length-injection` from `main` (L1, L6), and `diag-cs-timing` (L2). **Research:** [length-injection.md](research/length-injection.md). **Design:** D47 (v1.19). **Done when:** both console series ran, the results are written up, and the owner has decided what follows.
+
+**The owner's choices (2026-11-23):**
+- a feasibility stage first, a release decided from its results;
+- CLK's phases measured with a capture test build first, then the length test build;
+- the length method only in its test build, with no switch;
+- console series about as T3's, on clean wiring only;
+- the switch point chosen in the simulator;
+- the name "Injection: standard / length-based";
+- the code on its own branches, not merged into `main` during the stage.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| L1 | **Simulator prototype** on `length-injection`, tests only:<br>• `tests/pio_sim.py` gains `mov` from pins with `IN_COUNT`, `jmp !y`, and an IRQ to the neighbouring PIO block (`irq prev`);<br>• the detector and the output program with its first-block entry, as `.pio` programs the firmware doesn't load yet;<br>• the cases: a clean boot, the dev console's false edge, a false edge with CLK high, split BS1 transfers, a blip early in the first block, noise during the payload, CS held low across a gap;<br>• the switch point: the earliest one with room to spare, and its margin | Opus | The cases pass, the switch point is named, CI passes |
+| L2 | **CLK capture test build** on `diag-cs-timing`, test builds only:<br>• `clk_capture`, a passive state machine in pio1 (`in pins, 2` every cycle, autopush), started at the first rising CLK edge, with a DMA channel into a 64 KB buffer in `.uninitialized_data`. The release uses about 82 KB of RAM, below a heap limit at 512 KB;<br>• the summary: CLK's shortest high and low phase, in BS1 and in the captured part of the first block, and the rising edges captured;<br>• the summary on the test page and in `/api/diagnostics`; the raw capture at `/api/test/clk-capture`;<br>• simulator tests for the capture and the summary | Opus | CI passes |
+| L3 | **Code review** of L2 | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| L4 | **Capture series** with L2's test build, installed over Wi-Fi on both consoles:<br>• about 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• the boot log read once per console, and the raw capture of a few boots downloaded;<br>• afterwards back to 1.1.2 | Owner | The logs and captures are in |
+| L5 | **CLK results** in `docs/research/length-injection-results.md`: CLK's high and low phases on both consoles against the detector's 12 ns poll; the detector adjusted if the margin is too thin | Opus | The owner approved the note |
+| L6 | **Length test build** on `length-injection`, test builds only:<br>• the length method only: the detector in pio1 and the output program in pio0, from L1, adjusted after L5;<br>• the method shown on the test page and in "This boot";<br>• L1's cases against the firmware's own set-up | Opus | CI passes |
+| L7 | **Code review** of L6 | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| L8 | **Console series** with L6's test build, installed over Wi-Fi on both consoles, on clean wiring:<br>• about 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on one console, 3 quick power cycles as well;<br>• the boot log read once per console;<br>• afterwards back to 1.1.2 | Owner | The logs are in |
+| L9 | **Results and the decision:** the results note completed; the owner decides on a release with the switch (the research's §5 and §7), on changes, or on nothing, and where the code goes | Opus, then the owner | Decided; the plan updated |
+
+**As built so far:**
+- **L1 (2026-11-23)** in `436f837` on `length-injection`:
+  - `src/firmware/pio/length.pio`, assembled in the firmware build but not loaded: the detector (14 instructions) and the output program (26);
+  - the simulator gains `mov` from pins with `IN_COUNT`, `mov` from ISR, `jmp !y`, `irq prev` and `next` between linked PIO blocks, and a lead-in for the console model;
+  - `tests/test_length_injection.py`: a full-size clean boot, the dev console's start, a false edge while CLK is high, split BS1 fetches, noise during the payload, a blip early in the first block, CS held low across a gap, and the switch timing, each against today's count where they differ. All 295 tests pass. CI comes with the branch's first push.
+- **The results:**
+  - **The switch point: bit 66.** It goes on the line 3 cycles after clock 97 rises, as every other bit does: 5 cycles before the console reads it with a 32 ns clock, about 6.3 (25 ns) with the real 37.4 ns [inf]. Both methods fail at 24 ns, the output loop's own limit.
+  - **What the length method ignores** (in the simulator): the dev console's false edge, a false edge while CLK is high (D36's known limit, which the count takes), and noise that splits BS1 fetches (which the count takes).
+  - **Its own weak spots:** a CS blip the detector sees early in the first block, about 3.6 µs, and CS held low across a BS1 gap. A blip during CLK's high phase it doesn't see, which does no harm.
+  - **L1's finding:** a CS blip that splits a payload block makes today's `clocked_output` take that block's last clock as the next block's first command clock, so every later block is one bit late. Research notes that called noise during the payload harmless are corrected.
+- **The owner's choice:** the prototype waits for CS high before each later block's IRQ, which fixes it in the simulator. Today's `clocked_output` gets the same wait in a release of its own (later releases).
 
 ## Local builds and CI
 

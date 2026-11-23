@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.15, 2026-11-22 |
+| **Status** | Approved v1.20, 2026-11-23 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -29,6 +29,11 @@
 | v1.13 | 2026-11-22 | Approved by the owner. D44, CS timing diagnostics in test builds, from the research in [cs-timing-diagnostics.md](research/cs-timing-diagnostics.md): a passive recorder in pio1 times every CS period and notes CLK at each CS fall; a summary per boot in the test builds' boot log; releases unchanged. The owner chose a per-boot summary in flash, the CLK bit, clean setups only, and a test build first. |
 | v1.14 | 2026-11-22 | Approved by the owner. D44 as built (step T1) and after its code review (T2): two words per CS low period in its own `timing.pio`, so no time wraps; a 32 KB record; the test builds' boot-log rows in uninitialized RAM too (the owner's choice); the record shows the undriven start itself (the owner's choice); "nothing measured" on boots without an injection; the dead time; what a switch of build does to the boot log. |
 | v1.15 | 2026-11-22 | Approved by the owner. D44 decided (step T5), from the console series in [cs-timing-results.md](research/cs-timing-results.md): the short-gap threshold is 100 ns, as real gaps are 136 ns or more; the code stays on its branch, not in `main` (the owner's choice); a wiring-quality number for the releases follows. |
+| v1.16 | 2026-11-22 | Approved by the owner. Release 1.1.2: D45, a noise warning from the CS counts, from the research in [wiring-quality.md](research/wiring-quality.md): the Diagnostics tab compares each boot's count with a clean boot's and warns of noise on CS (the owner chose it over the shortest CS-high gap, which adds little to the counts); D46, the page's status polling one request at a time with a back-off, from the research in [weak-link.md](research/weak-link.md). |
+| v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
+| v1.18 | 2026-11-22 | Approved by the owner. D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
+| v1.19 | 2026-11-23 | Approved by the owner. D47: length-based injection, a feasibility stage first, from the research in [length-injection.md](research/length-injection.md). The owner chose a simulator prototype, a CLK capture test build from `diag-cs-timing` (CS and CLK every 4 ns), a length-only test build on its own branch, console series as T3's on clean wiring, the switch point from the simulator, and the name "Injection: standard / length-based". |
+| v1.20 | 2026-11-23 | Approved by the owner. D47 after plan step L1, the simulator prototype: the detector and the output program as built (14 and 26 instructions), the switch at bit 66, and L1's finding: a CS blip that splits a payload block makes every later block one bit late, in today's `clocked_output` too. The owner's choice: the prototype waits for CS high before each later block's IRQ, and today's `clocked_output` gets the wait in a release of its own. |
 
 ## How to read the decisions
 
@@ -86,6 +91,9 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D42 | Payload uploads | Decision | Names you choose; into payload 2 while the built-in boots; the chosen payload can't be deleted; backups without the password; boot control format 2 with loader 3 |
 | D43 | Ordinary `.dol` files | Decision | A loader stub in the payload (release 1.1.0): real mode, low memory as gekkoboot fills it, the sections, the cache sync; `.dol` files that reach the payload image or low memory are refused |
 | D44 | CS timing diagnostics | Decision | Test builds time every CS period of the IPL read with a passive recorder, and keep a summary per boot; releases unchanged |
+| D45 | Noise warning | Decision | The Diagnostics tab warns when a boot counts more CS transfers than a clean one: noise on CS (release 1.1.2) |
+| D46 | Status polling | Decision | The page asks for the status one request at a time, and backs off after a failure (release 1.1.2) |
+| D47 | Length-based injection | Decision | A second way to find the first IPL block, by its length instead of a count of 224; a feasibility stage first: a simulator prototype, a CLK capture test build, a length test build, then the owner decides on a release |
 
 ## 1. Goal and scope
 
@@ -290,6 +298,55 @@ These follow from the research and bind every decision below.
   - **next:** a wiring-quality number for the releases, the shortest CS-high gap of each boot;
   - **not now:** a minimum CS-high gap for D36's count, which would have only about 100 ns of room; the fourth wire stays a later-releases item;
   - **the code stays on its branch,** `diag-cs-timing`, not merged into `main`; a later test build can take it from there. Release builds don't have it either way.
+
+**D45 (Decision): a noise warning from the CS counts** (release 1.1.2, the owner's choices; research in [wiring-quality.md](research/wiring-quality.md)).
+- **The rule:** a clean boot counts 224 or 225 plus the payload's transfers (`payload_words / 256`), as every clean boot recorded has. A boot whose clocked count is higher had noise on CS during the read: a blip splits a transfer, and an extra one during BS1 sends the payload early. D36 can't tell a clocked extra from a real transfer.
+- **Where:** the Diagnostics tab.
+  - "This boot" gives the number of extra transfers, and points to the README's wiring advice.
+  - The boot log table marks such boots.
+  - A glitch (raw above clocked) keeps its own note.
+- **The page only:** the rule is in the page's own script, from fields the API already has (`payload_words`, `cs_raw`, `cs_clocked`, `result`). No firmware logic, API or boot-log change, and older log entries get it too.
+- **Checked by hand,** like the page's other warnings. Neither console has noisy wiring now, so the page is shown made-up diagnostics with the recorded counts.
+- **For boots with an injection only** (complete or stalled): the others count nothing.
+- **A known exception:** boot 108 on the second console's fixed wiring ([main-console-tv.md](research/main-console-tv.md) §4): the built-in, complete, 5368 transfers, most likely the console restarting its reads. The rule marks it as noise. A boot that stalls counts for the whole 10 s time-out, so a console that reads again in that window would look the same [inf].
+- **Not the shortest CS-high gap** (D44) in the releases: every blip that shortens a gap is an extra transfer, which the counts already show.
+
+**D46 (Decision): the page's status polling on a weak link** (release 1.1.2, the owner's choice; research in [weak-link.md](research/weak-link.md)).
+- **The polling:** the Status and Payloads tabs ask for `/api/status` one request at a time.
+  - After a request fails or times out, the next comes after 10 s, then 20 s, then every 30 s.
+  - After a success, every 5 s again. A success from any request brings a longer wait back to 5 s.
+  - **After an action** (a boot choice, Keep, a payload change or upload, a settings save or restore, the wait after a restart), the page sends a request of its own instead of sharing one on its way, so it shows the state after the action. Each request has a number, and an answer older than the one shown is dropped.
+  - The polling carries on after an error; a 200 answer without a body counts as a failure.
+- **Why:** on a weak link, overlapping and abandoned requests leave connections on the Pico that lwIP keeps resending for minutes. They fill its 8 TCP connections and 32 send segments, so new requests can't get through until lwIP drops them.
+  - lwIP drops a connection only after 12 retransmissions, each time-out doubling (`TCP_MAXRTX`).
+  - The web server closes a stalled connection gracefully, after about 8 s.
+  - All its connections share one priority, so a new one can't push out a stuck one.
+- **The page only:** the schedule is a one-line function next to the poller, in the page's own script.
+- **Not changed for now:** lwIP's `TCP_MAXRTX`, the web server's close, the number of connections.
+
+**D47 (Decision): length-based injection, a feasibility stage first** (2026-11-23, the owner's choices; research in [length-injection.md](research/length-injection.md) and [gc-docs.md](research/gc-docs.md)).
+- **The method,** after the Shuriken attack: the first transfer still running after 96 clocks is the first IPL block. BS1's fetches are 96 clocks, a 32-bit command and 8 bytes; a block is 8224.
+  - **The Pico takes the data line over inside the first block's 32-byte header,** which BS1 doesn't use. Later blocks start after the command, as now.
+  - **No pin lifted and no payload change:** PicoBoot already drives the data line against U10. The DMA stays as it is, and the output program drops the header bits U10 has sent.
+  - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers.
+- **The programs** (`src/firmware/pio/length.pio`, plan step L1, tried in the PIO simulator):
+  - **The detector,** in pio1 next to D31's counters, 14 instructions (pio1 then holds 24 of its 32). It polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock. After the fall of the 97th clock with CS still low, it raises IRQ 0 in pio0 (`irq prev`), and then one at every CS fall, as `on_transfer` does after its count.
+  - **The output program,** in pio0, 26 instructions: `clocked_output` with an entry for the first block. It drops the first block's data bits 0–65, which U10 sends, puts bit 66 on the pin while it's still an input, and drives it one instruction after clock 97, the timing of every other bit.
+  - **The switch point (L1): bit 66.** In the simulator, both methods work from a 32 ns clock up and fail at 24 ns, the output loop's own limit; the real clock is 37.4 ns.
+  - **Each later block waits for CS high before its IRQ** (L1's finding, the owner's choice). A CS blip that splits a payload block leaves IRQ 0 set early. Without the wait, the output program takes that block's last clock as the next block's first command clock, and every later block arrives one bit late. No clock runs between blocks, so after the wait it stays in step.
+- **Today's injection has that weakness too** (L1, in the simulator): `clocked_output` has no CS wait. The owner's choice: the wait goes into today's `clocked_output` in a release of its own, with its own design questions (the plan's later releases).
+- **The name:** "Injection: standard / length-based". Standard is D36's count, and stays the default.
+- **The feasibility stage** (the owner's choices):
+  1. **A simulator prototype:** the detector and the output program in `tests/pio_sim.py`, with the cases of the research's §6. Tests only.
+  2. **A CLK capture test build,** from `diag-cs-timing`. The detector polls CLK every 12 ns and needs its high and low phases longer than that; nobody has measured them.
+     - A passive state machine samples CS and CLK every 4 ns, the detector's own rate, from the first rising CLK edge for about 1 ms: BS1 and the start of the first block, into a 64 KB buffer.
+     - The summary gives CLK's shortest high and low phase. The raw capture downloads per boot, like D44's record.
+     - Test builds only. The injection is D36's count, so every boot behaves as now.
+  3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, and the owner boots the other slot from the Firmware tab.
+  4. **Console series on both consoles,** on clean wiring only, about as T3's: about 10 cold boots per console with the built-in and Swiss, and a few quick power cycles on one.
+  5. **The owner decides** on a release from the results.
+- **Not in a release yet.** If one follows, its switch is in the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding.
+- **The code stays on its branches,** `diag-cs-timing` and `length-injection`, not merged into `main` during the stage.
 
 **Boot flow:**
 

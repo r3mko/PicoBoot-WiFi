@@ -15,7 +15,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
   - choose what boots next, rename, delete, and download a backup;
   - **Original IPL once:** the next power-on starts the console's own menu, to set the clock or the language.
 - **Firmware updates over Wi-Fi:** an update goes into the other firmware slot and starts on trial. If it doesn't work, PicoBoot-WiFi goes back to the previous firmware by itself.
-- **Settings and diagnostics:** the Wi-Fi name, password, country, channel and transmit power, auto-off, and the LED. A boot log shows each power-on's injection and its timing margin.
+- **Settings and diagnostics:** the Wi-Fi name, password, country, channel and transmit power, auto-off, and the LED. A boot log shows each power-on's injection and its timing margin, and warns of noise on CS.
 - **A running game is never disturbed:** a reboot of the Pico without a power cycle doesn't inject again.
 - **A command-line tool** does the same from a computer: [`tools/picoboot-wifi.py`](tools/picoboot-wifi.py).
 
@@ -37,9 +37,13 @@ The wiring is PicoBoot's (since its v0.4): see the wiring diagram in [PicoBoot's
 | GND | Ground |
 | VSYS (with 5 V) or 3V3 | Power, see below |
 
+**GP6 and GP7:** PicoBoot's wiring diagram joins GP6 and GP7 on the Data wire, since the first PicoBoot drove both to overpower the IPL chip's own output. A Pico wired that way works as it is: PicoBoot-WiFi drives GP6 alone, as PicoBoot now does, and leaves GP7 undriven.
+
 **Power: 5 V is recommended.** Wire the console's 5 V through a Schottky diode (e.g. 1N5819, SS110) to VSYS. The Pico's own regulator then powers the Wi-Fi chip. With the 3V3 wiring, the console's 3.3 V rail powers the radio as well: on the test console it measured 3.15 V with the radio on, below the 3.2 V where the Wi-Fi chip guarantees full radio performance. The 3V3 wiring still works, and it's supported. Use one of the two, not both.
 
 **Ground: keep the wire short.** Run the Pico's GND with a short wire to a ground point near U10. On one console, a long ground wire kept the payload from reaching the console. It showed in the boot log as far too many CS edges: tens or hundreds of thousands, where 225 more than the payload's transfers are expected (285 for the built-in gekkoboot).
+
+**Wires: short, thin and stranded.** Upstream PicoBoot asks for wires of at most about 10 cm (4 inches), of 26–28 AWG stranded wire; thick or single-core wire can break or damage the motherboard's pads ([troubleshooting](https://support.webhdx.dev/gc/picoboot/troubleshooting)). A flex cable or a quick-solder board at U10 is the better choice. The Diagnostics tab warns when a boot shows noise on CS.
 
 An existing PicoBoot or PicoBoot-DX installation keeps its wiring.
 
@@ -92,7 +96,7 @@ Install `picoboot-wifi-X.Y.Z.uf2` as above. The wiring stays the same, and the p
   - **Older versions** can be installed too, with a warning.
   - Also: switch slots, or download a backup of the running firmware.
 - **Settings:** the Wi-Fi name and password, the country, channel and transmit power, auto-off, the LED, a backup and restore of the settings (without the password), and a reboot.
-- **Diagnostics:** this boot, the injection's margin, and the boot log.
+- **Diagnostics:** this boot, the injection's margin, and the boot log, with a warning when a boot shows noise on CS (see [Wiring](#wiring)).
 
 **The LED:**
 - dark during the injection;
@@ -137,7 +141,7 @@ The JSON API is described in [docs/api.md](docs/api.md).
 | Forgotten Wi-Fi password, or settings that lock you out | Install `picoboot-wifi-X.Y.Z.uf2` again over USB. It resets the settings (the default password), the payload choice and the names, and leaves the payloads |
 | A firmware update that doesn't work | Nothing: on trial, its first crash brings the previous firmware back by itself. Or boot the other slot on the Firmware tab |
 | A payload that doesn't boot | Choose another payload or the built-in gekkoboot, or set *Original IPL once* |
-| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. Far more CS edges than expected (225 more than the payload's transfers, so 285 for the built-in gekkoboot) point at noise on CS: shorten the ground wire (see [Wiring](#wiring)) |
+| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. "Noise on CS" means more CS transfers than a clean boot (225 more than the payload's transfers, so 285 for the built-in gekkoboot): check the wiring, the ground wire first (see [Wiring](#wiring)) |
 | No Wi-Fi | Switch the console off and on: the Wi-Fi turns off 10 minutes after the last client, by default |
 
 ## Documentation

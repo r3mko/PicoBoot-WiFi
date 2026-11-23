@@ -70,7 +70,7 @@ Research done on 2026-11-08 for PicoBoot-WiFi (Pico 2 W only). **[inf]** marks a
 
 - **No public measurement** of the time from power-on to the first IPL read, or of how long the 224-pulse phase lasts.
 - **Related facts:**
-  - BS1 is 0x700 bytes and is fetched in 32-byte bursts (gc-ipl). [inf] 224 × 8 = 0x700, so the 224 skipped pulses are probably the BS1 fetch.
+  - BS1 is about 0x700 bytes, run straight from U10 8 bytes at a time, one transfer each: 224 × 8 = 0x700, so the 224 skipped pulses are the BS1 fetch (YAGCD and the Shuriken attack, [gc-docs.md](gc-docs.md) §2). This note first said 32-byte bursts (gc-ipl).
   - gekkoboot r9.1 notes: a ~1.5 MiB IPL transfer takes "about half a second or more"; 64 KiB takes about 20 ms.
   - The RP2350 leaves power-on reset 3–10 µs after its core supply rises. The crystal takes over 1 ms to start.
   - Third-party measurement: about 5 ms from reset to the application, then 1–3 ms to `main()` (see [boot-rom.md](boot-rom.md) §6).

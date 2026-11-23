@@ -13,15 +13,19 @@ The research behind [the design](../architecture.md), as the design cycle asks: 
 | [flash-from-ram.md](flash-from-ram.md) | 2026-11-15 | Reading flash during a program or erase (the chip, the QMI, the XIP cache), the phase 5 hang, a check in `storage.c` (release 1.0.2) |
 | [gekkoboot-dol.md](gekkoboot-dol.md) | 2026-11-15 | The built-in gekkoboot: a CI build of r9.4, not the release's; rebuilding the official DOL from the release (release 1.0.3) |
 | [dol-loader.md](dol-loader.md) | 2026-11-16 | A loader stub for ordinary `.dol` files (D43): the state at `0x81300000`, low memory, the caches, building it with binutils, a host test |
+| [weak-link.md](weak-link.md) | 2026-11-22 | The page on a weak link: abandoned requests hold the Pico's 8 TCP connections and 32 send segments while lwIP resends for minutes; the page's polling one request at a time with a back-off (release 1.1.2), and lwIP's options |
+| [wiring-quality.md](wiring-quality.md) | 2026-11-22 | A wiring-quality indicator for the releases: the shortest CS-high gap adds little, since every blip that shortens one is an extra CS transfer the counters count; a warning from the counts on the Diagnostics tab instead (release 1.1.2) |
 | [cs-timing-results.md](cs-timing-results.md) | 2026-11-22 | The CS timing series on both consoles (D44, step T3): the same timing to the nanosecond, BS1 gaps ~150 ns and a ~26.8 MHz EXI clock; the dev console's glitch is an unclean first rise of CS; no stall on quick power cycles; what it means for a gap filter |
 | [cs-timing-diagnostics.md](cs-timing-diagnostics.md) | 2026-11-22 | A diagnostic test build for CS timing (D44): a passive recorder times every CS period and notes CLK at each CS fall; BS1 and block timing fitted from the boot logs (its 32 MHz and ~1.3 µs gaps estimate corrected by the results); what its numbers would decide |
-| [main-console-tv.md](main-console-tv.md) | 2026-11-21 | The second console at its TV after release 1.1.1: clocked extra CS transfers on nearly every boot from noise outside the Pico; not the HDMI link, adapter or power brick, nor a CubeSB board at U10 or a new Pico; fixed by new, shorter wires (their length or joints, more likely than their gauge); stalls on quick power cycles |
+| [main-console-tv.md](main-console-tv.md) | 2026-11-21 | The second console at its TV after release 1.1.1: clocked extra CS transfers on nearly every boot, from noise whose source isn't known; not the HDMI link, adapter or power brick, nor a CubeSB board at U10 or a new Pico; fixed by new, shorter wires (their length or joints, more likely than their gauge); stalls on quick power cycles |
 | [cs-at-start-up.md](cs-at-start-up.md) | 2026-11-20 | Whether CS is meant to be high at power-up (no source says so), why the two consoles differ, RP2350-E9's part, and the false edge as a first rise that isn't clean; where the 224 comes from |
 | [cs-pull-up.md](cs-pull-up.md) | 2026-11-20 | D36's CS pull-up fails a second DOL-001; the clock-qualified count alone works on both consoles; a long ground wire as CS noise (release 1.1.1) |
+| [gc-docs.md](gc-docs.md) | 2026-11-23 | GameCube documents (YAGCD, the Shuriken attack, PicoBoot's wiring diagram) against this project's measurements: BS1 is the 224 transfers, the transfer shapes give a 26.76 MHz EXI clock, U10's pins; an injection point found by length, the Shuriken board's CS pull-up, the Pico overpowering U10 on the data line, GP6 and GP7 |
+| [length-injection.md](length-injection.md) | 2026-11-23 | The Shuriken method for PicoBoot-WiFi: finding the first block by its length (a 97th clock while CS is low) instead of a count of 224; no pin lifted, no payload change; guards the BS1 phase where noise breaks boots today; a polling PIO detector, the PIO budget, a user switch, testing, options |
 
 ## What we already run: PicoBoot-DX v0.10
 
-- **Code:** about 10 KB of C and PIO (`~/GitHub/PicoBoot-DX`), plus a built-in 60 KB gekkoboot.
+- **Code:** about 10 KB of C and PIO, plus a built-in 60 KB gekkoboot.
 - **What it does:**
   - boosts the clock to 250 MHz;
   - skips 224 CS pulses, then streams the payload into the PIO with DMA;

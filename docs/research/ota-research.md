@@ -1,6 +1,6 @@
 # Wi-Fi OTA for PicoBoot on Pico W / Pico 2 W: research
 
-Research done on 2026-11-07, in the PicoBoot-DX project (`~/GitHub/PicoBoot-DX`). Nothing has been implemented or decided yet.
+Research done on 2026-11-07, in the PicoBoot-DX project ([r3mko/PicoBoot-DX](https://github.com/r3mko/PicoBoot-DX)). Nothing has been implemented or decided yet.
 
 > **Update 2026-11-08:** the follow-up research in this folder corrects three points:
 > - **USB payload UF2s:** with a partition table, existing payload UF2s only work after repacking with the absolute family (and RP2350-E10 hits A2 chips). See [boot-rom.md](boot-rom.md) §5.
@@ -104,7 +104,7 @@ Whatever goes wrong, the board can't be permanently bricked: USB BOOTSEL is in R
 3. **Phase 2:** firmware OTA on the Pico 2 W through the boot ROM.
 4. **Phase 3:** a bootloader for the Pico W, or decide it isn't worth losing a third of the payload area.
 
-## Reference: PicoBoot-DX (`~/GitHub/PicoBoot-DX`, v0.10)
+## Reference: PicoBoot-DX ([r3mko/PicoBoot-DX](https://github.com/r3mko/PicoBoot-DX), v0.10)
 
 **Build environment:**
 - **SDK and tools:** Pico SDK 2.3.1 and picotool 2.3.1.

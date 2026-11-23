@@ -222,6 +222,21 @@ A boot with a glitch or a blip shifts the split at transfer 224 by those. Each t
 
 `GET /api/test/cs-timing` downloads the current boot's raw record: two 32-bit little-endian words per CS low period (`src/firmware/timing_summary.h`). It's in RAM, so any restart of the Pico loses it; a boot without an injection has none (409 `not_recorded`). A POST gets 405.
 
+Test builds also add D47's CLK capture (plan step L2) to each report, as a `clk_capture` object. CS and CLK are sampled every PIO cycle (4 ns at 250 MHz) from the first rising CLK edge, for about 1 ms: all of BS1 and the first block's start. Times are in nanoseconds, `null` where there was nothing to measure:
+
+| Field | Meaning |
+|---|---|
+| `samples` | Samples captured: 262,144 (1.05 ms) once the buffer is full |
+| `transfers` | CS low periods seen, the first counted although the capture starts inside it |
+| `bs1_edges` | Rising CLK edges with CS low in transfers 1–224, after the first one, which starts the capture: 21,503 for a whole BS1 |
+| `bs1_high_min_ns`, `bs1_high_max_ns`, `bs1_low_min_ns`, `bs1_low_max_ns` | CLK's whole high and low phases in transfers 1–224 |
+| `block_edges` | The same in transfer 225, the first block, as far as it was captured |
+| `block_high_min_ns`, `block_high_max_ns`, `block_low_min_ns`, `block_low_max_ns` | CLK's whole high and low phases in transfer 225 |
+
+A phase is whole when a CLK edge starts and ends it inside one CS low period. Each is a whole number of samples, so it reads up to one sample (4 ns) short or long.
+
+`GET /api/test/clk-capture` downloads the current boot's raw capture: 32-bit little-endian words of 16 samples each, the first in bits 31–30, with CS in bit 0 and CLK in bit 1 of each sample (`src/firmware/clk_summary.h`). Like the CS timing record, it's in RAM: any restart of the Pico loses it, and a boot without an injection has none (409 `not_recorded`). A POST gets 405.
+
 ## POST /api/firmware
 
 An over-the-air update (D11). The body is an update file ([update-format.md](update-format.md)), sent with `Content-Type: application/octet-stream`; the Host rule applies as for every POST. The 1024-byte body limit doesn't apply.

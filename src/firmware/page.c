@@ -17,6 +17,7 @@
 #include "layout.h"
 #if PICOBOOT_WIFI_TEST_BUILD
 #include "timing_summary.h"
+#include "clk_summary.h"
 #endif
 #include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
@@ -216,6 +217,21 @@ static void put_timing(out_t *o, const timing_summary_t *t) {
     }
     put(o, "; CS falls with CLK high: %lu\n", (unsigned long)t->clk_high_falls);
 }
+
+// D47's CLK capture summary (plan step L2): CLK's whole high and low phases
+_Static_assert(CLK_NONE == TIMING_NONE, "put_ns() and fmt_ns() show both as nothing measured");
+
+static void put_clk(out_t *o, const clk_summary_t *c) {
+    char a[16], b[16], d[16], e[16];
+    put(o, "  CLK capture (D47)  : %lu samples, %lu CS low periods\n", (unsigned long)c->samples,
+        (unsigned long)c->transfers);
+    put(o, "    BS1 (1-224)      : %lu rising edges; high %s to %s, low %s to %s\n", (unsigned long)c->bs1_edges,
+        fmt_ns(a, sizeof(a), c->bs1_high_min_ns), fmt_ns(b, sizeof(b), c->bs1_high_max_ns),
+        fmt_ns(d, sizeof(d), c->bs1_low_min_ns), fmt_ns(e, sizeof(e), c->bs1_low_max_ns));
+    put(o, "    Transfer 225     : %lu rising edges; high %s to %s, low %s to %s\n", (unsigned long)c->block_edges,
+        fmt_ns(a, sizeof(a), c->block_high_min_ns), fmt_ns(b, sizeof(b), c->block_high_max_ns),
+        fmt_ns(d, sizeof(d), c->block_low_min_ns), fmt_ns(e, sizeof(e), c->block_low_max_ns));
+}
 #endif
 
 static void put_settings(out_t *o, const char *label, const settings_t *s, bool stored) {
@@ -300,6 +316,7 @@ size_t page_render(char *buf, size_t size) {
         put_counts(&o, r);
 #if PICOBOOT_WIFI_TEST_BUILD
         put_timing(&o, &r->timing);
+        put_clk(&o, &r->clk);
 #endif
     }
 

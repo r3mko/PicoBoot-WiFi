@@ -17,9 +17,10 @@ _Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, 
 
 #define BOOTLOG_MAGIC   0x31474C42u     // "BLG1"
 #if PICOBOOT_WIFI_TEST_BUILD
-// Test builds' reports carry D44's timing summary: a format of their own, so test builds and
-// releases don't read each other's entries (switching starts the log afresh)
-#define BOOTLOG_VERSION (0x8000u | 4u)
+// Test builds' reports carry D44's timing summary and D47's CLK summary: a format of their own, so
+// test builds and releases don't read each other's entries (switching starts the log afresh). Bits
+// 8-14 count the test builds' formats: 0 with D44's summary only, 1 with the CLK summary too
+#define BOOTLOG_VERSION (0x8000u | 0x100u | 4u)
 #else
 #define BOOTLOG_VERSION 4               // Bump when boot_report_t's layout changes (2: payload_chosen;
                                         // 3: loader_flags; 4: D17 and "original IPL once"). 1.1.1 dropped
@@ -32,7 +33,7 @@ _Static_assert(LAYOUT_BOOTLOG_SIZE / RINGLOG_ENTRY_SIZE <= RINGLOG_MAX_ENTRIES, 
 
 _Static_assert(sizeof(boot_report_t) <= RINGLOG_MAX_PAYLOAD, "a boot report must fit a log entry");
 #if PICOBOOT_WIFI_TEST_BUILD
-_Static_assert(sizeof(boot_report_t) == 60 + sizeof(timing_summary_t), "the test builds' boot log format");
+_Static_assert(sizeof(boot_report_t) == 60 + sizeof(timing_summary_t) + sizeof(clk_summary_t), "the test builds' boot log format");
 #else
 _Static_assert(sizeof(boot_report_t) == 60, "boot_report_t is stored in the boot log: its size is part of the format");
 #endif

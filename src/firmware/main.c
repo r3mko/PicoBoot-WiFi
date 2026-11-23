@@ -26,6 +26,7 @@
 #include "counters.h"
 #if PICOBOOT_WIFI_TEST_BUILD
 #include "timing.h"
+#include "clk_capture.h"
 #endif
 #include "report.h"
 #include "wifiblob.h"
@@ -136,10 +137,12 @@ static void inject(const injection_payload_t *payload) {
     counters_init();
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_init();              // D44: next to the counters, and as passive
+    clk_capture_init();         // D47, plan step L2: the same
 #endif
     counters_start();           // The counters run before the injection, so they see every edge
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_start();
+    clk_capture_start();
 #endif
     injection_go();
 
@@ -175,11 +178,13 @@ static void inject(const injection_payload_t *payload) {
     counters_stop();
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_stop();
+    clk_capture_stop();
 #endif
     report.words_delivered = (uint32_t)(payload->count - injection_words_left());
     injection_finish();
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_summary(&report.timing);
+    clk_capture_summary(&report.clk);
 #endif
 }
 
@@ -323,6 +328,7 @@ int main(void) {
     report.payload_chosen = BOOTCTL_NONE;
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_summary(&report.timing);         // D44: "nothing measured", unless inject() records a read
+    clk_capture_summary(&report.clk);       // D47: the same for the CLK capture
 #endif
     if (report.power_on) {
         bootctl_t bootctl;

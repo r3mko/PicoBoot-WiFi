@@ -22,6 +22,7 @@
 #if PICOBOOT_WIFI_TEST_BUILD
 #include <stdio.h>
 #include "timing.h"
+#include "clk_capture.h"
 #endif
 #include "pico.h"                       // First: the board sets the chip, which platform_defs.h reads
 #include "hardware/regs/addressmap.h"
@@ -247,6 +248,27 @@ static void put_timing(json_out_t *j, const timing_summary_t *t) {
     json_int(j, "clk_high_falls", (long)t->clk_high_falls);
     json_object_end(j);
 }
+
+// Test builds: D47's CLK capture summary (plan step L2), times in nanoseconds; null where there was
+// nothing to measure
+_Static_assert(CLK_NONE == TIMING_NONE, "put_ns() and fmt_ns() show both as nothing measured");
+
+static void put_clk(json_out_t *j, const clk_summary_t *c) {
+    json_object_begin(j, "clk_capture");
+    json_int(j, "samples", (long)c->samples);
+    json_int(j, "transfers", (long)c->transfers);
+    json_int(j, "bs1_edges", (long)c->bs1_edges);
+    put_ns(j, "bs1_high_min_ns", c->bs1_high_min_ns);
+    put_ns(j, "bs1_high_max_ns", c->bs1_high_max_ns);
+    put_ns(j, "bs1_low_min_ns", c->bs1_low_min_ns);
+    put_ns(j, "bs1_low_max_ns", c->bs1_low_max_ns);
+    json_int(j, "block_edges", (long)c->block_edges);
+    put_ns(j, "block_high_min_ns", c->block_high_min_ns);
+    put_ns(j, "block_high_max_ns", c->block_high_max_ns);
+    put_ns(j, "block_low_min_ns", c->block_low_min_ns);
+    put_ns(j, "block_low_max_ns", c->block_low_max_ns);
+    json_object_end(j);
+}
 #endif
 
 static void put_report(json_out_t *j, const char *key, const boot_report_t *r, uint32_t boot) {
@@ -280,6 +302,7 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_bool(j, "crash_fallback", r->loader_flags & BOOTINFO_CRASH_FALLBACK);
 #if PICOBOOT_WIFI_TEST_BUILD
     put_timing(j, &r->timing);
+    put_clk(j, &r->clk);
 #endif
     json_object_end(j);
 }
@@ -606,11 +629,13 @@ static int backup_open(const char *path, net_file_t *file, char *out, size_t siz
 }
 
 #if PICOBOOT_WIFI_TEST_BUILD
-// Test builds: GET /api/test/cs-timing, this boot's raw CS timing record (D44, timing_summary.h)
+// Test builds: GET /api/test/cs-timing, this boot's raw CS timing record (D44, timing_summary.h), and
+// GET /api/test/clk-capture, its raw CLK capture (D47, plan step L2, clk_summary.h)
 #define TIMING_PATH "/api/test/cs-timing"
+#define CAPTURE_PATH "/api/test/clk-capture"
 
 static bool test_handles(const char *path) {
-    return backup_handles(path) || strcmp(path, TIMING_PATH) == 0;
+    return backup_handles(path) || strcmp(path, TIMING_PATH) == 0 || strcmp(path, CAPTURE_PATH) == 0;
 }
 
 static int test_open(const char *path, net_file_t *file, char *out, size_t size, size_t *len) {
@@ -625,6 +650,20 @@ static int test_open(const char *path, net_file_t *file, char *out, size_t size,
         snprintf(file->filename, sizeof(file->filename), "picoboot-cs-timing-boot-%lu.bin",
                  (unsigned long)info->boot_number);
         file->parts[0].data = (const uint8_t *)record;
+        file->parts[0].length = words * 4;
+        return 200;
+    }
+    if (strcmp(path, CAPTURE_PATH) == 0) {
+        uint32_t words;
+        const uint32_t *capture = clk_capture_record(&words);   // Stays put until the Pico restarts
+        if (!words) {
+            return error(out, size, len, 409, "not_recorded",
+                         "no CLK capture: this boot had no injection, or the Pico restarted since", NULL);
+        }
+        file->type = "application/octet-stream";
+        snprintf(file->filename, sizeof(file->filename), "picoboot-clk-capture-boot-%lu.bin",
+                 (unsigned long)info->boot_number);
+        file->parts[0].data = (const uint8_t *)capture;
         file->parts[0].length = words * 4;
         return 200;
     }
@@ -669,7 +708,7 @@ int api_handle(bool post, const char *path, const char *body, size_t body_len,
         return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // GETs are downloads
     }
 #if PICOBOOT_WIFI_TEST_BUILD
-    if (strcmp(path, TIMING_PATH) == 0) {
+    if (strcmp(path, TIMING_PATH) == 0 || strcmp(path, CAPTURE_PATH) == 0) {
         return error(out, out_size, out_len, 405, "method_not_allowed", "use GET", NULL);   // A download (D44)
     }
 #endif

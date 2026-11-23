@@ -43,8 +43,10 @@ pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/counters.pio)
 # The CS timing recorder (design D44): its header in every build, for the PIO simulator's tests; its
 # code in test builds only, so release builds don't change
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/timing.pio)
+# The CLK capture (design D47, plan step L2): the same, header in every build, code in test builds
+pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/clk_capture.pio)
 if(PICOBOOT_WIFI_TEST_BUILD)
-    set(TIMING_SOURCES timing.c timing_summary.c)
+    set(TIMING_SOURCES timing.c timing_summary.c clk_capture.c clk_summary.c)
     target_sources(firmware PRIVATE ${TIMING_SOURCES})
     set_source_files_properties(${TIMING_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 endif()

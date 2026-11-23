@@ -9,6 +9,7 @@
 #include <stdint.h>
 #if PICOBOOT_WIFI_TEST_BUILD
 #include "timing_summary.h"
+#include "clk_summary.h"
 #endif
 
 // What happened at this boot (design D22 diagnostics, D31), kept in RAM for the report page.
@@ -58,5 +59,6 @@ typedef struct {
     bool cs_high_at_ready;      // CS level at "PIO ready" (low where the console leaves CS undriven at first)
 #if PICOBOOT_WIFI_TEST_BUILD
     timing_summary_t timing;    // Test builds only: the CS timing summary (design D44)
+    clk_summary_t clk;          // Test builds only: the CLK capture's summary (design D47, plan step L2)
 #endif
 } boot_report_t;

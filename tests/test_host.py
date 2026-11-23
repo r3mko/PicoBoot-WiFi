@@ -36,6 +36,7 @@ PROGRAMS = {
     "test_wifiblob.c": [],
     "test_dhcpserver.c": ["firmware/net/dhcpserver/dhcpserver.c"],
     "test_timing_summary.c": ["firmware/timing_summary.c"],
+    "test_clk_summary.c": ["firmware/clk_summary.c"],
 }
 
 

@@ -1,0 +1,22 @@
+;
+; Copyright (c) 2026 Remko Kleinjan
+;
+; SPDX-License-Identifier: GPL-2.0-only
+;
+; Test builds only (design D47, plan step L2): a passive capture of CS and CLK, sampled every PIO
+; cycle (4 ns at 250 MHz), the rate at which length-based injection's detector would look at CLK.
+; It runs in pio1 next to the counters and D44's recorder, and only reads its pins.
+;
+; IN_BASE = CS, so each `in pins, 2` takes CS in bit 0 and CLK in bit 1. Shift left, autopush at
+; 32 bits: 16 samples a word, the first in bits 31-30 (clk_summary.h). It starts at the first rising
+; CLK edge, the first transfer's first clock, and samples until the DMA has filled its buffer: then
+; the full RX FIFO stalls it, until the firmware stops it after the injection.
+
+.define CLK_PIN 5               ; EXI clock: the same pin as injection.pio's CLK_PIN
+
+.program clk_capture
+    wait 0 gpio CLK_PIN         ; A rising edge, so a CLK that is high from the start doesn't count
+    wait 1 gpio CLK_PIN
+.wrap_target
+    in pins, 2                  ; One sample a cycle
+.wrap

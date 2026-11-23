@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.26, 2026-11-22 |
-| **Design** | [architecture.md](architecture.md), Approved v1.18 |
+| **Status** | Approved v1.27, 2026-11-23 |
+| **Design** | [architecture.md](architecture.md), Approved v1.19 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -38,6 +38,7 @@
 | v1.24 | 2026-11-22 | Approved by the owner. Release 1.1.2's R1 as built: D45's and D46's rules in the page's own script, no `rules.js` (the owner's choices, design v1.17); a syntax check of the page's script in Node; D45's warning checked by hand in R4, with made-up diagnostics. |
 | v1.25 | 2026-11-22 | Approved by the owner. Release 1.1.2's code review (R3), its fixes and the owner's choices from it (design v1.18): fresh status requests after an action, polling that carries on after an error, a success that brings the 5 s back, the warning's wording kept with boot 108 named as an exception, a browser-style parse in the page's test. |
 | v1.26 | 2026-11-22 | Approved by the owner. Release 1.1.2 as built (see its "As built" note): the console test, which passed on both consoles, the noise warning's hand check, and the weak-link test, where a reload after the loss went through at once on 1.1.2 and took 30 s to 2 minutes on 1.1.1's page. |
+| v1.27 | 2026-11-23 | Approved by the owner. Length-based injection, a feasibility stage (D47, design v1.19): a simulator prototype, a CLK capture test build and its console series, a length-only test build and its console series, each test build with a code review, then the owner's decision on a release. |
 
 ## How this plan works
 
@@ -790,6 +791,31 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 - **The main console's update came from a test build,** not from 1.1.1: the one in its slot B. The dev console's came from 1.1.1.
 - **The weak-link baseline was that test build,** whose page and network code are 1.1.1's.
 - **The weak-link profile:** 80% loss both ways for 2 minutes, with a power cycle before the first of each firmware's 3 runs. 100% loss would have tested nothing, as no request would reach the Pico.
+
+## Length-based injection: feasibility (D47)
+
+**Branches:** `length-injection` from `main` (L1, L6), and `diag-cs-timing` (L2). **Research:** [length-injection.md](research/length-injection.md). **Design:** D47 (v1.19). **Done when:** both console series ran, the results are written up, and the owner has decided what follows.
+
+**The owner's choices (2026-11-23):**
+- a feasibility stage first, a release decided from its results;
+- CLK's phases measured with a capture test build first, then the length test build;
+- the length method only in its test build, with no switch;
+- console series about as T3's, on clean wiring only;
+- the switch point chosen in the simulator;
+- the name "Injection: standard / length-based";
+- the code on its own branches, not merged into `main` during the stage.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| L1 | **Simulator prototype** on `length-injection`, tests only:<br>• `tests/pio_sim.py` gains `mov` from pins with `IN_COUNT`, `jmp !y`, and an IRQ to the neighbouring PIO block (`irq prev`);<br>• the detector and the output program with its first-block entry, as `.pio` programs the firmware doesn't load yet;<br>• the cases: a clean boot, the dev console's false edge, a false edge with CLK high, split BS1 transfers, a blip early in the first block, noise during the payload, CS held low across a gap;<br>• the switch point: the earliest one with room to spare, and its margin | Opus | The cases pass, the switch point is named, CI passes |
+| L2 | **CLK capture test build** on `diag-cs-timing`, test builds only:<br>• `clk_capture`, a passive state machine in pio1 (`in pins, 2` every cycle, autopush), started at the first rising CLK edge, with a DMA channel into a 64 KB buffer in `.uninitialized_data`. The release uses about 82 KB of RAM, below a heap limit at 512 KB;<br>• the summary: CLK's shortest high and low phase, in BS1 and in the captured part of the first block, and the rising edges captured;<br>• the summary on the test page and in `/api/diagnostics`; the raw capture at `/api/test/clk-capture`;<br>• simulator tests for the capture and the summary | Opus | CI passes |
+| L3 | **Code review** of L2 | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| L4 | **Capture series** with L2's test build, installed over Wi-Fi on both consoles:<br>• about 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• the boot log read once per console, and the raw capture of a few boots downloaded;<br>• afterwards back to 1.1.2 | Owner | The logs and captures are in |
+| L5 | **CLK results** in `docs/research/length-injection-results.md`: CLK's high and low phases on both consoles against the detector's 12 ns poll; the detector adjusted if the margin is too thin | Opus | The owner approved the note |
+| L6 | **Length test build** on `length-injection`, test builds only:<br>• the length method only: the detector in pio1 and the output program in pio0, from L1, adjusted after L5;<br>• the method shown on the test page and in "This boot";<br>• L1's cases against the firmware's own set-up | Opus | CI passes |
+| L7 | **Code review** of L6 | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| L8 | **Console series** with L6's test build, installed over Wi-Fi on both consoles, on clean wiring:<br>• about 10 cold boots each, 5 with the built-in and 5 with Swiss;<br>• on one console, 3 quick power cycles as well;<br>• the boot log read once per console;<br>• afterwards back to 1.1.2 | Owner | The logs are in |
+| L9 | **Results and the decision:** the results note completed; the owner decides on a release with the switch (the research's §5 and §7), on changes, or on nothing, and where the code goes | Opus, then the owner | Decided; the plan updated |
 
 ## Local builds and CI
 

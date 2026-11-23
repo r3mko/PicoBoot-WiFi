@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.18, 2026-11-22 |
+| **Status** | Approved v1.19, 2026-11-23 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -32,6 +32,7 @@
 | v1.16 | 2026-11-22 | Approved by the owner. Release 1.1.2: D45, a noise warning from the CS counts, from the research in [wiring-quality.md](research/wiring-quality.md): the Diagnostics tab compares each boot's count with a clean boot's and warns of noise on CS (the owner chose it over the shortest CS-high gap, which adds little to the counts); D46, the page's status polling one request at a time with a back-off, from the research in [weak-link.md](research/weak-link.md). |
 | v1.17 | 2026-11-22 | Approved by the owner. D45 and D46 as built (release 1.1.2, step R1): both rules are in the page's own script, and there's no `rules.js` (the owner's choices). D45's warning is checked by hand, with made-up diagnostics, like the page's other warnings. |
 | v1.18 | 2026-11-22 | Approved by the owner. D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
+| v1.19 | 2026-11-23 | Approved by the owner. D47: length-based injection, a feasibility stage first, from the research in [length-injection.md](research/length-injection.md). The owner chose a simulator prototype, a CLK capture test build from `diag-cs-timing` (CS and CLK every 4 ns), a length-only test build on its own branch, console series as T3's on clean wiring, the switch point from the simulator, and the name "Injection: standard / length-based". |
 
 ## How to read the decisions
 
@@ -91,6 +92,7 @@ Every decision has a number (D1, D2, …) that stays the same in later versions.
 | D44 | CS timing diagnostics | Decision | Test builds time every CS period of the IPL read with a passive recorder, and keep a summary per boot; releases unchanged |
 | D45 | Noise warning | Decision | The Diagnostics tab warns when a boot counts more CS transfers than a clean one: noise on CS (release 1.1.2) |
 | D46 | Status polling | Decision | The page asks for the status one request at a time, and backs off after a failure (release 1.1.2) |
+| D47 | Length-based injection | Decision | A second way to find the first IPL block, by its length instead of a count of 224; a feasibility stage first: a simulator prototype, a CLK capture test build, a length test build, then the owner decides on a release |
 
 ## 1. Goal and scope
 
@@ -320,6 +322,28 @@ These follow from the research and bind every decision below.
   - All its connections share one priority, so a new one can't push out a stuck one.
 - **The page only:** the schedule is a one-line function next to the poller, in the page's own script.
 - **Not changed for now:** lwIP's `TCP_MAXRTX`, the web server's close, the number of connections.
+
+**D47 (Decision): length-based injection, a feasibility stage first** (2026-11-23, the owner's choices; research in [length-injection.md](research/length-injection.md) and [gc-docs.md](research/gc-docs.md)).
+- **The method,** after the Shuriken attack: the first transfer still running after 96 clocks is the first IPL block. BS1's fetches are 96 clocks, a 32-bit command and 8 bytes; a block is 8224.
+  - **The Pico takes the data line over inside the first block's 32-byte header,** which BS1 doesn't use. Later blocks start after the command, as now.
+  - **No pin lifted and no payload change:** PicoBoot already drives the data line against U10. The DMA stays as it is, and the output program drops the header bits U10 has sent.
+  - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers, which failed the second console's boots at its TV.
+- **The programs** (the research's sketch):
+  - **The detector,** in pio1 next to D31's counters: it polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock, and raises an IRQ in pio0 (`irq prev`) at the 97th rising edge with CS still low.
+  - **The output program,** in pio0: `clocked_output` with an entry for the first block.
+  - **The switch point** inside the header is chosen in the simulator, where the output program has room to spare.
+- **The name:** "Injection: standard / length-based". Standard is D36's count, and stays the default.
+- **The feasibility stage** (the owner's choices):
+  1. **A simulator prototype:** the detector and the output program in `tests/pio_sim.py`, with the cases of the research's §6. Tests only.
+  2. **A CLK capture test build,** from `diag-cs-timing`. The detector polls CLK every 12 ns and needs its high and low phases longer than that; nobody has measured them.
+     - A passive state machine samples CS and CLK every 4 ns, the detector's own rate, from the first rising CLK edge for about 1 ms: BS1 and the start of the first block, into a 64 KB buffer.
+     - The summary gives CLK's shortest high and low phase. The raw capture downloads per boot, like D44's record.
+     - Test builds only. The injection is D36's count, so every boot behaves as now.
+  3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, and the owner boots the other slot from the Firmware tab.
+  4. **Console series on both consoles,** on clean wiring only, about as T3's: about 10 cold boots per console with the built-in and Swiss, and a few quick power cycles on one.
+  5. **The owner decides** on a release from the results.
+- **Not in a release yet.** If one follows, its switch is in the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding.
+- **The code stays on its branches,** `diag-cs-timing` and `length-injection`, not merged into `main` during the stage.
 
 **Boot flow:**
 

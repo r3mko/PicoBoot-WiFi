@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.20, 2026-11-23 |
+| **Status** | Approved v1.21, 2026-11-23 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -34,6 +34,7 @@
 | v1.18 | 2026-11-22 | Approved by the owner. D45 and D46 after release 1.1.2's code review (R3): D45 names boot 108 as a known exception (the wording stays, the owner's choice); D46 sends a request of its own after an action, drops older answers, carries on after an error, and a success brings a longer wait back to 5 s. |
 | v1.19 | 2026-11-23 | Approved by the owner. D47: length-based injection, a feasibility stage first, from the research in [length-injection.md](research/length-injection.md). The owner chose a simulator prototype, a CLK capture test build from `diag-cs-timing` (CS and CLK every 4 ns), a length-only test build on its own branch, console series as T3's on clean wiring, the switch point from the simulator, and the name "Injection: standard / length-based". |
 | v1.20 | 2026-11-23 | Approved by the owner. D47 after plan step L1, the simulator prototype: the detector and the output program as built (14 and 26 instructions), the switch at bit 66, and L1's finding: a CS blip that splits a payload block makes every later block one bit late, in today's `clocked_output` too. The owner's choice: the prototype waits for CS high before each later block's IRQ, and today's `clocked_output` gets the wait in a release of its own. |
+| v1.21 | 2026-11-23 | Approved by the owner. D47's CLK capture after its code review (plan step L3), the owner's choices: it starts at the first rising CLK edge inside a CS low period, its summary also counts BS1's phases by length, and `diag-cs-timing` has release 1.1.2 merged in, with a CI step that compiles a test build. |
 
 ## How to read the decisions
 
@@ -339,9 +340,10 @@ These follow from the research and bind every decision below.
 - **The feasibility stage** (the owner's choices):
   1. **A simulator prototype:** the detector and the output program in `tests/pio_sim.py`, with the cases of the research's §6. Tests only.
   2. **A CLK capture test build,** from `diag-cs-timing`. The detector polls CLK every 12 ns and needs its high and low phases longer than that; nobody has measured them.
-     - A passive state machine samples CS and CLK every 4 ns, the detector's own rate, from the first rising CLK edge for about 1 ms: BS1 and the start of the first block, into a 64 KB buffer.
-     - The summary gives CLK's shortest high and low phase. The raw capture downloads per boot, like D44's record.
+     - A passive state machine samples CS and CLK every 4 ns, the detector's own rate, from the first rising CLK edge inside a CS low period, for about 1 ms: BS1 and the start of the first block, into a 64 KB buffer. A CLK glitch while CS is high doesn't start it (L3).
+     - The summary gives CLK's shortest and longest high and low phase, and BS1's phases counted by length, 1–7 and 8 or more samples, so one glitch shows as one (L3). The raw capture downloads per boot, like D44's record.
      - Test builds only. The injection is D36's count, so every boot behaves as now.
+     - The branch has release 1.1.2 merged in, so the test build has its page; its CI also compiles a test build (L3).
   3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, and the owner boots the other slot from the Firmware tab.
   4. **Console series on both consoles,** on clean wiring only, about as T3's: about 10 cold boots per console with the built-in and Swiss, and a few quick power cycles on one.
   5. **The owner decides** on a release from the results.

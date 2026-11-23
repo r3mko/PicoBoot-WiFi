@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.28, 2026-11-23 |
-| **Design** | [architecture.md](architecture.md), Approved v1.20 |
+| **Status** | Approved v1.29, 2026-11-23 |
+| **Design** | [architecture.md](architecture.md), Approved v1.21 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -40,6 +40,7 @@
 | v1.26 | 2026-11-22 | Approved by the owner. Release 1.1.2 as built (see its "As built" note): the console test, which passed on both consoles, the noise warning's hand check, and the weak-link test, where a reload after the loss went through at once on 1.1.2 and took 30 s to 2 minutes on 1.1.1's page. |
 | v1.27 | 2026-11-23 | Approved by the owner. Length-based injection, a feasibility stage (D47, design v1.19): a simulator prototype, a CLK capture test build and its console series, a length-only test build and its console series, each test build with a code review, then the owner's decision on a release. |
 | v1.28 | 2026-11-23 | Approved by the owner. D47's step L1 as built (see the section's "As built so far"): the simulator prototype, the switch at bit 66, L1's finding about noise during the payload, and the owner's choice from it. For later releases: a wait for CS high in today's `clocked_output`. |
+| v1.29 | 2026-11-23 | Approved by the owner. D47's steps L2 and L3 as built (the section's "As built so far"): the CLK capture test build, and its code review's findings with the owner's choices. |
 
 ## How this plan works
 
@@ -823,13 +824,33 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 - **L1 (2026-11-23)** in `436f837` on `length-injection`:
   - `src/firmware/pio/length.pio`, assembled in the firmware build but not loaded: the detector (14 instructions) and the output program (26);
   - the simulator gains `mov` from pins with `IN_COUNT`, `mov` from ISR, `jmp !y`, `irq prev` and `next` between linked PIO blocks, and a lead-in for the console model;
-  - `tests/test_length_injection.py`: a full-size clean boot, the dev console's start, a false edge while CLK is high, split BS1 fetches, noise during the payload, a blip early in the first block, CS held low across a gap, and the switch timing, each against today's count where they differ. All 295 tests pass. CI comes with the branch's first push.
+  - `tests/test_length_injection.py`: a full-size clean boot, the dev console's start, a false edge while CLK is high, split BS1 fetches, noise during the payload, a blip early in the first block, CS held low across a gap, and the switch timing, each against today's count where they differ. All 295 tests pass. CI passed on the branch's first push.
 - **The results:**
   - **The switch point: bit 66.** It goes on the line 3 cycles after clock 97 rises, as every other bit does: 5 cycles before the console reads it with a 32 ns clock, about 6.3 (25 ns) with the real 37.4 ns [inf]. Both methods fail at 24 ns, the output loop's own limit.
   - **What the length method ignores** (in the simulator): the dev console's false edge, a false edge while CLK is high (D36's known limit, which the count takes), and noise that splits BS1 fetches (which the count takes).
   - **Its own weak spots:** a CS blip the detector sees early in the first block, about 3.6 µs, and CS held low across a BS1 gap. A blip during CLK's high phase it doesn't see, which does no harm.
   - **L1's finding:** a CS blip that splits a payload block makes today's `clocked_output` take that block's last clock as the next block's first command clock, so every later block is one bit late. Research notes that called noise during the payload harmless are corrected.
 - **The owner's choice:** the prototype waits for CS high before each later block's IRQ, which fixes it in the simulator. Today's `clocked_output` gets the same wait in a release of its own (later releases).
+- **L2 (2026-11-23)** in `1383c4e` on `diag-cs-timing`:
+  - `pio/clk_capture.pio`, pio1's fourth state machine, and a DMA channel into a 64 KB buffer: 262,144 samples, 1.05 ms;
+  - `clk_summary.c`, CLK's whole phases in BS1 and in transfer 225;
+  - the summary in the test builds' boot report (log format `0x8104`), in `/api/diagnostics` as `clk_capture`, and on the test page; the raw capture at `GET /api/test/clk-capture`;
+  - tests in the PIO simulator and a host test. A `1.1.3-dev` build compiled without warnings. CI passed.
+- **L3 (2026-11-23):** a fresh Opus 5.5 reviewer found no outright bug, and the release build byte for byte unchanged. `main` was merged into the branch in `b394505`, and the fixes went in `60925ce`. All 299 tests pass, the summary's host test also under ASan and UBSan.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Risk:** any rising CLK edge started the capture. A glitch long before BS1 would waste it; a stray edge just before BS1 would shift its summary by a transfer, with no sign | Fixed (the owner's choice): it starts at the first rising CLK edge inside a CS low period, and starts over if CS rose first (6 instructions; pio1 then holds 26 of 32). The summary takes its starting state from the first sample |
+| 2 | **Risk:** one glitch set the minimum, and L5 couldn't tell it from a tight duty cycle without the raw capture | Fixed (the owner's choice): BS1's whole high and low phases are also counted by length, 1–7 and 8 or more samples. The report is 192 of 240 bytes; the diagnostics answer's worst case is 49,544 bytes, within the test builds' 64 KB |
+| 3 | **Risk (low, inferred):** in the first block's part, a DMA stall could drop samples unseen | Accepted: during BS1 the injection's DMA is idle, so BS1's figures can't be affected. L5 rests on them |
+| 4 | **Test gap:** a host test's comment was wrong, and its check couldn't tell | Fixed: the phase has a length of its own |
+| 5 | **Doc gap:** a blip in BS1 shifts the split at transfer 225; a low phase takes in a pause of CLK | Fixed in `docs/api.md` |
+| 6 | **Overstated:** "may be 64 KB" for the diagnostics answer, whose worst case was 44,891 bytes | Moot after finding 2: the worst case is now 49,544 bytes, over the old 49,152 |
+| 7 | **Nit:** the 409's wording missed a boot that saw no clock | Fixed |
+| 8 | **Test gap:** CI never compiled test-build code | Fixed on this branch (the owner's choice): CI compiles a `-dev` copy too, without warnings, and checks its layout |
+| 9 | **Test gaps:** no end-to-end test from the capture to the C summary; host cases missing | Fixed: an end-to-end test through `clk_summarize()`; host cases for a start with CS high, a one-sample glitch, a blip in BS1 and transfer 226; tests for a CLK glitch before BS1 and the dev console's start |
+| 10 | **Process:** the branch lacked 1.1.2, so the test build would have 1.1.1's page | Fixed (the owner's choice): `main` merged in. 1.1.2 changed only the page, its test and the version |
+| 11 | **Nit:** the capture's CLK pin wasn't tied to the injection's | Fixed: public defines, checked with a static assert |
 
 ## Local builds and CI
 

@@ -107,7 +107,7 @@ high:
 | Noise that holds CS low across a gap, merging two BS1 fetches | merged: the count falls short, so the payload goes one transfer late [inf] | 192 clocks: taken for a block, so the payload goes early [inf]. Not seen |
 | Noise that splits a payload block | every later block one bit late (L1) | the same, unless each block waits for CS high, as L1's prototype does |
 | An IPL whose BS1 isn't 224 fetches | breaks | works [inf]. None known: every console recorded shows 224 |
-| A CLK glitch while CS is low during BS1 (found by L7's review) | ignored: one clock per transfer counts | a 97th edge: the payload starts in BS1 (simulated). On clean wiring L4 saw no CLK phase under 16 ns; weighed at L9 |
+| A CLK glitch while CS is low during BS1 (found by L7's review) | ignored: one clock per transfer counts | a 97th edge: the payload starts in BS1 (simulated). On clean wiring L4 saw no CLK phase under 16 ns. Weighed at L9: an opt-in, standard the default |
 
 **From T3's records:** in all 33 power-ons, every one of the first 224 CS-low periods lasted 3.656–3.664 µs, and the 225th was a full block ([cs-timing-results.md](cs-timing-results.md)). So on these consoles, a 97-clock threshold separates the two cleanly.
 

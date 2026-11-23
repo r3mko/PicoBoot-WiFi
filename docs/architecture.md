@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.22, 2026-11-23 |
+| **Status** | Approved v1.23, 2026-11-24 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -36,6 +36,7 @@
 | v1.20 | 2026-11-23 | Approved by the owner. D47 after plan step L1, the simulator prototype: the detector and the output program as built (14 and 26 instructions), the switch at bit 66, and L1's finding: a CS blip that splits a payload block makes every later block one bit late, in today's `clocked_output` too. The owner's choice: the prototype waits for CS high before each later block's IRQ, and today's `clocked_output` gets the wait in a release of its own. |
 | v1.21 | 2026-11-23 | Approved by the owner. D47's CLK capture after its code review (plan step L3), the owner's choices: it starts at the first rising CLK edge inside a CS low period, its summary also counts BS1's phases by length, and `diag-cs-timing` has release 1.1.2 merged in, with a CI step that compiles a test build. |
 | v1.22 | 2026-11-23 | Approved by the owner. D47 after the length test build's code review (plan step L7): one CLK glitch during BS1 starts the length method's payload early, a risk the owner chose to weigh at L9; a failed boot may show a black screen; BS1's clock as measured. |
+| v1.23 | 2026-11-24 | Approved by the owner. D47 after its console series (plan step L8, the dev console only) and the owner's decision (L9): release 1.2.0, with the CS wait in today's injection and the length method as an opt-in, the count the default. |
 
 ## How to read the decisions
 
@@ -331,7 +332,7 @@ These follow from the research and bind every decision below.
   - **The Pico takes the data line over inside the first block's 32-byte header,** which BS1 doesn't use. Later blocks start after the command, as now.
   - **No pin lifted and no payload change:** PicoBoot already drives the data line against U10. The DMA stays as it is, and the output program drops the header bits U10 has sent.
   - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers.
-  - **What it takes that the count ignores** (L7): one CLK glitch while CS is low during BS1 makes a fetch's 97th edge, so the payload starts in BS1. Today's count takes one clock per transfer and ignores the rest. On clean wiring no CLK phase was under 16 ns (L4); on noisy wiring, CLK may be noisy too. Weighed at L9 (the owner's choice).
+  - **What it takes that the count ignores** (L7): one CLK glitch while CS is low during BS1 makes a fetch's 97th edge, so the payload starts in BS1. Today's count takes one clock per transfer and ignores the rest. On clean wiring no CLK phase was under 16 ns (L4); on noisy wiring, CLK may be noisy too. Weighed at L9: the method is an opt-in with the count the default, so the risk applies only to consoles switched to it.
 - **The programs** (`src/firmware/pio/length.pio`, plan step L1, tried in the PIO simulator):
   - **The detector,** in pio1 next to D31's counters, 14 instructions (pio1 then holds 24 of its 32). It polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock. After the fall of the 97th clock with CS still low, it raises IRQ 0 in pio0 (`irq prev`), and then one at every CS fall, as `on_transfer` does after its count.
   - **The output program,** in pio0, 26 instructions: `clocked_output` with an entry for the first block. It drops the first block's data bits 0–65, which U10 sends, puts bit 66 on the pin while it's still an input, and drives it one instruction after clock 97, the timing of every other bit.
@@ -348,8 +349,10 @@ These follow from the research and bind every decision below.
      - The branch has release 1.1.2 merged in, so the test build has its page; its CI also compiles a test build (L3).
   3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, or shows a black screen when a misaligned payload still reports complete (L7). The owner then boots the other slot from the Firmware tab, as Wi-Fi still comes up.
   4. **Console series on both consoles,** on clean wiring only, about as T3's: about 10 cold boots per console with the built-in and Swiss, and a few quick power cycles on one.
+     - **As run (L8): the dev console only,** the owner's choice, since L4 measured the same timing on both. All 13 power-ons started their payload, quick power cycles included.
   5. **The owner decides** on a release from the results.
-- **Not in a release yet.** If one follows, its switch is in the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding.
+     - **The decision (L9): one release, 1.2.0.** Today's injection gets the CS wait (L1's finding), and the length method becomes an opt-in, with D36's count the default ([length-injection-results.md](research/length-injection-results.md) §7).
+- **The release's switch** starts from the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding. 1.2.0 has its own design questions, design and plan.
 - **The code stays on its branches,** `diag-cs-timing` and `length-injection`, not merged into `main` during the stage.
 
 **Boot flow:**

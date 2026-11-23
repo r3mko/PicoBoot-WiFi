@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.31, 2026-11-23 |
-| **Design** | [architecture.md](architecture.md), Approved v1.22 |
+| **Status** | Approved v1.32, 2026-11-24 |
+| **Design** | [architecture.md](architecture.md), Approved v1.23 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -43,6 +43,7 @@
 | v1.29 | 2026-11-23 | Approved by the owner. D47's steps L2 and L3 as built (the section's "As built so far"): the CLK capture test build, and its code review's findings with the owner's choices. |
 | v1.30 | 2026-11-23 | Approved by the owner. D47's steps L4 and L5 as built: the CLK capture series on both consoles, and its results ([length-injection-results.md](research/length-injection-results.md)): CLK leaves the length detector room, so it stays as L1 built it. |
 | v1.31 | 2026-11-23 | Approved by the owner. D47's steps L6 and L7 as built: the length test build, and its code review's findings with the owner's choice to weigh the CLK glitch risk at L9. |
+| v1.32 | 2026-11-24 | Approved by the owner. D47's step L8 as built: the length test build booted all 13 power-ons on the dev console; the main console wasn't run (the owner's choice, recorded as a difference from the plan). L9, the owner's decision: release 1.2.0, with the CS wait in today's injection and the length method as an opt-in; the CS-wait item taken up by it. |
 
 ## How this plan works
 
@@ -445,7 +446,7 @@ docs/                       design, plan, research, API, update-file format
   - the fourth wire a U10 replacement would need.
 
   The first step is a passive build that records the commands and their timing.
-- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test.
+- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9).
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -876,6 +877,17 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
 | 4 | **Test gaps:** symmetric clocks only; no pause, no stretched clocks, no longer lead for the first block; no check of the output's final position | Fixed: a test with the measured timing (four variants, including the pause in every block and the two blocks' synchronisers a cycle apart), and the final PC checked as `injection_complete()` does |
 | 5 | **Doc errors and nits:** stale "not loaded yet" comments, the old clock figure, a wrong IRQ source in a comment, a leftover comment, a duplicate "Injection" label, the method shown for warm boots, unlinked constants | Fixed: `length.pio`'s pins, 96 and 66 are public defines that `injection.c` uses and checks; the rest corrected. L8's test build is `1.1.3-dev`, so the Firmware tab doesn't take it for a downgrade |
 | 6 | **Nit:** the CI step copies the release build too | Accepted: harmless |
+
+- **L8 (2026-11-23):** the length test build `1.1.3-dev+c3503a4` (update file `ec6df573…`), built from `c3503a4` with only its version changed. Results in [length-injection-results.md](research/length-injection-results.md) §6.
+  - **The dev console:** the update over Wi-Fi, then 10 cold boots (5 with the built-in, 5 with Swiss r2174) and 3 quick power cycles. All 13 started their payload (the owner), with exact counts and the count's own margins and injection times.
+  - **BS1 ignores the first block's first bytes,** now shown on hardware: U10 sent its first 66 bits on every boot.
+- **L9 (2026-11-24): the owner's decision, one release, 1.2.0,** in [length-injection-results.md](research/length-injection-results.md) §7.
+  - **Today's injection gets the CS wait** (L1's finding), the later-releases item below.
+  - **The length method becomes an opt-in** on the Payloads tab, with D36's count the default. As an opt-in, the CLK glitch risk (L7) applies only to consoles switched to it.
+  - **Next:** 1.2.0's design questions, design and plan, including where the two branches' code goes. The branches stay as they are until then.
+
+**Differences from the plan:**
+- **L8 ran on the dev console only** (the owner's choice). L4 measured the same timing on both consoles; no BS1 can use the bytes the method leaves to U10, since every PicoBoot version sends garbage there and works; the main console's CS-high start is the simpler case; and a release would test both consoles anyway.
 
 ## Local builds and CI
 

@@ -1,8 +1,8 @@
 # Length-based injection: results (D47)
 
-The results of D47's feasibility stage: the CLK capture series (plan step L4) and what it means for the length detector (step L5). Step L8, the length test build's series, will follow here. **[inf]** marks a conclusion rather than a measured or sourced fact.
+The results of D47's feasibility stage: the CLK capture series (plan step L4), what it means for the length detector (step L5), the length test build's series (step L8), and the owner's decision (step L9). **[inf]** marks a conclusion rather than a measured or sourced fact.
 
-**Status:** L4 and L5 approved by the owner with plan v1.30 (2026-11-23). L8 follows.
+**Status:** L4 and L5 approved by the owner with plan v1.30 (2026-11-23); L8 and L9 with plan v1.32 (2026-11-24).
 
 **Short answer:** CLK leaves the detector room on both consoles.
 - **The detector's need:** it looks at CLK every 3 samples (12 ns at 250 MHz), so it needs each high phase to last at least 3 samples and each low phase at least 2 ([length-injection.md](length-injection.md) §3, L3's review) [inf].
@@ -10,6 +10,10 @@ The results of D47's feasibility stage: the CLK capture series (plan step L4) an
 - **So the detector stays as L1 built it.**
 
 The captures also measure the EXI clock exactly: 27.00 MHz in BS1, with a pause and a stretched clock every 8 bytes in the first block.
+
+**And the length method boots the console** (L8): on the dev console, the length test build started its payload on all 13 power-ons, quick power cycles included, with the counts, margins and injection times of the count (§6). The main console wasn't run, the owner's choice.
+
+**The decision** (L9, the owner): one release, 1.2.0, with the CS wait in today's injection and the length method as an opt-in, the count staying the default (§7).
 
 ## 1. The series
 
@@ -80,3 +84,53 @@ The three downloads from each console agree to the sample, and the two consoles 
 - **No adjustment needed:** the detector and the output program stay as L1 built them, for the length test build (L6).
 
 **Not shown:** noise. Both consoles have clean wiring now, the owner's choice for this stage, so nothing here tests the method's benefit.
+
+## 6. The length test build on a console (L8)
+
+**The test build:** `1.1.3-dev+c3503a4`, from `length-injection` after its code review (L6, L7). It injects by length, and is otherwise release 1.1.2.
+
+| File | SHA-256 |
+|---|---|
+| `picoboot-wifi-1.1.3-dev-update.bin` | `ec6df5732f13d7a105b7e6883347d88288d170a8ee7a72d169922abfbad2d2a4` |
+| `picoboot-wifi-1.1.3-dev.uf2` | `09645c992d91eb3c96f70d623efebbc0958e61da6be21b9e5924c246f8d44b28`, not installed |
+
+**The series, on the dev console** (log boots 24–37):
+- **Boot 24:** the update's restart, a warm boot into slot B on trial.
+- **Boots 25–34, cold boots:** 5 with the built-in and 5 with Swiss r2174. Boot 25 kept the trial.
+- **Boots 35–37:** 3 quick power cycles, with the built-in.
+- **Every one of the 13 power-ons started its payload** (the owner).
+
+| Check | Result |
+|---|---|
+| Every power-on | complete; 285 or 1110 raw and clocked, exact; the method recorded as `length` |
+| Margin (clocked) | 160.9–163.9 ms, as on 1.1.2 |
+| Injection time | 19,420–19,421 µs with the built-in and 273,283 µs with Swiss: the count's own times, as in L4. The same log's last Swiss boot on 1.1.2 (boot 23) took 273,282 µs |
+
+**What it shows:**
+- **The length method boots the console.** The detector found the first block on every boot, the quick power cycles included, and the payload arrived whole.
+- **BS1 ignores the first block's first bytes,** shown on hardware. On every boot U10, not the payload, sent the first 66 bits. That rested on an inference and the Shuriken attack until now.
+- **The rest of the read is unchanged:** the same counts, margins and injection times as the count.
+
+**Not run, the owner's choice: the main console.** Its reasons [inf]:
+- L4 measured the same clock and CS timing on both consoles, to the sample, so the detector sees the same signals.
+- No BS1 can use the first 32 bytes: every PicoBoot version has sent the raw, unscrambled `IPLBOOT ` header there, which the console descrambles into garbage, and that works on every console.
+- The main console holds CS high from the start, the simpler case for the detector. The dev console's low start passed.
+- A release with the length method would have its console test on both consoles anyway.
+
+**Not shown, as planned:**
+- **The benefit:** both consoles have clean wiring, so nothing here tests the length method against noise in BS1.
+- **Its new exposure:** a CLK glitch during BS1 would start the payload early (L7, [length-injection.md](length-injection.md) §4).
+- So both the benefit and the risk stay reasoned, not measured.
+
+## 7. The decision (L9)
+
+**The owner's choice (2026-11-24): one release, 1.2.0, with both.**
+- **Today's injection gets the CS wait,** L1's finding: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. Every boot gains it, whatever the method.
+- **The length method becomes an opt-in,** a persistent choice on the Payloads tab: "Injection: standard / length-based", with standard, D36's count, the default.
+
+**What that weighs:**
+- **For:** the method boots the console (L8), and it ignores the noise in BS1 that breaks the count ([length-injection.md](length-injection.md) §4).
+- **Against:** its benefit is untested here, since both consoles have clean wiring, and one CLK glitch in BS1 starts it early (L7).
+- **As an opt-in, standard the default,** that risk applies only to consoles switched to it. A failed length boot still brings Wi-Fi up, so the user switches back on the page.
+
+**Next:** 1.2.0's own design questions, design and plan: the switch (the research's §5 and §7), where the code goes, and its console test on both consoles.

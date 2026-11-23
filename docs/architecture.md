@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.21, 2026-11-23 |
+| **Status** | Approved v1.22, 2026-11-23 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -35,6 +35,7 @@
 | v1.19 | 2026-11-23 | Approved by the owner. D47: length-based injection, a feasibility stage first, from the research in [length-injection.md](research/length-injection.md). The owner chose a simulator prototype, a CLK capture test build from `diag-cs-timing` (CS and CLK every 4 ns), a length-only test build on its own branch, console series as T3's on clean wiring, the switch point from the simulator, and the name "Injection: standard / length-based". |
 | v1.20 | 2026-11-23 | Approved by the owner. D47 after plan step L1, the simulator prototype: the detector and the output program as built (14 and 26 instructions), the switch at bit 66, and L1's finding: a CS blip that splits a payload block makes every later block one bit late, in today's `clocked_output` too. The owner's choice: the prototype waits for CS high before each later block's IRQ, and today's `clocked_output` gets the wait in a release of its own. |
 | v1.21 | 2026-11-23 | Approved by the owner. D47's CLK capture after its code review (plan step L3), the owner's choices: it starts at the first rising CLK edge inside a CS low period, its summary also counts BS1's phases by length, and `diag-cs-timing` has release 1.1.2 merged in, with a CI step that compiles a test build. |
+| v1.22 | 2026-11-23 | Approved by the owner. D47 after the length test build's code review (plan step L7): one CLK glitch during BS1 starts the length method's payload early, a risk the owner chose to weigh at L9; a failed boot may show a black screen; BS1's clock as measured. |
 
 ## How to read the decisions
 
@@ -330,10 +331,11 @@ These follow from the research and bind every decision below.
   - **The Pico takes the data line over inside the first block's 32-byte header,** which BS1 doesn't use. Later blocks start after the command, as now.
   - **No pin lifted and no payload change:** PicoBoot already drives the data line against U10. The DMA stays as it is, and the output program drops the header bits U10 has sent.
   - **What it ignores, unlike D36's count:** pulses without clocks, whatever CLK's level (D36's known limit), and noise that splits BS1 transfers.
+  - **What it takes that the count ignores** (L7): one CLK glitch while CS is low during BS1 makes a fetch's 97th edge, so the payload starts in BS1. Today's count takes one clock per transfer and ignores the rest. On clean wiring no CLK phase was under 16 ns (L4); on noisy wiring, CLK may be noisy too. Weighed at L9 (the owner's choice).
 - **The programs** (`src/firmware/pio/length.pio`, plan step L1, tried in the PIO simulator):
   - **The detector,** in pio1 next to D31's counters, 14 instructions (pio1 then holds 24 of its 32). It polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock. After the fall of the 97th clock with CS still low, it raises IRQ 0 in pio0 (`irq prev`), and then one at every CS fall, as `on_transfer` does after its count.
   - **The output program,** in pio0, 26 instructions: `clocked_output` with an entry for the first block. It drops the first block's data bits 0–65, which U10 sends, puts bit 66 on the pin while it's still an input, and drives it one instruction after clock 97, the timing of every other bit.
-  - **The switch point (L1): bit 66.** In the simulator, both methods work from a 32 ns clock up and fail at 24 ns, the output loop's own limit; the real clock is 37.4 ns.
+  - **The switch point (L1): bit 66.** In the simulator, both methods work from a 32 ns clock up and fail at 24 ns, the output loop's own limit; BS1's clock is 37.04 ns (L4).
   - **Each later block waits for CS high before its IRQ** (L1's finding, the owner's choice). A CS blip that splits a payload block leaves IRQ 0 set early. Without the wait, the output program takes that block's last clock as the next block's first command clock, and every later block arrives one bit late. No clock runs between blocks, so after the wait it stays in step.
 - **Today's injection has that weakness too** (L1, in the simulator): `clocked_output` has no CS wait. The owner's choice: the wait goes into today's `clocked_output` in a release of its own, with its own design questions (the plan's later releases).
 - **The name:** "Injection: standard / length-based". Standard is D36's count, and stays the default.
@@ -344,7 +346,7 @@ These follow from the research and bind every decision below.
      - The summary gives CLK's shortest and longest high and low phase, and BS1's phases counted by length, 1–7 and 8 or more samples, so one glitch shows as one (L3). The raw capture downloads per boot, like D44's record.
      - Test builds only. The injection is D36's count, so every boot behaves as now.
      - The branch has release 1.1.2 merged in, so the test build has its page; its CI also compiles a test build (L3).
-  3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, and the owner boots the other slot from the Firmware tab.
+  3. **A length test build,** on its own branch `length-injection`: the length method only, with no switch, and the detector adjusted to what the capture showed. If a boot fails, the console starts its own menu, or shows a black screen when a misaligned payload still reports complete (L7). The owner then boots the other slot from the Firmware tab, as Wi-Fi still comes up.
   4. **Console series on both consoles,** on clean wiring only, about as T3's: about 10 cold boots per console with the built-in and Swiss, and a few quick power cycles on one.
   5. **The owner decides** on a release from the results.
 - **Not in a release yet.** If one follows, its switch is in the research's §5 and §7: the Payloads tab, a persistent choice, a flag bit in boot control, and a byte in the boot report's padding.

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.30, 2026-11-23 |
-| **Design** | [architecture.md](architecture.md), Approved v1.21 |
+| **Status** | Approved v1.31, 2026-11-23 |
+| **Design** | [architecture.md](architecture.md), Approved v1.22 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -42,6 +42,7 @@
 | v1.28 | 2026-11-23 | Approved by the owner. D47's step L1 as built (see the section's "As built so far"): the simulator prototype, the switch at bit 66, L1's finding about noise during the payload, and the owner's choice from it. For later releases: a wait for CS high in today's `clocked_output`. |
 | v1.29 | 2026-11-23 | Approved by the owner. D47's steps L2 and L3 as built (the section's "As built so far"): the CLK capture test build, and its code review's findings with the owner's choices. |
 | v1.30 | 2026-11-23 | Approved by the owner. D47's steps L4 and L5 as built: the CLK capture series on both consoles, and its results ([length-injection-results.md](research/length-injection-results.md)): CLK leaves the length detector room, so it stays as L1 built it. |
+| v1.31 | 2026-11-23 | Approved by the owner. D47's steps L6 and L7 as built: the length test build, and its code review's findings with the owner's choice to weigh the CLK glitch risk at L9. |
 
 ## How this plan works
 
@@ -860,6 +861,21 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
   - **No BS1 clock phase under 4 samples (16 ns)** on either console, in 20 boots, so the detector's 12 ns poll stays. The detector and the output program stay as L1 built them.
   - **BS1's EXI clock is exactly 27.00 MHz.** The first block pauses 660 ns after its command and stretches one clock every 8 bytes, averaging 26.86 MHz: T3's estimate was that average.
   - **The period after the first block's 97th clock is ordinary,** so the switch at bit 66 keeps its margin.
+
+- **L6 (2026-11-23)** in `fdfaa73` on `length-injection`: test builds of the branch inject by length (`PICOBOOT_WIFI_INJECTION_LENGTH`); release builds keep D36's count.
+  - **The programs:** L1's, unchanged after L5. The detector runs in pio1 beside the counters (24 of 32 instructions), with an ISR of 96. `clocked_output_length` runs in pio0, with 8191 and 8125.
+  - **The record:** each boot's method goes in the boot report's padding byte 29. Test builds show it in `/api/diagnostics` and on the test page, and the Diagnostics tab shows it when the API gives it.
+  - **Tests and CI:** a test runs the firmware's own set-up, with the counters in pio1. The branch's CI compiles a `-dev` copy too, as on `diag-cs-timing`. CI passed.
+- **L7 (2026-11-23):** a fresh Opus 5.5 reviewer found no bug. The fixes went in `c3503a4`; all 299 tests pass.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Risk:** one CLK glitch while CS is low during BS1 makes a fetch's 97th edge, so the payload starts in BS1 (simulated). Today's count ignores it | Recorded (the owner's choice): in D47's risks and the research's §4, with a test that shows it. Weighed at L9 with L8's results |
+| 2 | **Risk:** a misaligned payload still reports complete, so a failed length boot may show a black screen rather than the console's menu; its first power-on would keep the trial | L8 records every boot's screen, and D47 names a black screen. Recovery stays: Wi-Fi comes up, and the other slot boots from the Firmware tab |
+| 3 | **Risk (low):** the detector needs the injection's clock boost; the clock is a build option | Fixed: a static assert keeps a length build at 200 MHz or more |
+| 4 | **Test gaps:** symmetric clocks only; no pause, no stretched clocks, no longer lead for the first block; no check of the output's final position | Fixed: a test with the measured timing (four variants, including the pause in every block and the two blocks' synchronisers a cycle apart), and the final PC checked as `injection_complete()` does |
+| 5 | **Doc errors and nits:** stale "not loaded yet" comments, the old clock figure, a wrong IRQ source in a comment, a leftover comment, a duplicate "Injection" label, the method shown for warm boots, unlinked constants | Fixed: `length.pio`'s pins, 96 and 66 are public defines that `injection.c` uses and checks; the rest corrected. L8's test build is `1.1.3-dev`, so the Firmware tab doesn't take it for a downgrade |
+| 6 | **Nit:** the CI step copies the release build too | Accepted: harmless |
 
 ## Local builds and CI
 

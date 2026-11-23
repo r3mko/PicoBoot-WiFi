@@ -3,8 +3,9 @@
 ;
 ; SPDX-License-Identifier: GPL-2.0-only
 ;
-; Length-based injection (design D47), plan step L1: a prototype the firmware doesn't load yet; it
-; runs in the PIO simulator (tests/test_length_injection.py). Instead of counting BS1's 224
+; Length-based injection (design D47), plan steps L1 and L6: test builds of the length-injection
+; branch load these programs instead of injection.pio's (injection.c), and the PIO simulator runs them
+; (tests/test_length_injection.py). Instead of counting BS1's 224
 ; transfers (on_transfer, D36), the detector finds the first IPL block by its length: the first
 ; CS-low period with a 97th rising CLK edge. A BS1 fetch has 96 clocks (32 command, 64 data), a
 ; block 8224. The Pico takes the data line over inside the block's 32-byte header, which BS1
@@ -12,31 +13,34 @@
 
 .pio_version 1                  ; RP2350: irq prev, and IN_COUNT masking for mov y, pins
 
-.define CS_PIN 4                ; U10 chip select: the same pins as injection.pio
-.define CLK_PIN 5               ; EXI clock
+.define PUBLIC LENGTH_CS_PIN 4          ; U10 chip select and the EXI clock: injection.c checks them
+.define PUBLIC LENGTH_CLK_PIN 5         ; against the injection's pins
+.define PUBLIC LENGTH_BS1_CLOCKS 96     ; A BS1 fetch's clocks: injection.c preloads the detector's ISR
+.define PUBLIC LENGTH_SWITCH_BIT 66     ; The first block's first bit the Pico drives: the `out null`s
+                                        ; below drop 32 + 32 + 2 bits, and injection.c counts from it
 
 ; In pio1, next to the counters. JMP_PIN = CS; IN_BASE = CLK with IN_COUNT = 1, so mov y, pins reads
-; CLK alone; ISR = 96 (preloaded). Raises IRQ 0 in pio0, the previous PIO block, at the 97th rising
-; edge of a transfer, and then at every CS fall, as on_transfer does after its count.
+; CLK alone; ISR = 96 (preloaded). Raises IRQ 0 in pio0, the previous PIO block, after the fall of a
+; transfer's 97th clock, and then at every CS fall, as on_transfer does after its count.
 .program length_detect
 start:
-    wait 1 gpio CS_PIN          ; Between transfers
-    wait 0 gpio CS_PIN          ; A transfer starts
+    wait 1 gpio LENGTH_CS_PIN          ; Between transfers
+    wait 0 gpio LENGTH_CS_PIN          ; A transfer starts
     mov x, isr                  ; The clocks of a BS1 fetch: 96
 low:
     jmp pin start               ; CS rose before a 97th clock: not a block. Polled, not waited for,
     mov y, pins                 ; so a short transfer can't carry its count into the next one
     jmp !y low                  ; CLK low: look again, every 3 cycles, inside CLK's high phase
     jmp x-- high                ; A rising edge: count it...
-    wait 0 gpio CLK_PIN         ; ...the 97th, with CS still low: the first block. Signal after its
+    wait 0 gpio LENGTH_CLK_PIN         ; ...the 97th, with CS still low: the first block. Signal after its
     irq prev set 0              ; fall, so the IRQ lands before clock 97 falls (the output program)
 .wrap_target
-    wait 1 gpio CS_PIN          ; Every later transfer is the next block, as on_transfer has it
-    wait 0 gpio CS_PIN
+    wait 1 gpio LENGTH_CS_PIN          ; Every later transfer is the next block, as on_transfer has it
+    wait 0 gpio LENGTH_CS_PIN
     irq prev set 0
 .wrap
 high:
-    wait 0 gpio CLK_PIN         ; CLK falls before CS rises, so this wait can't cross a transfer
+    wait 0 gpio LENGTH_CLK_PIN         ; CLK falls before CS rises, so this wait can't cross a transfer
     jmp low
 
 ; In pio0, instead of on_transfer and clocked_output: clocked_output with an entry for the first
@@ -53,34 +57,34 @@ public first:
     out pins, 1                 ; Bit 66 ready on the pin, which is still an input: not driven yet
     mov x, isr                  ; The bits left in the first block after bit 66
     wait 1 irq 0                ; The detector: clock 96, the first block's 97th, has risen and fallen
-    wait 1 gpio CLK_PIN         ; Clock 97: rising now, or already high when the IRQ came
+    wait 1 gpio LENGTH_CLK_PIN         ; Clock 97: rising now, or already high when the IRQ came
     set pindirs 1               ; Take the data line over: bit 66, which the console reads at clock 98,
     jmp x-- on_rising_edge      ; one instruction after the edge, as fast as every other bit
 
 start:
     set x, 31                   ; x - 32 bits we need to skip (address)
-    wait 1 gpio CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
+    wait 1 gpio LENGTH_CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
                                 ; IRQ 0 set early, and without this wait its last clock would count
                                 ; as the next block's first command clock (L1, test_length_injection.py)
-    wait 1 irq 0                ; Hold until SM0 tells us to start injecting
+    wait 1 irq 0                ; Hold until the detector in pio1 signals the next block
 
 wait_bit:
-    wait 0 gpio CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
-    wait 1 gpio CLK_PIN         ; ...then CLK high
+    wait 0 gpio LENGTH_CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
+    wait 1 gpio LENGTH_CLK_PIN         ; ...then CLK high
     jmp x-- wait_bit            ; Skip past address bytes
     mov x, y                    ; Copy y value to x, it represents number of bits in the transfer
     set pindirs 1               ; Set data line as output
     jmp write_bit               ; Output first IPL bit from OSR
 
 on_rising_edge:
-    wait 0 gpio CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
-    wait 1 gpio CLK_PIN         ; ...then CLK high
+    wait 0 gpio LENGTH_CLK_PIN         ; Wait for a rising edge on CLK: CLK low first...
+    wait 1 gpio LENGTH_CLK_PIN         ; ...then CLK high
 
 write_bit:
     out pins, 1                 ; Output single IPL bit
     jmp x-- on_rising_edge      ; Jump back to next clock pulse wait routine if there is more data to inject
     jmp !osre start             ; More payload data (autopull refilled OSR from the FIFO)? Then wait for the next transfer
-    wait 1 gpio CS_PIN          ; Keep driving the last bit until the console ends the transfer (CS HIGH)
+    wait 1 gpio LENGTH_CS_PIN          ; Keep driving the last bit until the console ends the transfer (CS HIGH)
     set pindirs 0               ; Leave data line floating so RTC-DOL can take over and load fonts etc.
 
 public disable_chip:

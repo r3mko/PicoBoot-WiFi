@@ -205,7 +205,7 @@ The last boot and the boot log (D22, D39).
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
 
-**Test builds** (`-dev`) of the `length-injection` branch (D47, plan step L6) inject by length, and add `injection` to each report: `"length"` for a boot they injected, `"standard"` for D36's count and for boots without an injection. The boot log keeps its format: the method is a byte in the report's padding, which earlier entries hold as 0, standard.
+**Test builds** (`-dev`) of the `length-injection` branch (D47, plan step L6) inject by length, and add `injection` to each report: `"length"` for a boot they injected, `"standard"` for D36's count and for boots without an injection. The Diagnostics tab shows it for boots with an injection. The boot log keeps its format: the method is a byte in the report's padding, which earlier entries hold as 0, standard.
 
 ## POST /api/firmware
 

@@ -1,14 +1,15 @@
 """
 Length-based injection (design D47), plan step L1: the detector and the output program in
 src/firmware/pio/length.pio, run in the PIO simulator (tests/pio_sim.py) against a simulated
-console, next to today's count of 224 (injection.pio) where the two differ. The firmware doesn't
-load the length programs yet. Needs a build's generated headers, so it is skipped unless
+console, next to today's count of 224 (injection.pio) where the two differ. Test builds of this branch
+load the length programs (plan step L6). Needs a build's generated headers, so it is skipped unless
 PICOBOOT_BUILD_DIR is set:
 
     PICOBOOT_BUILD_DIR=build python3 -m unittest discover -s tests -p 'test_length_injection.py' -v
 
 Time is in PIO cycles: 4 ns at the injection's 250 MHz. The console's default half period of 4
-cycles is a 32 ns clock, faster than the real 37.4 ns (26.76 MHz, docs/research/cs-timing-results.md).
+cycles is a 32 ns clock, faster than BS1's measured 37.04 ns (27.00 MHz, docs/research/length-injection-results.md);
+MeasuredConsole has the measured timing.
 Most cases use a few BS1 fetches and 256-bit blocks to keep the simulation short: the length
 method doesn't depend on either, and the count is set to the same number of fetches.
 """
@@ -31,6 +32,12 @@ COUNTER_INSTRUCTIONS = 10       # pio1 already holds cs_raw (4) and cs_clocked (
 HIGH_PHASE, LOW_PHASE = 2, 5    # Cycles after a rising edge, with the default half period of 4
 
 SMALL = {"fetches": 6, "block_bits": 256}
+
+
+def length_defines():
+    """pio/length.pio's public defines: the pins, LENGTH_BS1_CLOCKS and LENGTH_SWITCH_BIT."""
+    with open(os.path.join(FIRMWARE_BUILD, "length.pio.h")) as f:
+        return pio_sim.parse_pio_header(f.read())[1]
 
 
 def programs():
@@ -83,12 +90,14 @@ def with_cs_wait(words, cs_pin):
     return out
 
 
-def run_length(console, words, block_bits, counters=None):
+def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
     """Set up the two state machines as src/firmware/injection.c and injection_pio.c do in a length build
-    (D47, plan step L6), and let the console read. Keep both in sync. With `counters` (counters.pio.h's
-    programs), pio1 also runs D31's two CS counters, as the firmware does; they are returned too."""
+    (D47, plan step L6), and let the console read. Keep both in sync. Returns the bits the console read,
+    the data pin's direction changes and the output's final PC (injection_complete() wants disable_chip).
+    With `counters` (counters.pio.h's programs), pio1 also runs D31's two CS counters, as the firmware
+    does, and their counts come last. `sync`: pio0's and pio1's input synchroniser delays."""
     length, _, defines = programs()
-    pio0, pio1 = pio_sim.PIO(console.level), pio_sim.PIO(console.level)
+    pio0, pio1 = pio_sim.PIO(console.level, sync_cycles=sync[0]), pio_sim.PIO(console.level, sync_cycles=sync[1])
     pio_sim.link(pio0, pio1)
     # clocked_output_length: as clocked_output (shift left, autopull at 32, joined TX FIFO, OUT and
     # SET on the data pin). length_detect: JMP PIN on CS, IN_BASE CLK with IN_COUNT 1
@@ -106,8 +115,8 @@ def run_length(console, words, block_bits, counters=None):
             sm.x, sm.enabled = 0xFFFFFFFF, True
     received, changes = pio_sim.run([pio0, pio1], console, out, words, DATA_PIN)
     if counters:
-        return received, changes, [0xFFFFFFFF - sm.x for sm in sms]
-    return received, changes
+        return received, changes, out.pc, [0xFFFFFFFF - sm.x for sm in sms]
+    return received, changes, out.pc
 
 
 def run_count(console, words, block_bits, fetches):
@@ -154,8 +163,68 @@ def length_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_b
     c = make_console(blocks, block_bits, fetches, **console)
     if prepare:
         prepare(c)
-    received, changes = run_length(c, words, block_bits)
-    return problems(words, received, c, blocks, block_bits, fetches, first_driven=SWITCH_BIT), received, changes, c
+    received, changes, pc = run_length(c, words, block_bits)
+    return problems(words, received, c, blocks, block_bits, fetches, first_driven=SWITCH_BIT), received, changes, c, pc
+
+
+def disable_chip():
+    return programs()[0]["clocked_output_length"]["labels"]["disable_chip"]
+
+
+class MeasuredConsole:
+    """
+    A console with the EXI timing both consoles showed (docs/research/length-injection-results.md, from
+    the L7 review's model): periods of 9 or 10 cycles (9.26 on average), high 4-6 and low 4-5; CS falls
+    18-19 cycles before a BS1 fetch's first clock and 78-79 before a block's, and rises 16-17 after the
+    last clock falls; a block's 32 command clocks, then a 165-cycle low (the 660 ns pause), and every
+    64th data period stretched to 12-13 cycles. `pause_in_every_block`: the pause and the stretches in
+    later blocks too (measured only in the first). Same interface as pio_sim.Console.
+    """
+
+    def __init__(self, cs_pin, clk_pin, transfers, rng, pause_in_every_block=False):
+        cs, clk = [(-10**9, 1)], [(-10**9, 0)]
+        self.cs_pin, self.clk_pin = cs_pin, clk_pin
+        self.samples, self.cs_falls, self.cs_rises = [], [], []
+        t, blocks_seen = 200, 0
+        for n, (clocks, kind) in enumerate(transfers):
+            block = kind == "block"
+            measured = block and (blocks_seen == 0 or pause_in_every_block)
+            blocks_seen += block
+            cs.append((t, 0))
+            self.cs_falls.append(t)
+            t += rng.choice([78, 79]) if block else rng.choice([18, 19])
+            for c in range(32 + clocks):
+                if measured and c == 32:
+                    t += 165 - 4                        # the 660 ns pause instead of an ordinary low
+                elif measured and c > 32 and (c - 32) % 64 == 0:
+                    t += rng.choice([7, 8]) - 4         # a stretched period: a longer low before it
+                period = rng.choices([9, 10], weights=[74, 26])[0]
+                high = rng.choice([h for h in (4, 5, 6) if 4 <= period - h <= 5])
+                clk.append((t, 1))
+                if c >= 32:
+                    self.samples.append((t, n, c - 32))
+                clk.append((t + high, 0))
+                t += period
+            t += rng.choice([16, 17])
+            cs.append((t, 1))
+            self.cs_rises.append(t)
+            t += rng.choice([34, 36, 38])
+        self.end = t
+        self._times = {pin: [e[0] for e in ev] for pin, ev in ((cs_pin, cs), (clk_pin, clk))}
+        self._levels = {pin: [e[1] for e in ev] for pin, ev in ((cs_pin, cs), (clk_pin, clk))}
+        self._cursor = {pin: 0 for pin in self._times}
+
+    def level(self, gpio, t):
+        times = self._times.get(gpio)
+        if times is None:
+            return 0
+        i = self._cursor[gpio]
+        if times[i] > t:
+            i = 0
+        while i + 1 < len(times) and times[i + 1] <= t:
+            i += 1
+        self._cursor[gpio] = i
+        return self._levels[gpio][i]
 
 
 def count_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bits"], prepare=None, **console):
@@ -185,8 +254,9 @@ class LengthInjectionTest(unittest.TestCase):
 
     def test_a_clean_boot_full_size(self):
         """224 BS1 fetches and two 1 KB blocks: U10 sends the first block's bits 0-65, the Pico the rest."""
-        found, received, changes, console = length_case(blocks=2, fetches=BS1_FETCHES, block_bits=BLOCK_BITS)
+        found, received, changes, console, pc = length_case(blocks=2, fetches=BS1_FETCHES, block_bits=BLOCK_BITS)
         self.assertEqual(found, [])
+        self.assertEqual(pc, disable_chip(), "injection_complete() needs the output at disable_chip")
         self.assertEqual([d for _, d in changes], [1, 0], "the data line is taken over once and released once")
 
     def test_the_firmwares_set_up_with_the_counters(self):
@@ -196,9 +266,46 @@ class LengthInjectionTest(unittest.TestCase):
             counters, _ = pio_sim.parse_pio_header(f.read())
         words = payload(2, BLOCK_BITS)
         c = make_console(2, BLOCK_BITS, BS1_FETCHES)
-        received, _, (raw, clocked) = run_length(c, words, BLOCK_BITS, counters=counters)
+        received, _, pc, (raw, clocked) = run_length(c, words, BLOCK_BITS, counters=counters)
         self.assertEqual(problems(words, received, c, 2, BLOCK_BITS, BS1_FETCHES, first_driven=SWITCH_BIT), [])
+        self.assertEqual(pc, disable_chip())
         self.assertEqual((raw, clocked), (len(c.cs_falls), len(c.cs_falls)))
+
+    def test_the_constants_and_pins_come_from_the_program(self):
+        """pio/length.pio's public defines, which injection.c uses and checks, are this test's."""
+        d, (_, _, defines) = length_defines(), programs()
+        self.assertEqual((d["LENGTH_BS1_CLOCKS"], d["LENGTH_SWITCH_BIT"]), (BS1_CLOCKS, SWITCH_BIT))
+        self.assertEqual((d["LENGTH_CS_PIN"], d["LENGTH_CLK_PIN"]), (defines["CS_PIN"], defines["CLK_PIN"]))
+
+    def test_the_measured_timing(self):
+        """
+        A console with the measured timing (MeasuredConsole), a real BS1, two 1 KB blocks and transfers after
+        the payload as long as a fetch and as long as half a block; with the pause in every block or only the
+        first, and with pio0's and pio1's synchronisers a cycle apart (L7). The payload arrives, nothing is
+        driven after it, and the output ends at disable_chip.
+        """
+        _, _, defines = programs()
+        transfers = [(64, "bs1")] * BS1_FETCHES + [(BLOCK_BITS, "block")] * 2 + [(64, "other"), (4096, "other")]
+        for seed, every, sync in ((1, False, (2, 2)), (2, True, (2, 2)), (3, False, (2, 3)), (4, True, (3, 2))):
+            with self.subTest(seed=seed, pause_in_every_block=every, sync=sync):
+                console = MeasuredConsole(defines["CS_PIN"], defines["CLK_PIN"], transfers, random.Random(seed),
+                                          pause_in_every_block=every)
+                words = payload(2, BLOCK_BITS, seed=seed)
+                received, _, pc = run_length(console, words, BLOCK_BITS, sync=sync)
+                self.assertEqual(problems(words, received, console, 2, BLOCK_BITS, BS1_FETCHES,
+                                          first_driven=SWITCH_BIT), [])
+                self.assertEqual(pc, disable_chip())
+
+    def test_a_clk_glitch_during_bs1(self):
+        """
+        L7's finding 1: one CLK pulse inside a BS1 fetch makes its 97th rising edge, so the length method starts
+        the payload in BS1. Today's count takes one clock per transfer and ignores it. A risk for noisy wiring,
+        weighed at L9; on clean wiring L4 saw no CLK phase under 16 ns.
+        """
+        pulse = lambda c: add_pulse(c, c.clk_pin, c.cs_falls[2] + 4, width=4, level=1)
+        self.assertEqual(count_case(prepare=pulse), [])
+        found, *_ = length_case(prepare=pulse)
+        self.assertTrue(any(problem.startswith("data line driven during BS1 fetch") for problem in found), found)
 
     def test_the_dev_consoles_start(self):
         """CS low at first, then the console's unclean first rise: a pulse without clocks."""
@@ -260,7 +367,7 @@ class LengthInjectionTest(unittest.TestCase):
         """
         Bit 66 is ready on the pin before the takeover, so the Pico drives it 3 cycles after clock 97 rises,
         the timing of every other bit. Both methods work with a half period of 4 cycles (a 32 ns clock,
-        faster than the real 37.4 ns) and up, and both fail at 3 (24 ns): the limit is the output loop's.
+        faster than BS1's measured 37.04 ns) and up, and both fail at 3 (24 ns): the limit is the output loop's.
         """
         for half_period in (4, 5, 6, 8):
             with self.subTest(half_period=half_period):
@@ -268,7 +375,7 @@ class LengthInjectionTest(unittest.TestCase):
                 self.assertEqual(found, [])
         self.assertNotEqual(length_case(blocks=2, half_period=3)[0], [])
         self.assertNotEqual(count_case(blocks=2, half_period=3), [])
-        _, _, changes, console = length_case(blocks=2, half_period=4)
+        _, _, changes, console, _ = length_case(blocks=2, half_period=4)
         driven = changes[0][0]                                  # set pindirs 1: bit 66 on the line
         self.assertEqual(driven - clock_time(console, SMALL["fetches"], 32 + SWITCH_BIT - 1), 3)
         self.assertEqual(clock_time(console, SMALL["fetches"], 32 + SWITCH_BIT) - driven, 5)

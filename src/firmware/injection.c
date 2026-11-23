@@ -32,8 +32,12 @@ static int dma_chan = -1;
 // Length-based injection (design D47, plan step L6, this branch's test builds): the detector in pio1
 // finds the first IPL block by its 97th clock and raises pio0's IRQ 0 (irq prev); clocked_output_length
 // takes the data line over at the block's bit 66 (docs/research/length-injection.md, src/firmware/pio/length.pio)
-#define LENGTH_BS1_CLOCKS   96u     // The clocks of a BS1 fetch: the detector's ISR
-#define LENGTH_SWITCH_BIT   66u     // The first bit of the first block that the Pico drives
+// LENGTH_BS1_CLOCKS and LENGTH_SWITCH_BIT come from pio/length.pio
+_Static_assert(LENGTH_CS_PIN == INJECTION_PIN_CS && LENGTH_CLK_PIN == INJECTION_PIN_CLK,
+               "pio/length.pio waits on the injection's CS and CLK");
+// The detector polls CLK every 3 PIO cycles, which must fall inside CLK's high phase: 16-24 ns
+// measured (docs/research/length-injection-results.md). That holds down to about 200 MHz.
+_Static_assert(PICOBOOT_WIFI_INJECTION_KHZ >= 200000, "the length detector needs the injection's clock boost");
 #define OUTPUT_DISABLE_CHIP clocked_output_length_offset_disable_chip
 static const PIO detect_pio = pio1;     // Next to the counters (counters.c), which use pio1's IRQ flags 2 and 3
 static uint detect_sm;
@@ -54,8 +58,6 @@ void injection_prepare(const injection_payload_t *payload) {
     gpio_set_slew_rate(INJECTION_PIN_DATA, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(INJECTION_PIN_DATA, GPIO_DRIVE_STRENGTH_8MA);
 
-    //
-    // State Machine: Transfer Start
 #if PICOBOOT_WIFI_INJECTION_LENGTH
     //
     // State Machines: the length detector in pio1, and the output with its first-block entry (D47)
@@ -74,6 +76,8 @@ void injection_prepare(const injection_payload_t *payload) {
     pio_prepare_transfer(pio, clocked_output_sm, 8191, pio_y);
     pio_prepare_transfer(pio, clocked_output_sm, 8192 - LENGTH_SWITCH_BIT - 1, pio_isr);
 #else
+    //
+    // State Machine: Transfer Start
     //
     // Counts all consecutive transfers and sets IRQ
     // when first 1 kilobyte transfer starts.

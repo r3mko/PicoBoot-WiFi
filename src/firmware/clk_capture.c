@@ -17,6 +17,8 @@
 
 _Static_assert(1000000u % PICOBOOT_WIFI_INJECTION_KHZ == 0, "a sample must be a whole number of nanoseconds");
 _Static_assert(INJECTION_PIN_CLK == INJECTION_PIN_CS + 1, "in pins, 2 reads CS and CLK from IN_BASE = CS");
+_Static_assert(CAPTURE_CS_PIN == INJECTION_PIN_CS && CAPTURE_CLK_PIN == INJECTION_PIN_CLK,
+               "pio/clk_capture.pio waits on the injection's CS and CLK");
 
 // Not zeroed at start-up, so the capture costs nothing before the injection, as D44's record
 static uint32_t __uninitialized_ram(capture)[CAPTURE_WORDS];
@@ -31,6 +33,7 @@ void clk_capture_init(void) {
     const uint offset = pio_add_program(capture_pio, &clk_capture_program);
     pio_sm_config c = clk_capture_program_get_default_config(offset);
     sm_config_set_clkdiv(&c, 1.f);                       // Full system clock: one sample a cycle
+    sm_config_set_jmp_pin(&c, INJECTION_PIN_CS);          // The trigger's CS check
     sm_config_set_in_pins(&c, INJECTION_PIN_CS);          // CS in bit 0, CLK in bit 1
     sm_config_set_in_shift(&c, false, true, 32);          // Shift left, autopush at 32 bits: 16 samples
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);        // 8 words of slack for the DMA

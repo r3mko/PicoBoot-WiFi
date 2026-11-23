@@ -40,7 +40,8 @@
 
 #define PAGE_MAX        10240       // Rendered test page (with the boot log table)
 #if PICOBOOT_WIFI_TEST_BUILD
-#define API_GET_MAX     65536       // Test builds: the reports also carry D44's and D47's summaries
+#define API_GET_MAX     65536       // Test builds: the reports also carry D44's and D47's summaries (worst
+                                    // case about 50 KB: 33 reports, every number at its longest)
 #else
 #define API_GET_MAX     32768       // The largest GET answer: diagnostics with 33 reports, at most
                                     // about 18 KB today (phase 2 review), with room for more fields

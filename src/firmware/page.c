@@ -231,6 +231,14 @@ static void put_clk(out_t *o, const clk_summary_t *c) {
     put(o, "    Transfer 225     : %lu rising edges; high %s to %s, low %s to %s\n", (unsigned long)c->block_edges,
         fmt_ns(a, sizeof(a), c->block_high_min_ns), fmt_ns(b, sizeof(b), c->block_high_max_ns),
         fmt_ns(d, sizeof(d), c->block_low_min_ns), fmt_ns(e, sizeof(e), c->block_low_max_ns));
+    for (int level = 1; level >= 0; level--) {
+        const uint16_t *n = level ? c->bs1_high_by_length : c->bs1_low_by_length;
+        put(o, "    BS1 %s by length: 1-7 and 8+ samples:", level ? "high" : "low ");
+        for (unsigned i = 0; i < CLK_LENGTHS; i++) {
+            put(o, " %u", (unsigned)n[i]);
+        }
+        put(o, "\n");
+    }
 }
 #endif
 

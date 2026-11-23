@@ -9,8 +9,8 @@
 #include "clk_summary.h"
 
 // Test builds only (design D47, plan step L2): a passive capture in pio1 samples CS and CLK every PIO
-// cycle from the first rising CLK edge, into a 64 KB RAM buffer through DMA: about 1 ms, BS1 and the
-// first block's start. Call clk_capture_init() after timing_init(), clk_capture_start() right after
+// cycle from the first rising CLK edge inside a CS low period, into a 64 KB RAM buffer through DMA:
+// about 1 ms, BS1 and the first block's start. Call clk_capture_init() after timing_init(), clk_capture_start() right after
 // timing_start(), and clk_capture_stop() after timing_stop().
 void clk_capture_init(void);
 void clk_capture_start(void);

@@ -87,6 +87,8 @@ static void test_a_clean_bs1_and_the_first_block(void) {
     CHECK(s.bs1_edges == 224 * 96 - 1);     // The first rising edge started the capture
     CHECK(s.bs1_high_min_ns == 5 * NS && s.bs1_high_max_ns == 5 * NS);
     CHECK(s.bs1_low_min_ns == 4 * NS && s.bs1_low_max_ns == 4 * NS);
+    CHECK(s.bs1_high_by_length[4] == 224 * 96 - 1);     // Every whole high phase, 5 samples
+    CHECK(s.bs1_low_by_length[3] == 224 * 95);          // Every whole low phase, 4 samples: not the last of each transfer
     CHECK(s.block_edges == 400);
     CHECK(s.block_high_min_ns == 4 * NS && s.block_high_max_ns == 4 * NS);
     CHECK(s.block_low_min_ns == 5 * NS && s.block_low_max_ns == 5 * NS);
@@ -132,7 +134,7 @@ static void test_a_cs_blip_inside_a_transfer(void) {
     reset();
     emit(0, 1, 4);
     emit(0, 0, 4);
-    emit(0, 1, 5);                          // Whole: 5
+    emit(0, 1, 7);                          // Cut by the blip: doesn't count
     emit(1, 1, 2);                          // CS blips high while CLK is high
     emit(0, 1, 3);                          // Cut by the blip: doesn't count
     emit(0, 0, 4);                          // Whole: 4
@@ -159,8 +161,76 @@ static void test_clk_with_cs_high(void) {
     CHECK(s.bs1_high_min_ns == 5 * NS && s.bs1_low_min_ns == 4 * NS);
 }
 
+// A capture that starts with CS high numbers the first transfer 1 all the same
+static void test_a_start_with_cs_high(void) {
+    reset();
+    emit(1, 0, 20);
+    transfer(96, 5, 4, 10, 36);
+    clk_summary_t s = summarize();
+    CHECK(s.transfers == 1);
+    CHECK(s.bs1_edges == 96);
+    CHECK(s.bs1_high_by_length[4] == 96 && s.bs1_low_by_length[3] == 95);
+}
+
+// A one-sample CLK glitch inside a transfer shows as one phase of length 1, and one extra edge
+static void test_a_one_sample_glitch(void) {
+    reset();
+    first_transfer(96, 5, 4, 36);
+    emit(0, 0, 10);
+    emit(0, 1, 5);
+    emit(0, 0, 4);
+    emit(0, 1, 1);                          // The glitch
+    emit(0, 0, 4);
+    emit(0, 1, 5);
+    emit(0, 0, 4);
+    emit(1, 0, 36);
+    clk_summary_t s = summarize();
+    CHECK(s.bs1_edges == 95 + 3);
+    CHECK(s.bs1_high_min_ns == 1 * NS);
+    CHECK(s.bs1_high_by_length[0] == 1);
+    CHECK(s.bs1_high_by_length[4] == 95 + 2);
+}
+
+// A blip in BS1 makes a transfer of its own, so BS1's last fetch counts as transfer 225 (docs/api.md)
+static void test_a_blip_in_bs1_shifts_the_split(void) {
+    reset();
+    first_transfer(96, 5, 4, 36);
+    emit(0, 0, 10);
+    emit(0, 1, 5);
+    emit(0, 0, 4);
+    emit(1, 0, 2);                          // The blip
+    emit(0, 0, 4);
+    transfer(95, 5, 4, 0, 36);
+    for (uint32_t i = 2; i < 224; i++) {
+        transfer(96, 5, 4, 10, 36);
+    }
+    transfer(400, 4, 5, 10, 0);
+    clk_summary_t s = summarize();
+    CHECK(s.transfers == 226);
+    CHECK(s.block_edges == 96);             // BS1's last fetch, taken for the first block
+}
+
+// Phases after transfer 225 count nowhere
+static void test_transfer_226_is_left_out(void) {
+    reset();
+    first_transfer(96, 5, 4, 36);
+    for (uint32_t i = 1; i < 225; i++) {
+        transfer(96, 5, 4, 10, 36);
+    }
+    transfer(50, 2, 9, 10, 36);
+    clk_summary_t s = summarize();
+    CHECK(s.transfers == 226);
+    CHECK(s.block_edges == 96);
+    CHECK(s.block_high_min_ns == 5 * NS && s.block_low_max_ns == 4 * NS);
+    CHECK(s.bs1_high_by_length[1] == 0);
+}
+
 int main(void) {
     test_no_capture();
+    test_a_start_with_cs_high();
+    test_a_one_sample_glitch();
+    test_a_blip_in_bs1_shifts_the_split();
+    test_transfer_226_is_left_out();
     test_a_clean_bs1_and_the_first_block();
     test_cut_runs_dont_count();
     test_min_and_max();

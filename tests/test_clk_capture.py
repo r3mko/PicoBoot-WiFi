@@ -6,24 +6,30 @@ simulated console. Its header is generated in every firmware build:
 """
 
 import os
+import shutil
+import struct
+import subprocess
+import tempfile
 import unittest
 from collections import deque
 
 import pio_sim
 from test_pio_programs import (BITS_PER_TRANSFER, DATA_PIN, MOV_X_OSR, MOV_Y_OSR, SKIPPED_TRANSFERS,
-                               WORDS_PER_TRANSFER, delivery_problems, prepare_transfer, random_words)
+                               WORDS_PER_TRANSFER, add_pulse, delivery_problems, prepare_transfer, random_words)
 from test_timing import add_recorder, load
 
 BUILD_DIR = os.environ.get("PICOBOOT_BUILD_DIR")
 CAPTURE_WORDS = 16384           # clk_capture.c: 64 KB, 262,144 samples
-FIRST_SAMPLE_DELAY = 1          # The first sample reads the lines a cycle after the first rising CLK edge
+FIRST_SAMPLE_DELAY = 2          # The first sample reads the lines 2 cycles after the first rising CLK edge
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CC = os.environ.get("CC", "cc")
 
 
 def add_capture(pio, cs):
-    """Like clk_capture_init(): IN_BASE = CS, shift left, autopush at 32, RX FIFO joined.
+    """Like clk_capture_init(): JMP_PIN = CS, IN_BASE = CS, shift left, autopush at 32, RX FIFO joined.
     Mirrors src/firmware/clk_capture.c by hand; keep both in sync."""
     capture, _ = load("clk_capture.pio.h")
-    return pio.add_sm(capture["clk_capture"], in_base=cs, autopush=True, push_threshold=32,
+    return pio.add_sm(capture["clk_capture"], jmp_pin=cs, in_base=cs, autopush=True, push_threshold=32,
                       in_shift_right=False, rx_depth=8)
 
 
@@ -32,16 +38,18 @@ def samples_of(words):
     return [((w >> (2 * k)) & 1, (w >> (2 * k + 1)) & 1) for w in words for k in range(15, -1, -1)]
 
 
-def capture(data_clocks, *, half_period=4, clk_high_until=None, limit=CAPTURE_WORDS):
+def capture(data_clocks, *, half_period=4, clk_high_until=None, cs_low_until=None, pulses=(), limit=CAPTURE_WORDS):
     """The capture alone against a console; the words as the DMA would copy them, up to `limit`.
-    `clk_high_until`: CLK reads high from the start until then."""
+    `clk_high_until`: CLK reads high from the start until then. `pulses`: (pin, start, width, level)."""
     _, defines = load("injection.pio.h")
     cs, clk = defines["CS_PIN"], defines["CLK_PIN"]
-    console = pio_sim.Console(cs, clk, data_clocks, half_period=half_period)
+    console = pio_sim.Console(cs, clk, data_clocks, half_period=half_period, cs_low_until=cs_low_until)
     if clk_high_until is not None:
         console._levels[clk][0] = 1
         console._times[clk].insert(1, clk_high_until)
         console._levels[clk].insert(1, 0)
+    for pin, start, width, level in pulses:
+        add_pulse(console, defines[pin], start, width=width, level=level)
     pio = pio_sim.PIO(console.level)
     sm = add_capture(pio, cs)
     sm.enabled = True
@@ -56,7 +64,24 @@ def capture(data_clocks, *, half_period=4, clk_high_until=None, limit=CAPTURE_WO
 def first_clock(console):
     """When CLK first rises in the first transfer."""
     clk = console.clk_pin
-    return next(t for t, level in zip(console._times[clk], console._levels[clk]) if level and t > 0)
+    return next(t for t, level in zip(console._times[clk], console._levels[clk]) if level and t > console.cs_falls[0])
+
+
+def c_summary(words):
+    """clk_summarize() run on the words, through tests/host/clk_summary_print.c: {name: value or list}."""
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = os.path.join(tmp, "clk_summary_print")
+        build = subprocess.run([CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", os.path.join(REPO, "src", "firmware"),
+                                "-o", exe, os.path.join(REPO, "tests", "host", "clk_summary_print.c"),
+                                os.path.join(REPO, "src", "firmware", "clk_summary.c")], capture_output=True, text=True)
+        if build.returncode:
+            raise RuntimeError(build.stderr)
+        run = subprocess.run([exe], input=struct.pack(f"<{len(words)}I", *words), capture_output=True, check=True)
+    result = {}
+    for line in run.stdout.decode().splitlines():
+        key, *values = line.split()
+        result[key] = int(values[0]) if len(values) == 1 else [int(v) for v in values]
+    return result
 
 
 @unittest.skipUnless(BUILD_DIR, "set PICOBOOT_BUILD_DIR to a firmware build directory")
@@ -79,6 +104,34 @@ class CaptureTest(unittest.TestCase):
         """D36's known limit has CLK high before the first transfer: the capture starts at the first clock."""
         console, words, _, _ = capture([64] * 2 + [256], clk_high_until=6)
         self.assertFollowsTheLines(console, words)
+
+    def test_a_clk_glitch_while_cs_is_high_doesnt_start_it(self):
+        """A CLK pulse before the first transfer, CS high: the capture still starts at the first transfer's
+        first clock (L3's finding 1)."""
+        console, words, _, _ = capture([64] * 3 + [256], pulses=[("CLK_PIN", 6, 2, 1)])
+        self.assertFollowsTheLines(console, words)
+
+    def test_the_dev_consoles_start(self):
+        """CS undriven and low at first, then the console's unclean first rise, a pulse without clocks:
+        the capture starts at the first transfer's first clock."""
+        console, words, _, _ = capture([64] * 3 + [256], cs_low_until=4, pulses=[("CS_PIN", 8, 2, 0)])
+        self.assertFollowsTheLines(console, words)
+
+    @unittest.skipUnless(shutil.which(CC), f"no host C compiler ({CC})")
+    def test_the_c_summary_of_a_simulated_boot(self):
+        """End to end: the PIO capture's words, as the download sends them, through clk_summarize(). With a
+        half period of 5 cycles every whole phase is 20 ns (L3's finding 9)."""
+        _, words, _, _ = capture([64] * SKIPPED_TRANSFERS + [BITS_PER_TRANSFER] * 2, half_period=5)
+        s = c_summary(words)
+        self.assertEqual(s["samples"], CAPTURE_WORDS * 16)
+        self.assertEqual(s["transfers"], SKIPPED_TRANSFERS + 1)
+        self.assertEqual(s["bs1_edges"], SKIPPED_TRANSFERS * 96 - 1)
+        for key in ("bs1_high_min_ns", "bs1_high_max_ns", "bs1_low_min_ns", "bs1_low_max_ns",
+                    "block_high_min_ns", "block_high_max_ns", "block_low_min_ns", "block_low_max_ns"):
+            self.assertEqual(s[key], 20, key)
+        self.assertEqual(s["bs1_high_by_length"], [0, 0, 0, 0, SKIPPED_TRANSFERS * 96 - 1, 0, 0, 0])
+        self.assertEqual(s["bs1_low_by_length"], [0, 0, 0, 0, SKIPPED_TRANSFERS * 95, 0, 0, 0])
+        self.assertGreater(s["block_edges"], 96)
 
     def test_a_boot_fills_the_buffer_with_bs1_and_the_first_blocks_start(self):
         """With a 37.4 ns clock's nearest half period, 5 cycles: all of BS1, then the first block's

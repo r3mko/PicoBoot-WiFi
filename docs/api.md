@@ -222,7 +222,7 @@ A boot with a glitch or a blip shifts the split at transfer 224 by those. Each t
 
 `GET /api/test/cs-timing` downloads the current boot's raw record: two 32-bit little-endian words per CS low period (`src/firmware/timing_summary.h`). It's in RAM, so any restart of the Pico loses it; a boot without an injection has none (409 `not_recorded`). A POST gets 405.
 
-Test builds also add D47's CLK capture (plan step L2) to each report, as a `clk_capture` object. CS and CLK are sampled every PIO cycle (4 ns at 250 MHz) from the first rising CLK edge, for about 1 ms: all of BS1 and the first block's start. Times are in nanoseconds, `null` where there was nothing to measure:
+Test builds also add D47's CLK capture (plan step L2) to each report, as a `clk_capture` object. CS and CLK are sampled every PIO cycle (4 ns at 250 MHz) from the first rising CLK edge inside a CS low period, for about 1 ms: all of BS1 and the first block's start. Times are in nanoseconds, `null` where there was nothing to measure:
 
 | Field | Meaning |
 |---|---|
@@ -232,10 +232,13 @@ Test builds also add D47's CLK capture (plan step L2) to each report, as a `clk_
 | `bs1_high_min_ns`, `bs1_high_max_ns`, `bs1_low_min_ns`, `bs1_low_max_ns` | CLK's whole high and low phases in transfers 1–224 |
 | `block_edges` | The same in transfer 225, the first block, as far as it was captured |
 | `block_high_min_ns`, `block_high_max_ns`, `block_low_min_ns`, `block_low_max_ns` | CLK's whole high and low phases in transfer 225 |
+| `bs1_high_by_length`, `bs1_low_by_length` | BS1's whole high and low phases counted by length: 8 counts, for 1, 2, ... 7, and 8 or more samples (each up to 65,535). One glitch shows as one short phase, where the minimum alone couldn't tell it from a tight duty cycle |
 
-A phase is whole when a CLK edge starts and ends it inside one CS low period. Each is a whole number of samples, so it reads up to one sample (4 ns) short or long.
+A phase is whole when a CLK edge starts and ends it inside one CS low period. Each is a whole number of samples, so it reads up to one sample (4 ns) short or long. A low phase also takes in any pause of CLK inside a transfer, so `*_low_max_ns` may be longer than the clock's own low phase.
 
-`GET /api/test/clk-capture` downloads the current boot's raw capture: 32-bit little-endian words of 16 samples each, the first in bits 31–30, with CS in bit 0 and CLK in bit 1 of each sample (`src/firmware/clk_summary.h`). Like the CS timing record, it's in RAM: any restart of the Pico loses it, and a boot without an injection has none (409 `not_recorded`). A POST gets 405.
+As with `cs_timing`, a glitch or a blip during BS1 shifts the split: `transfers` is then above 225, and the "transfer 225" figures belong to a BS1 fetch. A `bs1_edges` other than 21,503 shows extra or missing edges.
+
+`GET /api/test/clk-capture` downloads the current boot's raw capture: 32-bit little-endian words of 16 samples each, the first in bits 31–30, with CS in bit 0 and CLK in bit 1 of each sample (`src/firmware/clk_summary.h`). Like the CS timing record, it's in RAM: any restart of the Pico loses it, and a boot that saw no clock, with or without an injection, has none (409 `not_recorded`). A POST gets 405.
 
 ## POST /api/firmware
 

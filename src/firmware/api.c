@@ -267,6 +267,16 @@ static void put_clk(json_out_t *j, const clk_summary_t *c) {
     put_ns(j, "block_high_max_ns", c->block_high_max_ns);
     put_ns(j, "block_low_min_ns", c->block_low_min_ns);
     put_ns(j, "block_low_max_ns", c->block_low_max_ns);
+    json_array_begin(j, "bs1_high_by_length");
+    for (unsigned i = 0; i < CLK_LENGTHS; i++) {
+        json_int(j, NULL, c->bs1_high_by_length[i]);
+    }
+    json_array_end(j);
+    json_array_begin(j, "bs1_low_by_length");
+    for (unsigned i = 0; i < CLK_LENGTHS; i++) {
+        json_int(j, NULL, c->bs1_low_by_length[i]);
+    }
+    json_array_end(j);
     json_object_end(j);
 }
 #endif
@@ -658,7 +668,7 @@ static int test_open(const char *path, net_file_t *file, char *out, size_t size,
         const uint32_t *capture = clk_capture_record(&words);   // Stays put until the Pico restarts
         if (!words) {
             return error(out, size, len, 409, "not_recorded",
-                         "no CLK capture: this boot had no injection, or the Pico restarted since", NULL);
+                         "no CLK capture: no clock was seen this boot, or the Pico restarted since", NULL);
         }
         file->type = "application/octet-stream";
         snprintf(file->filename, sizeof(file->filename), "picoboot-clk-capture-boot-%lu.bin",

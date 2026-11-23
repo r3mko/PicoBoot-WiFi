@@ -10,4 +10,6 @@
 
 void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin);
 void clocked_output_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin);
+void clocked_output_length_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin);
+void length_detect_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin);
 void pio_prepare_transfer(PIO pio, uint sm, uint32_t count, uint dest);

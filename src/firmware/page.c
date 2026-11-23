@@ -255,6 +255,8 @@ size_t page_render(char *buf, size_t size) {
         put(&o, "  MARGIN             : %ld us from PIO ready to the first CS; first real transfer at %ld us\n",
             (long)r->margin_raw_us, (long)r->margin_clocked_us);
         put(&o, "  Injection time     : %lu ms from the first CS\n", (unsigned long)(r->injection_us / 1000));
+        put(&o, "  Injection          : %s\n",
+            r->injection_method == INJECTION_METHOD_LENGTH ? "length-based (D47)" : "standard (D36's count)");
         put_counts(&o, r);
     }
 

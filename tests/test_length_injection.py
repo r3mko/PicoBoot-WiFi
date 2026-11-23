@@ -83,8 +83,10 @@ def with_cs_wait(words, cs_pin):
     return out
 
 
-def run_length(console, words, block_bits):
-    """Set up the two state machines as the firmware would (D47), and let the console read."""
+def run_length(console, words, block_bits, counters=None):
+    """Set up the two state machines as src/firmware/injection.c and injection_pio.c do in a length build
+    (D47, plan step L6), and let the console read. Keep both in sync. With `counters` (counters.pio.h's
+    programs), pio1 also runs D31's two CS counters, as the firmware does; they are returned too."""
     length, _, defines = programs()
     pio0, pio1 = pio_sim.PIO(console.level), pio_sim.PIO(console.level)
     pio_sim.link(pio0, pio1)
@@ -97,7 +99,14 @@ def run_length(console, words, block_bits):
     prepare_transfer(out, block_bits - 1, MOV_Y_OSR)
     prepare_transfer(out, block_bits - SWITCH_BIT - 1, MOV_ISR_OSR)
     out.enabled = detect.enabled = True
+    if counters:
+        # As counters.c: JMP PIN on CS, X counted down from all ones
+        sms = [pio1.add_sm(counters[name], jmp_pin=defines["CS_PIN"]) for name in ("cs_raw", "cs_clocked")]
+        for sm in sms:
+            sm.x, sm.enabled = 0xFFFFFFFF, True
     received, changes = pio_sim.run([pio0, pio1], console, out, words, DATA_PIN)
+    if counters:
+        return received, changes, [0xFFFFFFFF - sm.x for sm in sms]
     return received, changes
 
 
@@ -179,6 +188,17 @@ class LengthInjectionTest(unittest.TestCase):
         found, received, changes, console = length_case(blocks=2, fetches=BS1_FETCHES, block_bits=BLOCK_BITS)
         self.assertEqual(found, [])
         self.assertEqual([d for _, d in changes], [1, 0], "the data line is taken over once and released once")
+
+    def test_the_firmwares_set_up_with_the_counters(self):
+        """As a length build runs it (L6): the detector and D31's counters in pio1, the output in pio0, a real
+        BS1 and two 1 KB blocks. The payload arrives, and the counters count every transfer."""
+        with open(os.path.join(FIRMWARE_BUILD, "counters.pio.h")) as f:
+            counters, _ = pio_sim.parse_pio_header(f.read())
+        words = payload(2, BLOCK_BITS)
+        c = make_console(2, BLOCK_BITS, BS1_FETCHES)
+        received, _, (raw, clocked) = run_length(c, words, BLOCK_BITS, counters=counters)
+        self.assertEqual(problems(words, received, c, 2, BLOCK_BITS, BS1_FETCHES, first_driven=SWITCH_BIT), [])
+        self.assertEqual((raw, clocked), (len(c.cs_falls), len(c.cs_falls)))
 
     def test_the_dev_consoles_start(self):
         """CS low at first, then the console's unclean first rise: a pulse without clocks."""

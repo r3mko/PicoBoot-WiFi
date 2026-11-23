@@ -135,6 +135,9 @@ target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=${PI
 pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
+# Length-based injection (design D47, plan step L6): this branch's test builds find the first IPL
+# block by its length; release builds keep D36's count
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_LENGTH=${PICOBOOT_WIFI_TEST_BUILD})
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_BOARD="${PICO_BOARD}")   # Update files name it (D11)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_TEST_CRASH=${PICOBOOT_WIFI_TEST_CRASH_CODE})
 

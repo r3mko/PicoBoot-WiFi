@@ -129,6 +129,7 @@ static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
 // Runs the injection and measures it into the report. Nothing slow may run before "PIO ready",
 // and nothing may write flash until the injection has ended (design C1, C6).
 static void inject(const injection_payload_t *payload) {
+    report.injection_method = PICOBOOT_WIFI_INJECTION_LENGTH ? INJECTION_METHOD_LENGTH : INJECTION_METHOD_STANDARD;
     injection_prepare(payload);
     counters_init();
     counters_start();           // The counters run before the injection, so they see every edge

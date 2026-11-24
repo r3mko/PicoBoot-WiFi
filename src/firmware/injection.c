@@ -11,6 +11,7 @@
 #include "injection.h"
 #include "injection_pio.h"
 #include "injection.pio.h"
+#include "length.pio.h"
 
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -24,8 +25,26 @@
 static const uint BOOST_CLOCK = PICOBOOT_WIFI_INJECTION_KHZ;   // More cycles per console clock (design D27)
 
 static const PIO pio = pio0;
-static uint transfer_start_sm, clocked_output_sm, clocked_output_offset;
+static uint clocked_output_sm, clocked_output_offset;
 static int dma_chan = -1;
+
+#if PICOBOOT_WIFI_INJECTION_LENGTH
+// Length-based injection (design D47, plan step L6, this branch's test builds): the detector in pio1
+// finds the first IPL block by its 97th clock and raises pio0's IRQ 0 (irq prev); clocked_output_length
+// takes the data line over at the block's bit 66 (docs/research/length-injection.md, src/firmware/pio/length.pio)
+// LENGTH_BS1_CLOCKS and LENGTH_SWITCH_BIT come from pio/length.pio
+_Static_assert(LENGTH_CS_PIN == INJECTION_PIN_CS && LENGTH_CLK_PIN == INJECTION_PIN_CLK,
+               "pio/length.pio waits on the injection's CS and CLK");
+// The detector polls CLK every 3 PIO cycles, which must fall inside CLK's high phase: 16-24 ns
+// measured (docs/research/length-injection-results.md). That holds down to about 200 MHz.
+_Static_assert(PICOBOOT_WIFI_INJECTION_KHZ >= 200000, "the length detector needs the injection's clock boost");
+#define OUTPUT_DISABLE_CHIP clocked_output_length_offset_disable_chip
+static const PIO detect_pio = pio1;     // Next to the counters (counters.c), which use pio1's IRQ flags 2 and 3
+static uint detect_sm;
+#else
+static uint transfer_start_sm;        // on_transfer: D36's count of 224
+#define OUTPUT_DISABLE_CHIP clocked_output_offset_disable_chip
+#endif
 
 void injection_prepare(const injection_payload_t *payload) {
     // Raise the clock (250MHz by default) to get more cycles in between CLK pulses.
@@ -39,6 +58,24 @@ void injection_prepare(const injection_payload_t *payload) {
     gpio_set_slew_rate(INJECTION_PIN_DATA, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(INJECTION_PIN_DATA, GPIO_DRIVE_STRENGTH_8MA);
 
+#if PICOBOOT_WIFI_INJECTION_LENGTH
+    //
+    // State Machines: the length detector in pio1, and the output with its first-block entry (D47)
+    //
+
+    detect_sm = pio_claim_unused_sm(detect_pio, true);
+    const uint detect_offset = pio_add_program(detect_pio, &length_detect_program);
+    length_detect_program_init(detect_pio, detect_sm, detect_offset, INJECTION_PIN_CLK, INJECTION_PIN_CS);
+    pio_prepare_transfer(detect_pio, detect_sm, LENGTH_BS1_CLOCKS, pio_isr);
+
+    clocked_output_sm = pio_claim_unused_sm(pio, true);
+    clocked_output_offset = pio_add_program(pio, &clocked_output_length_program);
+    clocked_output_length_program_init(pio, clocked_output_sm, clocked_output_offset, INJECTION_PIN_CLK,
+                                       INJECTION_PIN_CS, INJECTION_PIN_DATA);
+    // 8192 bits a block, zero-based; the first block's bits after bit 66 in ISR
+    pio_prepare_transfer(pio, clocked_output_sm, 8191, pio_y);
+    pio_prepare_transfer(pio, clocked_output_sm, 8192 - LENGTH_SWITCH_BIT - 1, pio_isr);
+#else
     //
     // State Machine: Transfer Start
     //
@@ -68,6 +105,7 @@ void injection_prepare(const injection_payload_t *payload) {
     // Set up the clocked‐output SM to shift out 8192 bits (1024 bytes)
     // using 8191 here because the PIO countdown is zero-based
     pio_prepare_transfer(pio, clocked_output_sm, 8191, pio_y);
+#endif
 
     //
     // Direct Memory Access: Channel Setup
@@ -101,7 +139,11 @@ void injection_prepare(const injection_payload_t *payload) {
 
 void injection_go(void) {
     // Start PIO state machines
+#if PICOBOOT_WIFI_INJECTION_LENGTH
+    pio_sm_set_enabled(detect_pio, detect_sm, true);
+#else
     pio_sm_set_enabled(pio, transfer_start_sm, true);
+#endif
     pio_sm_set_enabled(pio, clocked_output_sm, true);
 }
 
@@ -109,7 +151,7 @@ bool injection_complete(void) {
     // The DMA is done once the last word is in the PIO FIFO, wait until the PIO
     // has also shifted it out and released the data line (disable_chip)
     return !dma_channel_is_busy(dma_chan) &&
-           pio_sm_get_pc(pio, clocked_output_sm) == clocked_output_offset + clocked_output_offset_disable_chip;
+           pio_sm_get_pc(pio, clocked_output_sm) == clocked_output_offset + OUTPUT_DISABLE_CHIP;
 }
 
 uint32_t injection_words_left(void) {
@@ -132,7 +174,11 @@ void injection_finish(void) {
     set_sys_clock_khz(SYS_CLK_KHZ, true);
 
     // Stop PIO state machines
+#if PICOBOOT_WIFI_INJECTION_LENGTH
+    pio_sm_set_enabled(detect_pio, detect_sm, false);
+#else
     pio_sm_set_enabled(pio, transfer_start_sm, false);
+#endif
     pio_sm_set_enabled(pio, clocked_output_sm, false);
 
     // Nothing reads DATA any more: with its input off, RP2350-E9 can't hold the released line at

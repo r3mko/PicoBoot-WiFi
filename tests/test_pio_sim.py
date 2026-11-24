@@ -1,6 +1,7 @@
 """
 Tests for the PIO simulator itself (tests/pio_sim.py): each rule it implements, checked
-against the RP2040 datasheet (page numbers in pio_sim.py). No firmware build needed.
+against the RP2040 datasheet (page numbers in pio_sim.py), and the RP2350 additions the
+length-based injection's programs use (D47). No firmware build needed.
 """
 
 import unittest
@@ -25,6 +26,11 @@ WAIT_1_IRQ_0 = 0x20C0       # wait 1 irq, 0
 IRQ_SET_0 = 0xC000          # irq nowait 0
 MOV_Y_Y = 0xA042            # mov y, y
 PULL_IFEMPTY_BLOCK = 0x80E0  # pio_encode_pull(true, true)
+JMP_NOT_Y_0 = 0x0060        # jmp !y, 0
+MOV_Y_PINS = 0xA040         # mov y, pins
+MOV_X_ISR = 0xA026          # mov x, isr
+IRQ_PREV_SET_0 = 0xC008     # irq prev set 0 (RP2350; pioasm prints "irq prev nowait 0")
+IRQ_NEXT_SET_0 = 0xC018     # irq next set 0
 
 WORD = 0x12345678
 
@@ -160,9 +166,56 @@ class InstructionTest(unittest.TestCase):
         sm.exec_instruction(PULL_IFEMPTY_BLOCK)
         self.assertEqual((sm.pc, sm.osr, sm.osr_count), (2, WORD, 0))
 
+    def test_jmp_not_y_is_taken_only_when_y_is_zero(self):  # p.322
+        pio, sm = machine([JMP_NOT_Y_0, JMP_0], autopull=False)
+        sm.pc, sm.y = 0, 1
+        pio.step(0)
+        self.assertEqual(sm.pc, 1)
+        sm.pc, sm.y = 0, 0
+        pio.step(1)
+        self.assertEqual(sm.pc, 0)
+
+    def test_mov_from_pins_reads_only_in_count_pins(self):   # RP2350: SHIFTCTRL.IN_COUNT
+        high = lambda gpio, t: int(gpio in (5, 6))
+        for count, expected in ((1, 1), (2, 3), (32, 3)):
+            with self.subTest(in_count=count):
+                pio, sm = machine([MOV_Y_PINS, JMP_0], autopull=False, input_level=high, in_base=5, in_count=count)
+                pio.step(10)
+                self.assertEqual(sm.y, expected)
+
+    def test_mov_from_pins_sees_an_input_change_two_cycles_late(self):   # p.342
+        pio, sm = machine([MOV_Y_PINS, JMP_0], autopull=False, input_level=lambda gpio, t: int(t >= 10),
+                          in_base=5, in_count=1)
+        pio.step(11)
+        self.assertEqual(sm.y, 0)
+        sm.pc = 0
+        pio.step(12)
+        self.assertEqual(sm.y, 1)
+
+    def test_mov_from_isr(self):                              # p.328
+        pio, sm = machine([MOV_X_ISR, JMP_0], autopull=False)
+        sm.isr = 96
+        pio.step(0)
+        self.assertEqual(sm.x, 96)
+
+    def test_irq_prev_and_next_set_the_neighbours_flag_from_the_next_cycle(self):   # RP2350: IRQ PREV/NEXT
+        pio0, pio1 = PIO(lambda gpio, t: 0), PIO(lambda gpio, t: 0)
+        pio_sim.link(pio0, pio1)
+        prev = pio1.add_sm(program([IRQ_PREV_SET_0, JMP_0]))
+        nxt = pio0.add_sm(program([IRQ_NEXT_SET_0 | 1, JMP_0]))     # irq next set 1
+        prev.enabled = nxt.enabled = True
+        pio_sim.step_all([pio0, pio1], 0)
+        self.assertEqual((pio0.irq, pio1.irq), (1, 2))
+
+    def test_irq_prev_without_a_neighbour_raises(self):
+        pio, sm = machine([IRQ_PREV_SET_0, JMP_0], autopull=False)
+        with self.assertRaises(ValueError):
+            pio.step(0)
+
     def test_unsupported_instructions_raise(self):
-        for name, word in [("IN pins, 1", 0x4001), ("delay", 0x0100), ("jmp !y", 0x0060),
-                           ("wait pin", 0x20A0), ("irq clear", 0xC040), ("mov pins, x", 0xA001)]:
+        for name, word in [("IN pins, 1", 0x4001), ("delay", 0x0100), ("jmp y--", 0x0080),
+                           ("wait pin", 0x20A0), ("irq clear", 0xC040), ("irq rel", 0xC010),
+                           ("mov pins, x", 0xA001)]:
             with self.subTest(name), self.assertRaises(UnsupportedInstruction):
                 decode(word)
 

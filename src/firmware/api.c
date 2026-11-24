@@ -226,6 +226,9 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_int(j, "payload_words", (long)r->payload_words);
     json_int(j, "words_delivered", (long)r->words_delivered);
     json_string(j, "result", result_name(r->result));
+#if PICOBOOT_WIFI_TEST_BUILD
+    json_string(j, "injection", r->injection_method == INJECTION_METHOD_LENGTH ? "length" : "standard");   // D47
+#endif
     json_int(j, "main_to_ready_us", (long)r->main_to_ready_us);
     json_int(j, "margin_raw_us", (long)r->margin_raw_us);
     json_int(j, "margin_clocked_us", (long)r->margin_clocked_us);

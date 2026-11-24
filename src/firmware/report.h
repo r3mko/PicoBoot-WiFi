@@ -17,6 +17,9 @@ typedef enum {
     PAYLOAD_SOURCE_BUILTIN,
 } payload_source_t;
 
+#define INJECTION_METHOD_STANDARD  0   // D36's count of 224
+#define INJECTION_METHOD_LENGTH    1   // The first block by its length (D47, this branch's test builds)
+
 typedef enum {
     INJECTION_NOT_RUN = 0,      // Not a power-on: no injection (design C2, D8)
     INJECTION_NO_CS,            // The console's first CS didn't come (no console: on the bench)
@@ -45,6 +48,8 @@ typedef struct {
     uint32_t payload_words;     // Words to send (256 per 1K transfer)
     uint32_t words_delivered;
     injection_result_t result;
+    uint8_t injection_method;   // INJECTION_METHOD_*: in the padding after `result`, so the log's format
+                                // stays and earlier entries read 0, standard (design D47)
 
     uint32_t main_to_ready_us;  // main() to "PIO ready"
     int32_t margin_raw_us;      // "PIO ready" to the first CS falling edge, -1 if none

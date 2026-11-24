@@ -7,6 +7,11 @@ and options PicoBoot-DX uses are implemented, each following the RP2040 datashee
 (https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf, page numbers below).
 Anything else raises UnsupportedInstruction instead of being guessed.
 
+RP2350 additions for the length-based injection's programs (design D47, src/firmware/pio/length.pio),
+from the RP2350 datasheet's PIO chapter: MOV from PINS reads only SHIFTCTRL.IN_COUNT pins from
+IN_BASE, and IRQ can set a flag in the neighbouring PIO block (PREV/NEXT index mode). Several PIO
+blocks step together with step_all().
+
 Not modelled: real timing (EXI clock speed, setup/hold times, CS-to-clock delays) and
 anything electrical. Those can only be checked on hardware.
 """
@@ -17,9 +22,10 @@ from collections import deque
 # Decoded instruction kinds
 JMP, WAIT_GPIO, WAIT_IRQ, OUT, PULL, MOV, IRQ_SET, SET, PUSH = range(9)
 
-JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b110, 0b111
+JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_Y_ZERO, JMP_PIN, JMP_NOT_OSRE = 0b000, 0b001, 0b010, 0b011, 0b110, 0b111
 OUT_PINS, OUT_NULL = 0b000, 0b011
-REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR = 0b001, 0b010, 0b011, 0b110, 0b111   # MOV destination/source codes
+REG_PINS, REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR = 0b000, 0b001, 0b010, 0b011, 0b110, 0b111   # MOV destination/source codes
+IRQ_THIS, IRQ_PREV, IRQ_NEXT = 0b00, 0b01, 0b11  # IRQ index modes (RP2350); 0b10 is REL
 MOV_NONE, MOV_INVERT = 0b00, 0b01                    # MOV operations
 RX_FIFO_DEPTH = 4
 SET_X, SET_Y, SET_PINDIRS = 0b001, 0b010, 0b100
@@ -39,7 +45,7 @@ def decode(word):
         raise unsupported("delay/side-set bits are not supported")
     if op == 0b000:                                   # JMP, p.322-323
         cond, addr = arg >> 5, arg & 0x1F
-        if cond not in (JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_PIN, JMP_NOT_OSRE):
+        if cond not in (JMP_ALWAYS, JMP_X_ZERO, JMP_X_DEC, JMP_Y_ZERO, JMP_PIN, JMP_NOT_OSRE):
             raise unsupported(f"JMP condition {cond:03b}")
         return (JMP, cond, addr)
     if op == 0b001:                                   # WAIT, p.324
@@ -62,13 +68,15 @@ def decode(word):
         raise unsupported("PUSH iffull")
     if op == 0b101:                                   # MOV, p.328
         dest, mov_op, src = arg >> 5, (arg >> 3) & 0b11, arg & 0b111
-        if mov_op in (MOV_NONE, MOV_INVERT) and dest in (REG_X, REG_Y, REG_ISR) and src in (REG_X, REG_Y, REG_NULL, REG_OSR):
+        sources = (REG_PINS, REG_X, REG_Y, REG_NULL, REG_ISR, REG_OSR)
+        if mov_op in (MOV_NONE, MOV_INVERT) and dest in (REG_X, REG_Y, REG_ISR) and src in sources:
             return (MOV, dest, (src, mov_op))
-        raise unsupported("MOV other than X/Y/ISR <- X/Y/NULL/OSR, plain or inverted")
-    if op == 0b110:                                   # IRQ, p.330
-        if arg & 0xE0 or arg & 0x18:
+        raise unsupported("MOV other than X/Y/ISR <- PINS/X/Y/NULL/ISR/OSR, plain or inverted")
+    if op == 0b110:                                   # IRQ, p.330; RP2350: bits 4:3 are the index mode
+        mode = (arg >> 3) & 0b11
+        if arg & 0xE0 or mode not in (IRQ_THIS, IRQ_PREV, IRQ_NEXT):
             raise unsupported("IRQ clear/wait or relative index")
-        return (IRQ_SET, arg & 0x7, 0)
+        return (IRQ_SET, arg & 0x7, mode)
     if op == 0b111:                                   # SET, p.331
         dest, data = arg >> 5, arg & 0x1F
         if dest not in (SET_X, SET_Y, SET_PINDIRS):
@@ -102,7 +110,8 @@ def program(words, wrap_target=0, wrap=None, labels=None):
 
 class StateMachine:
     def __init__(self, pio, prog, *, autopull=False, threshold=32, shift_right=True,
-                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4, jmp_pin=None):
+                 out_base=0, out_count=1, set_base=0, set_count=1, fifo_depth=4, jmp_pin=None,
+                 in_base=0, in_count=32):
         self.pio = pio
         self.words = list(prog["instructions"])
         self.instructions = [decode(w) for w in self.words]
@@ -112,6 +121,7 @@ class StateMachine:
         self.set_base, self.set_count = set_base, set_count
         self.fifo_depth = fifo_depth                  # 8 when the TX FIFO is joined, p.335
         self.jmp_pin = jmp_pin                        # EXECCTRL.JMP_PIN, p.322
+        self.in_base, self.in_count = in_base, in_count   # PINCTRL.IN_BASE; RP2350 SHIFTCTRL.IN_COUNT
         self.fifo = deque()
         self.pc = self.x = self.y = self.osr = self.isr = 0
         self.rx = deque()                             # RX FIFO, filled by PUSH
@@ -176,6 +186,8 @@ class StateMachine:
                 taken = True
             elif a == JMP_X_ZERO:
                 taken = self.x == 0                   # "!X: scratch X zero"
+            elif a == JMP_Y_ZERO:
+                taken = self.y == 0                   # "!Y: scratch Y zero"
             elif a == JMP_PIN:
                 if self.jmp_pin is None:              # else the console would read the unknown pin as 0
                     raise ValueError("jmp pin without a JMP_PIN: pass jmp_pin to add_sm()")
@@ -197,8 +209,11 @@ class StateMachine:
                 if a:
                     pio.irq_clear |= 1 << b
                 self._next()
-        elif kind == IRQ_SET:                         # p.330
-            pio.irq_set |= 1 << a
+        elif kind == IRQ_SET:                         # p.330; RP2350: or the previous/next PIO block's flag
+            target = {IRQ_THIS: pio, IRQ_PREV: pio.prev, IRQ_NEXT: pio.next}[b]
+            if target is None:
+                raise ValueError("irq prev/next without a neighbouring PIO block: use link()")
+            target.irq_set |= 1 << a
             self._next()
         elif kind == SET:                             # p.331
             if a == SET_X:
@@ -211,7 +226,10 @@ class StateMachine:
             self._next()
         elif kind == MOV:                             # p.328
             src, mov_op = b
-            value = {REG_X: self.x, REG_Y: self.y, REG_NULL: 0, REG_OSR: self.osr}[src]
+            if src == REG_PINS:                       # RP2350: only IN_COUNT pins, the rest read 0
+                value = sum(pio.synced_input(self.in_base + i, t) << i for i in range(self.in_count))
+            else:
+                value = {REG_X: self.x, REG_Y: self.y, REG_NULL: 0, REG_ISR: self.isr, REG_OSR: self.osr}[src]
             if mov_op == MOV_INVERT:
                 value ^= 0xFFFFFFFF
             if a == REG_X:
@@ -263,6 +281,7 @@ class PIO:
         self.lazy_autopull = lazy_autopull
         self.sync_cycles = sync_cycles                # 2-flipflop input synchroniser, p.342
         self.irq = self.irq_set = self.irq_clear = 0
+        self.prev = self.next = None                  # Neighbouring PIO blocks, for irq prev/next (link())
         self.pin_out = [0] * 32
         self.pin_dir = [0] * 32
         self.sms = []
@@ -292,23 +311,41 @@ class PIO:
         self.end_cycle()
 
 
+def link(*pios):
+    """Make the PIO blocks neighbours in this order, as pio0, pio1, pio2 are, for irq prev/next."""
+    for a, b in zip(pios, pios[1:]):
+        a.next, b.prev = b, a
+
+
+def step_all(pios, t):
+    """One cycle of several PIO blocks: every state machine steps, then the IRQ flags settle."""
+    for pio in pios:
+        for sm in pio.sms:
+            if sm.enabled:
+                sm.step(t)
+    for pio in pios:
+        pio.end_cycle()
+
+
 class Console:
     """
     GameCube side of the EXI bus at logic level: drives CS (active low) and CLK (idle low),
     and reads DATA at the rising edge of every data clock. Each transfer is CS low, 32
     address clocks, the given number of data clocks, CS high.
     CS starts high, or with `cs_low_until`, low until then: undriven at first and held low by the
-    pad's reset pull-down, as on a console that drives CS only later (design D36).
+    pad's reset pull-down, as on a console that drives CS only later (design D36). `lead` adds
+    cycles before the first transfer, room for pulses there.
     """
 
-    def __init__(self, cs_pin, clk_pin, data_clocks, half_period=4, gap=16, cs_low_until=None):
+    def __init__(self, cs_pin, clk_pin, data_clocks, half_period=4, gap=16, cs_low_until=None, lead=0):
         self.cs_pin, self.clk_pin = cs_pin, clk_pin
+        self.half_period, self.gap = half_period, gap
         cs_start = [(-10**9, 1)] if cs_low_until is None else [(-10**9, 0), (cs_low_until, 1)]
-        assert cs_low_until is None or cs_low_until < gap, "CS must rise before the first transfer"
+        assert cs_low_until is None or cs_low_until < gap + lead, "CS must rise before the first transfer"
         events = {cs_pin: cs_start, clk_pin: [(-10**9, 0)]}
         self.samples = []                             # (time, transfer, bit)
         self.cs_falls, self.cs_rises = [], []
-        t = gap
+        t = gap + lead
         for n, clocks in enumerate(data_clocks):
             events[cs_pin].append((t, 0))
             self.cs_falls.append(t)
@@ -344,9 +381,12 @@ class Console:
 def run(pio, console, data_sm, words, data_pin, extra_cycles=64):
     """
     Simulate until the console is done. A DMA channel feeds `words` into the data state
-    machine's TX FIFO (paced by its DREQ, one word per cycle at most). Returns
-    (bits read per transfer, list of (time, direction) changes of the data pin).
+    machine's TX FIFO (paced by its DREQ, one word per cycle at most). `pio` is one PIO block,
+    or a list of them stepped together; the data pin is read from the data state machine's.
+    Returns (bits read per transfer, list of (time, direction) changes of the data pin).
     """
+    pios = list(pio) if isinstance(pio, (list, tuple)) else [pio]
+    pio = data_sm.pio
     words = deque(words)
     received = {}
     samples = console.samples
@@ -359,7 +399,10 @@ def run(pio, console, data_sm, words, data_pin, extra_cycles=64):
         while s < len(samples) and samples[s][0] == t:
             received.setdefault(samples[s][1], []).append(pio.pin(data_pin))
             s += 1
-        pio.step(t)
+        if len(pios) == 1:
+            pios[0].step(t)
+        else:
+            step_all(pios, t)
         if pio.pin_dir[data_pin] != direction:
             direction = pio.pin_dir[data_pin]
             changes.append((t, direction))

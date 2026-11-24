@@ -670,6 +670,8 @@ async function loadDiag() {
         esc(PAYLOADS[b.payload_chosen] || b.payload_chosen) + " isn't valid: the built-in one went instead" : "",
       b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : ""].filter(Boolean).join("; ")) +
     row("Result", esc(RESULTS[b.result] || b.result)) +
+    (b.injection && b.result !== "not_run" && b.result !== "skipped" ?
+      row("Injection", b.injection === "length" ? "length-based" : "standard", "A test build's method (D47)") : "") +
     row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
     row("Margin", margin(b), "How long before the console's first read PicoBoot-WiFi was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +

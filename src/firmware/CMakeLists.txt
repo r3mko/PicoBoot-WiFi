@@ -39,6 +39,8 @@ set_source_files_properties(${FIRMWARE_SOURCES} PROPERTIES
 
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/injection.pio)
 pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/counters.pio)
+# Length-based injection (D47, plan steps L1 and L6): loaded by this branch's test builds, and run in the PIO simulator's tests
+pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/pio/length.pio)
 
 # Built-in IPL: gekkoboot r9.4's release build, rebuilt from the release by tools/gekkoboot_dol.py
 # (docs/research/gekkoboot-dol.md), scrambled into ipl.h as in PicoBoot-DX; used when there is no
@@ -133,6 +135,9 @@ target_compile_definitions(firmware_xip_setup PRIVATE PICO_FLASH_SPI_CLKDIV=${PI
 pico_set_boot_stage2(firmware firmware_xip_setup)
 target_compile_definitions(firmware PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_KHZ=${PICOBOOT_WIFI_INJECTION_KHZ})
+# Length-based injection (design D47, plan step L6): this branch's test builds find the first IPL
+# block by its length; release builds keep D36's count
+target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_INJECTION_LENGTH=${PICOBOOT_WIFI_TEST_BUILD})
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_BOARD="${PICO_BOARD}")   # Update files name it (D11)
 target_compile_definitions(firmware PRIVATE PICOBOOT_WIFI_TEST_CRASH=${PICOBOOT_WIFI_TEST_CRASH_CODE})
 

@@ -42,6 +42,22 @@ jobs:
           docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
           python3 tests/check_layout.py --loader build/src/loader/loader.elf --firmware build/src/firmware/firmware.elf
 
+      # Test-build-only code (D47's length-based injection, the test page) is compiled only when the version
+      # ends in -dev: compile it from a copy marked so, without warnings (D47, plan step L6, as L3 on diag-cs-timing)
+      - name: Compile a test build
+        run: |
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build sh -c '
+            set -e
+            cp -r /src /tmp/dev
+            sed -i -E "s/set\(PICOBOOT_WIFI_VERSION \"([^\"]+)\"\)/set(PICOBOOT_WIFI_VERSION \"\1-dev\")/" /tmp/dev/CMakeLists.txt
+            cmake -S /tmp/dev -B /tmp/dev/build-test -DCMAKE_BUILD_TYPE=Release > /tmp/configure.log
+            cat /tmp/configure.log
+            grep -q "test build: 1" /tmp/configure.log
+            cmake --build /tmp/dev/build-test --parallel > /tmp/build.log 2>&1 || { cat /tmp/build.log; exit 1; }
+            if grep "warning:" /tmp/build.log; then exit 1; fi
+            python3 /tmp/dev/tests/check_layout.py --loader /tmp/dev/build-test/src/loader/loader.elf --firmware /tmp/dev/build-test/src/firmware/firmware.elf
+          '
+
       # With a build directory, the PIO simulator tests (injection and counters) run too
       - name: Run all tests against the build
         env:

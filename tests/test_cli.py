@@ -467,10 +467,13 @@ ORDINARY_PAYLOAD = ipl.dol_to_payload(ds.wrap(ordinary_dol()))
 ORDINARY_SHA = hashlib.sha256(ORDINARY_PAYLOAD).hexdigest()
 
 
-def payload_status(chosen="payload1", target="payload2", p1=None, p2=None, once=False):
+def payload_status(chosen="payload1", target="payload2", p1=None, p2=None, once=False, injection=None):
     empty = {"valid": False, "name": "", "size": 0, "sha256": None}
-    return {**STATUS, "payloads": {"chosen": chosen, "upload_target": target, "original_ipl_once": once,
-                                   "usb_install": False, "payload1": p1 or empty, "payload2": p2 or empty}}
+    payloads = {"chosen": chosen, "upload_target": target, "original_ipl_once": once,
+                "usb_install": False, "payload1": p1 or empty, "payload2": p2 or empty}
+    if injection:                       # 1.2.0 and later (D48)
+        payloads["injection"] = injection
+    return {**STATUS, "payloads": payloads}
 
 
 def slot_of(payload, name):
@@ -639,6 +642,15 @@ class PayloadStatusTest(CliTestCase):
         for text in ("payload 1 chosen", "original IPL once: yes", "Payload 1: Swiss r2119", "KB",
                      "Payload 2: empty, next upload goes here"):
             self.assertIn(text, out)
+        self.assertNotIn("injection", out)      # 1.1.x has no injection method
+
+    def test_status_shows_the_injection_method(self):
+        for method, text in (("standard", "injection: standard"), ("length", "injection: length-based")):
+            with self.subTest(method=method):
+                self.pico.route("GET", "/api/status", (200, payload_status(injection=method)))
+                code, out, err = self.cli("status")
+                self.assertEqual(code, 0, err)
+                self.assertIn(text, out)
 
     def test_status_without_payloads_is_as_before(self):
         self.pico.route("GET", "/api/status", (200, STATUS))
@@ -869,6 +881,17 @@ class PayloadCommandsTest(CliTestCase):
         code, out, err = self.cli("ipl-once", "--off")
         self.assertEqual(code, 0, err)
         self.assert_post("/api/boot", {"original_ipl_once": False})
+
+    def test_injection(self):
+        for method in ("length", "standard"):
+            with self.subTest(method=method):
+                self.pico.route("POST", "/api/boot", (200, {"injection": method}))
+                code, out, err = self.cli("injection", method)
+                self.assertEqual(code, 0, err)
+                self.assert_post("/api/boot", {"injection": method})
+                self.assertIn("From the next power-on", out)
+        code, _, _ = self.cli("injection", "count")
+        self.assertEqual(code, 2)               # Not a method: usage
 
     def test_convert_needs_no_pico(self):
         path = self.write(synthetic_dol(), "swiss_r2119.dol")

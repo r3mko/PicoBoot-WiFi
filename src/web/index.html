@@ -506,6 +506,11 @@ function renderPl() {
     `<div class="row"><dt>Original IPL once</dt><dd>${p.original_ipl_once ? "on" : "off"}` +
     `<span class="note">The next power-on starts the GameCube's own IPL (menu, clock, language), once.</span>` +
     `<div>${btn("ipl", p.original_ipl_once ? "off" : "on", p.original_ipl_once ? "Cancel" : "Set")}</div></dd></div>`;
+  // D48: the injection method, kept until changed
+  const byLength = p.injection === "length";
+  h += `<div class="row"><dt>Injection</dt><dd>${byLength ? "length-based" : "standard"}` +
+    `<span class="note">Length-based ignores noise on CS at start-up (README).</span>` +
+    `<div>${btn("injection", byLength ? "standard" : "length", byLength ? "Use standard" : "Use length-based")}</div></dd></div>`;
   $("pl-list").innerHTML = h;
 }
 
@@ -527,6 +532,7 @@ document.addEventListener("click", e => {
   switch (b.dataset.pl) {
     case "choose": return plPost("/api/boot", { payload: k });
     case "ipl": return plPost("/api/boot", { original_ipl_once: k === "on" });
+    case "injection": return plPost("/api/boot", { injection: k });
     case "delete":
       $("pl-ask-msg").textContent = "Delete payload " + k.slice(-1) + (p[k].name ? " (" + p[k].name + ")" : "") + "? You can upload it again, or from a backup.";
       $("pl-ask").hidden = false; return;
@@ -671,7 +677,7 @@ async function loadDiag() {
       b.payload_words ? esc(b.words_delivered) + " of " + esc(b.payload_words) + " words sent" : ""].filter(Boolean).join("; ")) +
     row("Result", esc(RESULTS[b.result] || b.result)) +
     (b.injection && b.result !== "not_run" && b.result !== "skipped" ?
-      row("Injection", b.injection === "length" ? "length-based" : "standard", "A test build's method (D47)") : "") +
+      row("Injection", b.injection === "length" ? "length-based" : "standard") : "") +
     row("Start-up time", us(b.main_to_ready_us), "From the firmware's start until it can answer the console") +
     row("Margin", margin(b), "How long before the console's first read PicoBoot-WiFi was ready") +
     row("Injection time", b.injection_us ? us(b.injection_us) : "none") +
@@ -682,7 +688,8 @@ async function loadDiag() {
     `<th>Transfers</th><th>Margin</th><th>Raw/clocked</th><th>Result</th></tr></thead><tbody>` +
     log.map(e => { const nr = e.result === "skipped" || e.result === "not_run"; return `<tr><td>${esc(e.boot)}</td><td>${esc(e.slot)}</td><td>${e.power_on ? "power-on" : "warm"}</td><td>${nr ? "—" : esc(PAYLOADS[e.payload] || e.payload)}</td>` +
       `<td>${nr ? "—" : Math.round(e.payload_words / 256)}</td><td>${margin(e)}</td><td>${esc(e.cs_raw)}/${esc(e.cs_clocked)}${noiseMark(e)}</td>` +
-      `<td>${esc(RESULTS[e.result] || e.result)}</td></tr>`; }).join("") + `</tbody></table></div>`;
+      `<td>${esc(RESULTS[e.result] || e.result)}${!nr && e.injection === "length" ? ` <span class="hint">length</span>` : ""}</td></tr>`; }).join("") +
+    `</tbody></table></div>`;
 }
 $("diag-refresh").onclick = loadDiag;
 

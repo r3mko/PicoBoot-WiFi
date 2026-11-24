@@ -14,6 +14,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
   - upload a `.dol`, a payload `.uf2` or a raw payload; it goes into the slot that isn't chosen;
   - choose what boots next, rename, delete, and download a backup;
   - **Original IPL once:** the next power-on starts the console's own menu, to set the clock or the language.
+  - **Injection:** standard, or length-based, which ignores noise on CS while the console starts.
 - **Firmware updates over Wi-Fi:** an update goes into the other firmware slot and starts on trial. If it doesn't work, PicoBoot-WiFi goes back to the previous firmware by itself.
 - **Settings and diagnostics:** the Wi-Fi name, password, country, channel and transmit power, auto-off, and the LED. A boot log shows each power-on's injection and its timing margin, and warns of noise on CS.
 - **A running game is never disturbed:** a reboot of the Pico without a power cycle doesn't inject again.
@@ -44,6 +45,12 @@ The wiring is PicoBoot's (since its v0.4): see the wiring diagram in [PicoBoot's
 **Ground: keep the wire short.** Run the Pico's GND with a short wire to a ground point near U10. On one console, a long ground wire kept the payload from reaching the console. It showed in the boot log as far too many CS edges: tens or hundreds of thousands, where 225 more than the payload's transfers are expected (285 for the built-in gekkoboot).
 
 **Wires: short, thin and stranded.** Upstream PicoBoot asks for wires of at most about 10 cm (4 inches), of 26–28 AWG stranded wire; thick or single-core wire can break or damage the motherboard's pads ([troubleshooting](https://support.webhdx.dev/gc/picoboot/troubleshooting)). A flex cable or a quick-solder board at U10 is the better choice. The Diagnostics tab warns when a boot shows noise on CS.
+
+**Length-based injection, for noise on CS at start-up.**
+- **Why:** the standard injection counts the console's 224 start-up reads of the IPL chip, so a CS blip among them sends the payload at the wrong moment.
+- **What it does:** *Length-based*, on the Payloads tab, finds the payload's first block by its length instead, and ignores such blips.
+- **Fix the wiring first:** both work on clean wiring. Length-based is untested on noisy wiring, and a glitch on CLK during those reads starts its payload too early.
+- **If a length-based boot fails,** the console shows its own menu or a black screen. Wi-Fi comes up either way, so switch back to standard.
 
 An existing PicoBoot or PicoBoot-DX installation keeps its wiring.
 
@@ -88,6 +95,7 @@ Install `picoboot-wifi-X.Y.Z.uf2` as above. The wiring stays the same, and the p
   - **Per payload:** choose it, rename it, delete it (not the chosen one), or download a backup.
   - **Built-in gekkoboot:** it can be chosen as well. It also boots when the chosen payload isn't valid.
   - **Original IPL once:** the next power-on starts the console's own menu; the one after boots the payload again.
+  - **Injection:** standard (the default) or length-based (see [Wiring](#wiring)), from the next power-on.
   - **`.dol` files:** both kinds work. One built as an IPL replacement (loaded at `0x81300000`, such as gekkoboot or iplboot) is used as it is. An ordinary `.dol` gets a small loader stub in front of it, which puts it in place at power-on. It is refused if its sections or BSS reach `0x81300000` and up, or low memory below `0x80003100`. Swiss's regular `swiss_rXXXX.dol` works too; the PicoBoot `swiss_rXXXX.uf2` still does as well.
 - **Firmware:**
   - **Install an update** (`picoboot-wifi-X.Y.Z-update.bin`): it goes into the other slot and starts on trial.
@@ -96,7 +104,7 @@ Install `picoboot-wifi-X.Y.Z.uf2` as above. The wiring stays the same, and the p
   - **Older versions** can be installed too, with a warning.
   - Also: switch slots, or download a backup of the running firmware.
 - **Settings:** the Wi-Fi name and password, the country, channel and transmit power, auto-off, the LED, a backup and restore of the settings (without the password), and a reboot.
-- **Diagnostics:** this boot, the injection's margin, and the boot log, with a warning when a boot shows noise on CS (see [Wiring](#wiring)).
+- **Diagnostics:** this boot, the injection's margin and method, and the boot log, with a warning when a boot shows noise on CS (see [Wiring](#wiring)). The log marks length-based boots.
 
 **The LED:**
 - dark during the injection;
@@ -118,6 +126,7 @@ python3 picoboot-wifi.py payload rename payload1 "Swiss r2119"
 python3 picoboot-wifi.py payload delete payload2
 python3 picoboot-wifi.py payload convert gekkoboot.dol [--uf2] # .dol → raw payload, or a UF2 for USB; no Pico needed
 python3 picoboot-wifi.py ipl-once [--off]
+python3 picoboot-wifi.py injection standard|length
 python3 picoboot-wifi.py update picoboot-wifi-X.Y.Z-update.bin
 python3 picoboot-wifi.py keep
 python3 picoboot-wifi.py boot A|B
@@ -141,7 +150,8 @@ The JSON API is described in [docs/api.md](docs/api.md).
 | Forgotten Wi-Fi password, or settings that lock you out | Install `picoboot-wifi-X.Y.Z.uf2` again over USB. It resets the settings (the default password), the payload choice and the names, and leaves the payloads |
 | A firmware update that doesn't work | Nothing: on trial, its first crash brings the previous firmware back by itself. Or boot the other slot on the Firmware tab |
 | A payload that doesn't boot | Choose another payload or the built-in gekkoboot, or set *Original IPL once* |
-| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. "Noise on CS" means more CS transfers than a clean boot (225 more than the payload's transfers, so 285 for the built-in gekkoboot): check the wiring, the ground wire first (see [Wiring](#wiring)) |
+| The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. "Noise on CS" means more CS transfers than a clean boot (225 more than the payload's transfers, so 285 for the built-in gekkoboot): check the wiring, the ground wire first (see [Wiring](#wiring)). If the noise stays, length-based injection may help |
+| A black screen or the console's own menu after choosing length-based injection | Choose *standard* again on the Payloads tab: Wi-Fi comes up either way |
 | No Wi-Fi | Switch the console off and on: the Wi-Fi turns off 10 minutes after the last client, by default |
 
 ## Documentation

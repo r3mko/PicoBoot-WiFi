@@ -125,7 +125,7 @@ The three downloads from each console agree to the sample, and the two consoles 
 ## 7. The decision (L9)
 
 **The owner's choice (2026-11-24): one release, 1.2.0, with both.**
-- **Today's injection gets the CS wait,** L1's finding: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. Every boot gains it, whatever the method.
+- **Today's injection gets the CS wait,** L1's finding: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer shifts every later block. Every boot gains it, whatever the method.
 - **The length method becomes an opt-in,** a persistent choice on the Payloads tab: "Injection: standard / length-based", with standard, D36's count, the default.
 
 **What that weighs:**

@@ -35,7 +35,7 @@ The counts and the boot results come from the owner's boot logs and reports of 2
   - **Most of that current is likely the fight with U10 [inf]:** the Pico overpowers U10's own output on the data line, so current flows between the two drivers whenever their bits differ, not only at the edges. A stronger drive makes that current bigger, which fits the two to six times more edges at 12 mA ([gc-docs.md](gc-docs.md) §3, point 3).
 - **The noise didn't move the injection's start,** because the Pico drives the data line only after the 224 skipped transfers.
 - **But the long ground wire was a cause of its own:** with it, the console didn't boot even with the pull-down (boots 14–18, 30–32). After it was shortened, the pull-down boots worked (§2). A bouncing ground probably let U10 win the data line over the Pico [inf].
-  - **A simpler cause, found in D47's step L1:** in the PIO simulator, an extra that splits a payload block makes every later block one bit late ([length-injection.md](length-injection.md) §2). The long ground wire's tens of thousands of extras would do that on every boot.
+  - **A simpler cause, found in D47's step L1:** in the PIO simulator, an extra that splits a payload block shifts every later block, by one more bit each ([length-injection.md](length-injection.md) §2). The long ground wire's tens of thousands of extras would do that on every boot.
 - **12 mA**, as upstream PicoBoot drives its single data pin since `e9f420b` (2024), didn't help.
 
 ## 2. After the ground fix: the pull-up

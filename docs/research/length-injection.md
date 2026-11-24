@@ -5,7 +5,7 @@ Whether PicoBoot-WiFi could find the injection point the way the Shuriken attack
 **Short answer:** yes, it looks possible with PicoBoot's wiring and payloads, without lifting a pin or changing the payload format [inf]. And it would guard BS1, one of the two parts of the boot that noise breaks today.
 - **Noise breaks today's boots in two places** (§2):
   - extra CS transfers during BS1 send the payload early;
-  - extras that split a payload block make every later block one bit late, which plan step L1 found in the simulator.
+  - extras that split a payload block shift every later block, by one more bit each, which plan step L1 found in the simulator.
   
   The length method guards BS1. A one-instruction wait for CS high guards the payload, for either method.
 - **A length-based start ignores what happens during BS1:** pulses without clocks, split transfers, and a clock that's already high at the false edge, D36's known limit.
@@ -35,7 +35,7 @@ The 255 is the Shuriken board's own choice: its flash needs a 4-byte read comman
 
 **Noise during the payload transfers moves the output too** (found in plan step L1, in the PIO simulator; this note first said it didn't).
 - A CS blip in the middle of a block sets IRQ 0 early. When the block ends, `clocked_output` finds the flag set and starts counting command clocks at once, before the console's last clock of the block.
-- That clock counts as the next block's first command clock, so every later block arrives one bit late.
+- That clock counts as the next block's first command clock, so the next block comes one bit early. It also ends a clock early, which leaves one more clock over for the block after: in the k-th block after the noise, the console reads bit i+k at position i (corrected 2026-11-24, from PicoBoot-DX's simulator).
 - **The fix:** a wait for CS high before each block's IRQ. The block is over only when CS rises, and no clock runs in the gap. One instruction, for either method (L1).
 - **The TV boots fit this too:** boot 95, with no extras, started, and "a couple" of the 21 did ([main-console-tv.md](main-console-tv.md) §1).
 
@@ -105,7 +105,7 @@ high:
 | Noise that splits BS1 transfers (the TV) | counted: the payload goes early | ignored: each piece has under 97 clocks [inf] |
 | A CS blip in the first ~97 clocks of the first block | — | the switch lands at the wrong bit, a window of about 3.6 µs. L1: only a blip the detector sees, while CLK is low |
 | Noise that holds CS low across a gap, merging two BS1 fetches | merged: the count falls short, so the payload goes one transfer late [inf] | 192 clocks: taken for a block, so the payload goes early [inf]. Not seen |
-| Noise that splits a payload block | every later block one bit late (L1) | the same, unless each block waits for CS high, as L1's prototype does |
+| Noise that splits a payload block | every later block shifted, one more bit each (L1) | the same, unless each block waits for CS high, as L1's prototype does |
 | An IPL whose BS1 isn't 224 fetches | breaks | works [inf]. None known: every console recorded shows 224 |
 | A CLK glitch while CS is low during BS1 (found by L7's review) | ignored: one clock per transfer counts | a 97th edge: the payload starts in BS1 (simulated). On clean wiring L4 saw no CLK phase under 16 ns. Weighed at L9: an opt-in, standard the default |
 

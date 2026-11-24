@@ -375,7 +375,7 @@ class LengthInjectionTest(unittest.TestCase):
     def test_noise_during_the_payload(self):
         """
         A CS blip in the middle of a block (L1's finding). clocked_output before 1.2.0 then counted the
-        block's last clock as the next block's first command clock, so every later block was one bit late.
+        block's last clock as the next block's first command clock, so every later block was shifted, by one more bit each.
         With the wait for CS high, both methods' output programs stay in step (D48).
         """
         old, _ = older_outputs()
@@ -391,7 +391,7 @@ class LengthInjectionTest(unittest.TestCase):
         """
         R4's finding: a block's last bit goes out at its second-to-last clock. With only the wait for CS high
         (R1), a blip that ended just before the last clock passed it, and that clock counted as the next
-        block's first command clock: every later block one bit late. Waiting for the block's last clock
+        block's first command clock: every later block shifted. Waiting for the block's last clock
         first closes the window. Blips of 1-4 cycles at every phase of the first block's last two clocks,
         with a 32, 40 and 64 ns clock: both methods stay in step and end cleanly; R1's output loses a bit.
         """

@@ -4,7 +4,7 @@
 **For:** whoever works on PicoBoot-DX ([r3mko/PicoBoot-DX](https://github.com/r3mko/PicoBoot-DX), v0.13). It follows [picoboot-dx-cs-glitch.md](picoboot-dx-cs-glitch.md) and [picoboot-dx-cs-pull-up.md](picoboot-dx-cs-pull-up.md).
 
 **In short:**
-- **The weakness:** `clocked_output` reaches `wait 1 irq 0` while one clock of the payload block is still to come. An IRQ 0 that is set early lets that clock count as the next block's first command clock, and every later block is then one bit late. Two kinds of noise set it early:
+- **The weakness:** `clocked_output` reaches `wait 1 irq 0` while one clock of the payload block is still to come. An IRQ 0 that is set early lets that clock count as the next block's first command clock, and every later block is then shifted, by one more bit each block. Two kinds of noise set it early:
   - a CS blip inside a payload block;
   - a clockless CS glitch between payload transfers.
 - **PicoBoot-DX knows the second already:** the "Not covered" comment on `on_transfer` says one glitch between payload transfers "shifts a later transfer by one bit". Restoring the wrap-loop CLK wait that `01acbb1` removed is parked for it.
@@ -13,6 +13,7 @@
   - **Shown so far:** simulated, code-reviewed, and booted on two DOL-001s with Pico 2 Ws (RP2350).
   - **Not yet:** an RP2040.
   - **PicoBoot-DX:** nothing has changed. Whether and how to take it is up to the owner.
+- **Revision 2026-11-24, from PicoBoot-DX's note:** the shift isn't one bit. The later blocks come early, by one more bit each block: in the k-th block after the noise, the console reads bit i+k at position i. Confirmed in PicoBoot-WiFi's simulator.
 
 ## 1. The mechanism
 
@@ -25,7 +26,7 @@
 
 | Noise | What `on_transfer`'s wrap loop does | Result in PicoBoot-DX v0.13 |
 |---|---|---|
-| A CS-high blip inside a payload block | Sees the blip end as a CS fall and sets IRQ 0 | The output takes the block's last clock as the next block's first command clock: every later block one bit late |
+| A CS-high blip inside a payload block | Sees the blip end as a CS fall and sets IRQ 0 | The output takes the block's last clock as the next block's first command clock: every later block shifted, one more bit each |
 | A clockless CS-low glitch between payload transfers | Sets IRQ 0 at the glitch, then again at the next transfer's real CS fall | That second IRQ is left set. At the end of the next block it passes at once, and the same shift follows |
 
 **What each new wait does:**

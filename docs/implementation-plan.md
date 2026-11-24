@@ -449,7 +449,7 @@ docs/                       design, plan, research, API, update-file format
   - the fourth wire a U10 replacement would need.
 
   The first step is a passive build that records the commands and their timing.
-- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer makes every later block one bit late. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9, D48).
+- **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer shifts every later block. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9, D48).
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -835,7 +835,7 @@ CI passed on every push of the branch, the last on `1570675`. R5: merged into `m
   - **The switch point: bit 66.** It goes on the line 3 cycles after clock 97 rises, as every other bit does: 5 cycles before the console reads it with a 32 ns clock, about 6.3 (25 ns) with the real 37.4 ns [inf]. Both methods fail at 24 ns, the output loop's own limit.
   - **What the length method ignores** (in the simulator): the dev console's false edge, a false edge while CLK is high (D36's known limit, which the count takes), and noise that splits BS1 fetches (which the count takes).
   - **Its own weak spots:** a CS blip the detector sees early in the first block, about 3.6 µs, and CS held low across a BS1 gap. A blip during CLK's high phase it doesn't see, which does no harm.
-  - **L1's finding:** a CS blip that splits a payload block makes today's `clocked_output` take that block's last clock as the next block's first command clock, so every later block is one bit late. Research notes that called noise during the payload harmless are corrected.
+  - **L1's finding:** a CS blip that splits a payload block makes today's `clocked_output` take that block's last clock as the next block's first command clock, so every later block is shifted, by one more bit each block (corrected 2026-11-24, from PicoBoot-DX's simulator). Research notes that called noise during the payload harmless are corrected.
 - **The owner's choice:** the prototype waits for CS high before each later block's IRQ, which fixes it in the simulator. Today's `clocked_output` gets the same wait in a release of its own (later releases).
 - **L2 (2026-11-23)** in `1383c4e` on `diag-cs-timing`:
   - `pio/clk_capture.pio`, pio1's fourth state machine, and a DMA channel into a 64 KB buffer: 262,144 samples, 1.05 ms;

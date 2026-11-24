@@ -101,7 +101,7 @@ What the status page shows (D22).
 | `chosen` | What the next power-on injects: `payload1`, `payload2` or `builtin` (the built-in gekkoboot, which also boots when the chosen payload isn't valid) |
 | `upload_target` | Where the next upload goes: the payload slot that isn't the choice; payload 2 while the built-in is the choice (D42) |
 | `original_ipl_once` | The next power-on boots the console's own IPL, then this clears itself |
-| `injection` | How the power-ons find the payload's start (D48): `"standard"`, D36's count of the console's 224 start-up reads (the default), or `"length"`, the first block by its length (D47), which ignores noise on CS at start-up. Kept until changed. Since 1.2.0 |
+| `injection` | How the power-ons find the payload's start (D48): `"standard"`, D36's count of the console's 224 start-up reads (the default), or `"length"`, the first block by its length (D47), which ignores CS blips that split a start-up read. Kept until changed. Since 1.2.0 |
 | `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17). Every power-on says so until a complete injection, or a choice, rename or upload over Wi-Fi, records the new payload 1. Not on an "original IPL once" boot, which boots nothing |
 | `payloadN.valid` | It holds a payload with a good header, size and footer |
 | `payloadN.name` | The name you gave it (D42); `""` for none, e.g. after a USB install |
@@ -193,7 +193,7 @@ The last boot and the boot log (D22, D39).
 | `payload_chosen` | Boot control's choice, in the same names; `none` without an injection. If it differs from `payload`, the chosen payload wasn't valid and the built-in one went instead |
 | `payload_words`, `words_delivered` | Words to send (256 per 1K transfer) and words sent |
 | `result` | `not_run` (warm boot), `skipped` ("original IPL once"), `no_cs` (no console), `complete` or `stalled` |
-| `injection` | The method the boot's injection used (D48): `"standard"` or `"length"`; `"standard"` for boots without an injection, and for entries logged before 1.2.0 |
+| `injection` | The method the boot's injection used (D48): `"standard"` or `"length"`; `"standard"` for boots without an injection, and for entries logged by releases before 1.2.0 (a length test build's say `"length"`) |
 | `main_to_ready_us` | `main()` to "PIO ready" |
 | `margin_raw_us`, `margin_clocked_us` | "PIO ready" to the first CS edge, and to the first real transfer; −1 if none (D31, D36) |
 | `injection_us` | From the first CS to the end of the injection |
@@ -208,7 +208,7 @@ The last boot and the boot log (D22, D39).
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
 
-The boot log keeps its format: `injection` is a byte in the report's padding, which entries logged before 1.2.0 hold as 0, standard. The Diagnostics tab shows the method for boots with an injection, and marks length boots in the boot log table.
+The boot log keeps its format: `injection` is a byte in the report's padding, which entries logged by releases before 1.2.0 hold as 0, standard. The Diagnostics tab shows the method for boots with an injection, and marks length boots in the boot log table.
 
 ## POST /api/firmware
 

@@ -80,12 +80,24 @@ def blip(transfer, clock, phase, width=4):
     return lambda c: add_pulse(c, c.cs_pin, clock_time(c, transfer, clock) + phase, width=width, level=1)
 
 
-def without_cs_wait(words, cs_pin):
-    """clocked_output as releases before 1.2.0 had it: without the `wait 1 gpio CS` after its first
-    instruction (D48), so later jump targets move back by one."""
-    assert words[1] == 0x2080 | cs_pin, "clocked_output's second instruction is the wait for CS high"
-    return [w - 1 if w >> 13 == 0 and (w & 0x1F) > 1 else w    # JMP: the address is the low 5 bits
-            for i, w in enumerate(words) if i != 1]
+def without(program, drop):
+    """`program` (as parse_pio_header() gives it) without the instructions at the indices in `drop`;
+    jump targets and labels move back past them."""
+    shift = lambda a: a - sum(1 for d in drop if d < a)
+    words = [(w & ~0x1F) | shift(w & 0x1F) if w >> 13 == 0 else w     # JMP: the address is the low 5 bits
+             for i, w in enumerate(program["instructions"]) if i not in drop]
+    return dict(program, instructions=words, wrap=len(words) - 1,
+                labels={name: shift(a) for name, a in program["labels"].items()})
+
+
+def older_outputs():
+    """clocked_output as 1.1.2 had it, with neither of the waits after `set x, 31`, and as plan step R1
+    had it, with the wait for CS high but not the one for the block's last clock (R4)."""
+    _, count, defines = programs()
+    out = count["clocked_output"]
+    clk, cs = defines["CLK_PIN"], defines["CS_PIN"]
+    assert out["instructions"][1:4] == [0x2000 | clk, 0x2080 | clk, 0x2080 | cs], "wait 0 CLK, wait 1 CLK, wait 1 CS"
+    return without(out, {1, 2, 3}), without(out, {1, 2})
 
 
 def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
@@ -118,19 +130,19 @@ def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
 
 
 def run_count(console, words, block_bits, fetches, output=None):
-    """The standard method (D36), with its count set to the console's number of BS1 fetches. `output`:
-    another clocked_output's instructions."""
+    """The standard method (D36), with its count set to the console's number of BS1 fetches. Returns the
+    bits the console read, the data pin's direction changes and the output's final PC. `output`: another
+    clocked_output program (older_outputs())."""
     _, count, defines = programs()
     pio = pio_sim.PIO(console.level)
     on_transfer = pio.add_sm(count["on_transfer"], jmp_pin=defines["CS_PIN"])
-    program = dict(count["clocked_output"], instructions=output) if output else count["clocked_output"]
-    out = pio.add_sm(program, autopull=True, threshold=32, shift_right=False,
+    out = pio.add_sm(output or count["clocked_output"], autopull=True, threshold=32, shift_right=False,
                      out_base=DATA_PIN, out_count=1, set_base=DATA_PIN, set_count=1, fifo_depth=8)
     prepare_transfer(on_transfer, fetches, MOV_X_OSR)
     prepare_transfer(out, block_bits - 1, MOV_Y_OSR)
     on_transfer.enabled = out.enabled = True
-    received, _ = pio_sim.run(pio, console, out, words, DATA_PIN)
-    return received
+    received, changes = pio_sim.run(pio, console, out, words, DATA_PIN)
+    return received, changes, out.pc
 
 
 def problems(words, received, console, blocks, block_bits, fetches, *, first_driven):
@@ -233,8 +245,29 @@ def count_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bi
     c = make_console(blocks, block_bits, fetches, **console)
     if prepare:
         prepare(c)
-    received = run_count(c, words, block_bits, fetches, output)
-    return problems(words, received, c, blocks, block_bits, fetches, first_driven=0)
+    received, changes, pc = run_count(c, words, block_bits, fetches, output)
+    found = problems(words, received, c, blocks, block_bits, fetches, first_driven=0)
+    return found + ending_problems(changes, pc, output or programs()[1]["clocked_output"])
+
+
+def ending_problems(changes, pc, output):
+    """What injection_complete() and the data line need at the end: the output at disable_chip, and the
+    line taken over once and released once (R4)."""
+    found = []
+    if pc != output["labels"]["disable_chip"]:
+        found.append(f"clocked_output ended at {pc}, not at disable_chip")
+    if [d for _, d in changes] != [1, 0]:
+        found.append(f"data line direction changes {[d for _, d in changes]}, not taken once and released once")
+    return found
+
+
+def blip_fits(transfer, clock, phase, width, half_period):
+    """Whether add_pulse() can put that blip on a small case's CS (not across one of CS's own edges)."""
+    try:
+        blip(transfer, clock, phase, width)(make_console(2, SMALL["block_bits"], SMALL["fetches"], half_period=half_period))
+        return True
+    except AssertionError:
+        return False
 
 
 @unittest.skipUnless(os.environ.get("PICOBOOT_BUILD_DIR"), "PICOBOOT_BUILD_DIR not set")
@@ -298,8 +331,9 @@ class LengthInjectionTest(unittest.TestCase):
                 self.assertEqual(pc, disable_chip())
                 console = MeasuredConsole(defines["CS_PIN"], defines["CLK_PIN"], transfers, random.Random(seed),
                                           pause_in_every_block=every)
-                received = run_count(console, words, BLOCK_BITS, BS1_FETCHES)
-                self.assertEqual(problems(words, received, console, 2, BLOCK_BITS, BS1_FETCHES, first_driven=0), [])
+                received, changes, pc = run_count(console, words, BLOCK_BITS, BS1_FETCHES)
+                self.assertEqual(problems(words, received, console, 2, BLOCK_BITS, BS1_FETCHES, first_driven=0) +
+                                 ending_problems(changes, pc, programs()[1]["clocked_output"]), [])
 
     def test_a_clk_glitch_during_bs1(self):
         """
@@ -344,8 +378,7 @@ class LengthInjectionTest(unittest.TestCase):
         block's last clock as the next block's first command clock, so every later block was one bit late.
         With the wait for CS high, both methods' output programs stay in step (D48).
         """
-        _, count, defines = programs()
-        old = without_cs_wait(count["clocked_output"]["instructions"], defines["CS_PIN"])
+        old, _ = older_outputs()
         for phase in range(2, 8):
             with self.subTest(phase=phase):
                 noise = blip(SMALL["fetches"] + 1, 150, phase)
@@ -353,6 +386,30 @@ class LengthInjectionTest(unittest.TestCase):
                 self.assertEqual(count_case(prepare=noise), [])
                 found, *_ = length_case(prepare=noise)
                 self.assertEqual(found, [])
+
+    def test_a_blip_at_a_blocks_end(self):
+        """
+        R4's finding: a block's last bit goes out at its second-to-last clock. With only the wait for CS high
+        (R1), a blip that ended just before the last clock passed it, and that clock counted as the next
+        block's first command clock: every later block one bit late. Waiting for the block's last clock
+        first closes the window. Blips of 1-4 cycles at every phase of the first block's last two clocks,
+        with a 32, 40 and 64 ns clock: both methods stay in step and end cleanly; R1's output loses a bit.
+        """
+        _, r1 = older_outputs()
+        r1_lost = []
+        for half_period in (4, 5, 8):
+            for clock in (32 + SMALL["block_bits"] - 2, 32 + SMALL["block_bits"] - 1):
+                for phase in range(2 * half_period):
+                    for width in (1, 2, 3, 4):
+                        if not blip_fits(SMALL["fetches"], clock, phase, width, half_period):
+                            continue
+                        noise = blip(SMALL["fetches"], clock, phase, width)
+                        with self.subTest(half_period=half_period, clock=clock, phase=phase, width=width):
+                            self.assertEqual(count_case(blocks=2, prepare=noise, half_period=half_period), [])
+                            self.assertEqual(length_case(blocks=2, prepare=noise, half_period=half_period)[0], [])
+                        if count_case(blocks=2, prepare=noise, half_period=half_period, output=r1):
+                            r1_lost.append((half_period, clock, phase, width))
+        self.assertTrue(r1_lost, "R1's clocked_output should lose a bit in this window")
 
     def test_a_blip_before_the_first_blocks_97th_clock(self):
         """

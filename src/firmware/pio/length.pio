@@ -46,8 +46,9 @@ high:
 ; In pio0, instead of on_transfer and clocked_output: clocked_output with an entry for the first
 ; block, started at `first`. Y = the bits per block - 1 (8191); ISR = the first block's bits after
 ; bit 66 (8125). Shift left, autopull at 32, joined TX FIFO, OUT and SET on the data pin, as
-; clocked_output. From `start` on, clocked_output's instructions, with its wait for CS high before
-; each later block's IRQ (L1's finding, in clocked_output too since D48; a test checks they're the same).
+; clocked_output. From `start` on, clocked_output's instructions, with its waits for a block's last
+; clock and CS high before each later block's IRQ (L1's finding and R4's, in clocked_output too since
+; D48; a test checks they're the same).
 .program clocked_output_length
 
 public first:
@@ -63,6 +64,8 @@ public first:
 
 start:
     set x, 31                   ; x - 32 bits we need to skip (address)
+    wait 0 gpio LENGTH_CLK_PIN         ; The block's last clock: its last bit went out at the clock before,
+    wait 1 gpio LENGTH_CLK_PIN         ; so a CS blip before this clock can't pass the wait below (R4)
     wait 1 gpio LENGTH_CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
                                 ; IRQ 0 set early, and without this wait its last clock would count
                                 ; as the next block's first command clock (L1, test_length_injection.py)

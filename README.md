@@ -14,7 +14,7 @@ PicoBoot-DX for the Raspberry Pi **Pico 2 W**, with updates over Wi-Fi. It's a G
   - upload a `.dol`, a payload `.uf2` or a raw payload; it goes into the slot that isn't chosen;
   - choose what boots next, rename, delete, and download a backup;
   - **Original IPL once:** the next power-on starts the console's own menu, to set the clock or the language.
-  - **Injection:** standard, or length-based, which ignores noise on CS while the console starts.
+  - **Injection:** standard, or length-based, for noise on CS while the console starts (see [Wiring](#wiring)).
 - **Firmware updates over Wi-Fi:** an update goes into the other firmware slot and starts on trial. If it doesn't work, PicoBoot-WiFi goes back to the previous firmware by itself.
 - **Settings and diagnostics:** the Wi-Fi name, password, country, channel and transmit power, auto-off, and the LED. A boot log shows each power-on's injection and its timing margin, and warns of noise on CS.
 - **A running game is never disturbed:** a reboot of the Pico without a power cycle doesn't inject again.
@@ -47,9 +47,9 @@ The wiring is PicoBoot's (since its v0.4): see the wiring diagram in [PicoBoot's
 **Wires: short, thin and stranded.** Upstream PicoBoot asks for wires of at most about 10 cm (4 inches), of 26–28 AWG stranded wire; thick or single-core wire can break or damage the motherboard's pads ([troubleshooting](https://support.webhdx.dev/gc/picoboot/troubleshooting)). A flex cable or a quick-solder board at U10 is the better choice. The Diagnostics tab warns when a boot shows noise on CS.
 
 **Length-based injection, for noise on CS at start-up.**
-- **Why:** the standard injection counts the console's 224 start-up reads of the IPL chip, so a CS blip among them sends the payload at the wrong moment.
+- **Why:** the standard injection counts the console's 224 start-up reads of the IPL chip, so a CS blip that splits one of them sends the payload at the wrong moment.
 - **What it does:** *Length-based*, on the Payloads tab, finds the payload's first block by its length instead, and ignores such blips.
-- **Fix the wiring first:** both work on clean wiring. Length-based is untested on noisy wiring, and a glitch on CLK during those reads starts its payload too early.
+- **Fix the wiring first:** both work on clean wiring. Length-based is untested on noisy wiring, and it has weak spots of its own: a glitch on CLK during those reads, CS held low across the gap between two of them, or a CS blip early in the payload's first block.
 - **If a length-based boot fails,** the console shows its own menu or a black screen. Wi-Fi comes up either way, so switch back to standard.
 
 An existing PicoBoot or PicoBoot-DX installation keeps its wiring.
@@ -147,7 +147,7 @@ The JSON API is described in [docs/api.md](docs/api.md).
 
 | Problem | What to do |
 |---|---|
-| Forgotten Wi-Fi password, or settings that lock you out | Install `picoboot-wifi-X.Y.Z.uf2` again over USB. It resets the settings (the default password), the payload choice and the names, and leaves the payloads |
+| Forgotten Wi-Fi password, or settings that lock you out | Install `picoboot-wifi-X.Y.Z.uf2` again over USB. It resets the settings (the default password), the payload choice, the injection method and the names, and leaves the payloads |
 | A firmware update that doesn't work | Nothing: on trial, its first crash brings the previous firmware back by itself. Or boot the other slot on the Firmware tab |
 | A payload that doesn't boot | Choose another payload or the built-in gekkoboot, or set *Original IPL once* |
 | The console starts its own menu instead of the payload | The Diagnostics tab shows the last boot's injection result. "No console seen" or "stalled" points at the wiring; check CS, CLK and Data. "Noise on CS" means more CS transfers than a clean boot (225 more than the payload's transfers, so 285 for the built-in gekkoboot): check the wiring, the ground wire first (see [Wiring](#wiring)). If the noise stays, length-based injection may help |

@@ -3,7 +3,7 @@
  ;
  ; From PicoBoot-DX v0.10 (src/picoboot-dx.pio). Changed: on_transfer counts a skipped transfer
  ; only once it clocks while CS is low (design D36), and clocked_output waits for a block's last
- ; clock and CS high before the next block (D48).
+ ; clock, CS high and the next transfer's CS fall before the next block (D48).
  ;
  ; SPDX-License-Identifier: GPL-2.0-only
 
@@ -38,6 +38,8 @@ start:
     wait 1 gpio CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
                                 ; IRQ 0 set early, and without this wait its last clock would count
                                 ; as the next block's first command clock (D47's L1, D48)
+    wait 0 gpio CS_PIN          ; ...and the next transfer has begun: after an IRQ set early, a clock
+                                ; while CS is high between blocks can't count (1.2.1)
     wait 1 irq 0                ; Hold until SM0 tells us to start injecting
 
 wait_bit:

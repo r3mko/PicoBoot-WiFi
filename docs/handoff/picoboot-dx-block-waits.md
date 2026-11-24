@@ -13,6 +13,7 @@
   - **Shown so far:** simulated, code-reviewed, and booted on two DOL-001s with Pico 2 Ws (RP2350).
   - **Not yet:** an RP2040.
   - **PicoBoot-DX:** nothing has changed. Whether and how to take it is up to the owner.
+- **Revision 2026-11-24, a second one:** after PicoBoot-DX's `0a84825`, one more wait in `clocked_output` closes the stray-clock case it leaves open: §7.
 - **Revision 2026-11-24, from PicoBoot-DX's note:** the shift isn't one bit. The later blocks come early, by one more bit each block: in the k-th block after the noise, the console reads bit i+k at position i. Confirmed in PicoBoot-WiFi's simulator.
 
 ## 1. The mechanism
@@ -115,3 +116,37 @@ From [length-injection-results.md](https://github.com/r3mko/PicoBoot-WiFi/blob/m
   - CLK pauses 660 ns after the 32 command clocks;
   - one data period in 64 is stretched to about 50 ns.
 - **BS1 ignores the first block's first 66 bits:** shown on hardware by the length-based boots, in which U10, not the payload, sent them.
+
+## 7. After PicoBoot-DX's note: a wait for CS low
+
+PicoBoot-DX took the three waits (`45d8805`) and its own change to `on_transfer` (`0a84825`). PicoBoot-WiFi checked both in its simulator ([block-noise.md](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/block-noise.md)) and takes a different change for its 1.2.1 (the owner's choice). PicoBoot-WiFi's `on_transfer` and `clocked_output` are PicoBoot-DX's, so the results carry over.
+
+**The case `0a84825` leaves open,** the one PicoBoot-DX's own "Not covered" comment names:
+- a CS blip within a payload transfer leaves IRQ 0 one block early;
+- a clock while CS is high, before a later transfer, then counts as that transfer's first command clock.
+
+**The change:** in `clocked_output`, after the wait for CS high, wait for the next transfer's CS fall before the IRQ:
+
+```
+    wait 1 gpio CS_PIN          ; The block is over only when CS rises: ...
+    wait 0 gpio CS_PIN          ; ...and the next one has begun: a clock while CS is high between
+                                ; blocks can't count, however many IRQs are pending
+    wait 1 irq 0                ; Hold until SM0 tells us to start injecting
+```
+
+**What it costs:** one instruction. PicoBoot-DX's pio0 goes from 29 to 30 of 32.
+
+**What it gives,** in PicoBoot-WiFi's simulator, with 3 payload blocks. A is `0a84825`; B is this change:
+
+| Case | The three waits | + A | + B | + A + B |
+|---|---|---|---|---|
+| A glitch after block 0, a stray clock after block 1 | wrong | ok | ok | ok |
+| A glitch before the 225th transfer, a stray clock after block 0 | wrong | ok | ok | ok |
+| A blip in block 0, a stray clock after block 1 | wrong | **wrong** | ok | ok |
+| A glitch after block 0, a stray clock right after it | wrong | wrong | wrong | wrong |
+
+- **The 1.2.0 cases stay right with B:** the clean and single-noise cases, the 272 blips at a block's end, CS low at the start, and the measured EXI timing at full size.
+- **For PicoBoot-DX, with A already in, adding B gives A + B.** In the simulator that's the same coverage as B alone, and it's what the last column shows.
+- **Still open with any of them:** a clock right after a clockless glitch, before the next transfer. To the output it looks like a transfer starting. Counting a command clock only while CS is low might close it; that's not simulated.
+
+**Status:** simulator only. PicoBoot-WiFi 1.2.1's code review and console test follow, on its dev console, an RP2350.

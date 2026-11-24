@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.35, 2026-11-24 |
-| **Design** | [architecture.md](architecture.md), Approved v1.25 |
+| **Status** | Approved v1.36, 2026-11-25 |
+| **Design** | [architecture.md](architecture.md), Approved v1.26 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -47,6 +47,7 @@
 | v1.33 | 2026-11-24 | Approved by the owner. Release 1.2.0: the injection switch (D48), with the owner's design choices; steps R1–R6. CI drops the crash and marked-blob test builds, whose options stay for local builds. |
 | v1.34 | 2026-11-24 | Approved by the owner. Release 1.2.0's steps R1–R4 as built, and its code review's findings with the owner's choices: the wait for each block's last clock, and no host test for `POST /api/boot`'s new field. |
 | v1.35 | 2026-11-24 | Approved by the owner. Release 1.2.0's console test (R5) passed on R4's build, with its results note; R4's finding 3 checked against it. |
+| v1.36 | 2026-11-25 | Approved by the owner. Release 1.2.1: the output programs wait for the next transfer's CS fall (D48, option B), with the owner's design choices; steps R1–R5. |
 
 ## How this plan works
 
@@ -957,6 +958,27 @@ The other later-releases items aren't in 1.2.0.
 - **No host test for `POST /api/boot`'s `injection`,** where R1 asked for host tests "for the flag and the API". The owner accepted it at R4.
 - **The wait for each block's last clock,** not in D48 v1.24: R4's finding, the owner's choice.
 - **The standard boots after the update:** the power-on that kept it was the built-in one, then one with Swiss, so 2 power-ons per console on 1.2.0 with standard.
+
+## Release 1.2.1: no stray clocks between payload blocks (D48)
+
+**Branch:** `release-1.2.1`. **Research:** [block-noise.md](research/block-noise.md). **Design:** D48 (v1.26). **Done when:** the console test passes on the release build, and the tag's draft matches it.
+
+**The owner's choices (2026-11-24):**
+- **Option B:** both output programs wait for the next transfer's CS fall after the wait for CS high, before a block's IRQ. `on_transfer` and the detector stay as 1.2.0's.
+- **The research note's cases go into the test suite,** for both methods.
+- **A console test on the dev console only,** with both methods.
+- **PicoBoot-DX hears now,** from the simulator: a revision of the block-waits handoff.
+- **The version 1.2.1.**
+
+The other later-releases items aren't in 1.2.1.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| R1 | **The programs and the tests:**<br>• `release-1.2.1` from `main`;<br>• `wait 0 gpio CS` after `wait 1 gpio CS` in `clocked_output` and `clocked_output_length`;<br>• the research note's cases in the suite, for both methods: a glitch or a blip, then a stray clock between later blocks; the clockless glitch between payload transfers; the shift direction of 1.1.2's program, as a negative test | Opus | Host tests, the simulator tests, the layout check and CI pass |
+| R2 | **Docs, version and notes:** the README where it describes the waits, `CMakeLists.txt` at `1.2.1`, the release notes in `docs/releases/1.2.1.md` | Opus | The owner approved the notes |
+| R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
+| R4 | **Console test** on the dev console, on the build after R3, on clean wiring:<br>• the update over Wi-Fi from 1.2.0; a power-on keeps it;<br>• 2 cold boots standard and 2 length-based, the built-in and Swiss, each boot's screen noted;<br>• back to standard.<br>The main console isn't in the test (the owner's choice); it can take the release afterwards | Owner | Passed; results in `docs/research/release-1.2.1-results.md` |
+| R5 | **Merge and tag `v1.2.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
 
 ## Local builds and CI
 

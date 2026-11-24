@@ -42,24 +42,29 @@ jobs:
           docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
           python3 tests/check_layout.py --loader build/src/loader/loader.elf --firmware build/src/firmware/firmware.elf
 
+      # Test-build-only code (the test page) is compiled only when the version ends in -dev: compile it
+      # from a copy marked so, without warnings (D47's L6, kept by D48). The crash and marked-blob test
+      # builds of plan steps 3.7 and 3.8 are made locally when needed: -DPICOBOOT_WIFI_TEST_CRASH=startup
+      # or after5s, -DPICOBOOT_WIFI_BLOB=marked (D48)
+      - name: Compile a test build
+        run: |
+          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build sh -c '
+            set -e
+            cp -r /src /tmp/dev
+            sed -i -E "s/set\(PICOBOOT_WIFI_VERSION \"([^\"]+)\"\)/set(PICOBOOT_WIFI_VERSION \"\1-dev\")/" /tmp/dev/CMakeLists.txt
+            cmake -S /tmp/dev -B /tmp/dev/build-test -DCMAKE_BUILD_TYPE=Release > /tmp/configure.log
+            cat /tmp/configure.log
+            grep -q "test build: 1" /tmp/configure.log
+            cmake --build /tmp/dev/build-test --parallel > /tmp/build.log 2>&1 || { cat /tmp/build.log; exit 1; }
+            if grep "warning:" /tmp/build.log; then exit 1; fi
+            python3 /tmp/dev/tests/check_layout.py --loader /tmp/dev/build-test/src/loader/loader.elf --firmware /tmp/dev/build-test/src/firmware/firmware.elf
+          '
+
       # With a build directory, the PIO simulator tests (injection and counters) run too
       - name: Run all tests against the build
         env:
           PICOBOOT_BUILD_DIR: build
         run: python3 -m unittest discover -s tests -v
-
-      # Test builds that crash on purpose, for the trial and crash-loop tests (plan step 3.7), and one
-      # with a different Wi-Fi blob (step 3.8)
-      - name: Build the crash test builds
-        run: >
-          docker run --rm -v "$PWD":/src -w /src picoboot-wifi-build
-          sh -c 'for c in startup after5s; do
-          cmake -S . -B build-crash-$c -DCMAKE_BUILD_TYPE=Release -DPICOBOOT_WIFI_TEST_CRASH=$c &&
-          cmake --build build-crash-$c --parallel --target update_bin &&
-          cp build-crash-$c/picoboot-wifi-update.bin build/test-update-crash-$c.bin || exit 1; done &&
-          cmake -S . -B build-newblob -DCMAKE_BUILD_TYPE=Release -DPICOBOOT_WIFI_BLOB=marked &&
-          cmake --build build-newblob --parallel --target update_bin &&
-          cp build-newblob/picoboot-wifi-update.bin build/test-update-newblob.bin'
 
       - name: Upload the build
         uses: actions/upload-artifact@v7
@@ -68,8 +73,5 @@ jobs:
           path: |
             build/picoboot-wifi-install.uf2
             build/picoboot-wifi-update.bin
-            build/test-update-crash-startup.bin
-            build/test-update-crash-after5s.bin
-            build/test-update-newblob.bin
             build/src/loader/loader.elf
             build/src/firmware/firmware.elf

@@ -89,7 +89,8 @@ What the status page shows (D22).
 
 ```json
 "payloads": {
-  "chosen": "payload1", "upload_target": "payload2", "original_ipl_once": false, "usb_install": false,
+  "chosen": "payload1", "upload_target": "payload2", "original_ipl_once": false, "injection": "standard",
+  "usb_install": false,
   "payload1": {"valid": true, "name": "Swiss r2119", "size": 1349956, "sha256": "9f2c…"},
   "payload2": {"valid": false, "name": "", "size": 0, "sha256": null}
 }
@@ -100,6 +101,7 @@ What the status page shows (D22).
 | `chosen` | What the next power-on injects: `payload1`, `payload2` or `builtin` (the built-in gekkoboot, which also boots when the chosen payload isn't valid) |
 | `upload_target` | Where the next upload goes: the payload slot that isn't the choice; payload 2 while the built-in is the choice (D42) |
 | `original_ipl_once` | The next power-on boots the console's own IPL, then this clears itself |
+| `injection` | How the power-ons find the payload's start (D48): `"standard"`, D36's count of the console's 224 start-up reads (the default), or `"length"`, the first block by its length (D47), which ignores CS blips that split a start-up read. Kept until changed. Since 1.2.0 |
 | `usb_install` | This power-on booted payload 1 because a USB install had changed it (D17). Every power-on says so until a complete injection, or a choice, rename or upload over Wi-Fi, records the new payload 1. Not on an "original IPL once" boot, which boots nothing |
 | `payloadN.valid` | It holds a payload with a good header, size and footer |
 | `payloadN.name` | The name you gave it (D42); `""` for none, e.g. after a USB install |
@@ -191,6 +193,7 @@ The last boot and the boot log (D22, D39).
 | `payload_chosen` | Boot control's choice, in the same names; `none` without an injection. If it differs from `payload`, the chosen payload wasn't valid and the built-in one went instead |
 | `payload_words`, `words_delivered` | Words to send (256 per 1K transfer) and words sent |
 | `result` | `not_run` (warm boot), `skipped` ("original IPL once"), `no_cs` (no console), `complete` or `stalled` |
+| `injection` | The method the boot's injection used (D48): `"standard"` or `"length"`; `"standard"` for boots without an injection, and for entries logged by releases before 1.2.0 (a length test build's say `"length"`) |
 | `main_to_ready_us` | `main()` to "PIO ready" |
 | `margin_raw_us`, `margin_clocked_us` | "PIO ready" to the first CS edge, and to the first real transfer; −1 if none (D31, D36) |
 | `injection_us` | From the first CS to the end of the injection |
@@ -204,6 +207,8 @@ The last boot and the boot log (D22, D39).
 | `crash_fallback` | The other slot crashed 3 times in a row in this session, so this one took over for good |
 
 `wifi` says where the Wi-Fi blob came from (`"A"` or `"B"`), and how long Wi-Fi took to come up after the injection.
+
+The boot log keeps its format: `injection` is a byte in the report's padding, which entries logged by releases before 1.2.0 hold as 0, standard. The Diagnostics tab shows the method for boots with an injection, and marks length boots in the boot log table.
 
 ## POST /api/firmware
 
@@ -228,7 +233,7 @@ An over-the-air update (D11). The body is an update file ([update-format.md](upd
 
 ## POST /api/boot
 
-The boot choices: the firmware slots (D12, D13), the payload (D15) and the console's own IPL once (D22). The body holds exactly one of:
+The boot choices: the firmware slots (D12, D13), the payload (D15), the console's own IPL once (D22) and the injection method (D48). The body holds exactly one of:
 
 | Body | What it does | Answer |
 |---|---|---|
@@ -236,6 +241,7 @@ The boot choices: the firmware slots (D12, D13), the payload (D15) and the conso
 | `{"slot": "A"}` or `"B"` | Boots that slot (D13) | `{"rebooting": true}`, then a warm reboot half a second later; `{"rebooting": false}` if it's the running slot already; 409 `not_bootable` if it's empty or holds no PicoBoot-WiFi firmware |
 | `{"payload": "payload1"}`, `"payload2"` or `"builtin"` | The payload for the next power-ons (D15) | `{"payload": ...}`; 409 `not_valid` if that slot holds no valid payload |
 | `{"original_ipl_once": true}` (or `false`) | The next power-on boots the console's own IPL, e.g. to set its clock or language; then it clears itself | `{"original_ipl_once": true}` |
+| `{"injection": "length"}` (or `"standard"`) | How the next power-ons find the payload's start (D48), kept until changed. Since 1.2.0 | `{"injection": "length"}` |
 
 The slot choices:
 
@@ -243,7 +249,7 @@ The slot choices:
 - **To a kept slot:** it becomes the active one. A running firmware from a USB install counts as kept from then on.
 - **To any other slot with a firmware** (from a USB install, on trial, unkept or failed): it goes on trial (D12). After a USB install the other slot may hold anything, so it's never made active straight away.
 
-Payload choices take effect at the next power-on; nothing reboots.
+Payload and injection choices take effect at the next power-on; nothing reboots.
 
 ## POST /api/payload
 

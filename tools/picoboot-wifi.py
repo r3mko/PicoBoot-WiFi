@@ -14,6 +14,7 @@ Command-line client for the PicoBoot-WiFi JSON API (docs/api.md). Join the Pico'
     python3 tools/picoboot-wifi.py payload delete payload1|payload2 [--yes]
     python3 tools/picoboot-wifi.py payload convert FILE.dol [--uf2] [-o OUT] [--force]  (offline)
     python3 tools/picoboot-wifi.py ipl-once [--off]
+    python3 tools/picoboot-wifi.py injection standard|length
     python3 tools/picoboot-wifi.py backup payload1|payload2|firmware|settings [-o FILE] [--force]
     python3 tools/picoboot-wifi.py restore-settings FILE
 
@@ -489,6 +490,8 @@ def print_status(st):
     pl = st.get("payloads")
     if pl:
         line = f"Payloads:    {slot_label(pl.get('chosen') or '?')} chosen; original IPL once: {'yes' if pl.get('original_ipl_once') else 'no'}"
+        if pl.get("injection"):         # 1.2.0 and later (D48)
+            line += f"; injection: {'length-based' if pl['injection'] == 'length' else 'standard'}"
         print(line + (" (a USB install changed payload 1)" if pl.get("usb_install") else ""))
         for slot in ("payload1", "payload2"):
             p = pl.get(slot) or {}
@@ -699,6 +702,13 @@ def cmd_ipl_once(args):
         print("The next power-on boots the console's own IPL, then this clears itself.")
 
 
+def cmd_injection(args):
+    post(args, "/api/boot", {"injection": args.method})
+    print("From the next power-on, the injection is " +
+          ("length-based: it finds the payload's start by its length (README)." if args.method == "length"
+           else "standard: it counts the console's 224 start-up reads."))
+
+
 def verify_update_download(data):
     """The firmware backup is an update file: header, length and the SHA-256s. Returns its version."""
     if len(data) < HEADER_SIZE or data[:4] != MAGIC:
@@ -854,6 +864,10 @@ def make_parser():
     s = sub.add_parser("ipl-once", help="boot the console's own IPL at the next power-on, then go back")
     s.add_argument("--off", action="store_true", help="cancel it")
     s.set_defaults(func=cmd_ipl_once)
+    s = sub.add_parser("injection", help="how the next power-ons find the payload's start: standard (the default) "
+                                         "or length-based, which ignores noise on CS at start-up")
+    s.add_argument("method", choices=["standard", "length"])
+    s.set_defaults(func=cmd_injection)
     s = sub.add_parser("backup", help="download a payload, the running firmware (an update file) "
                                       "or the settings, and check it")
     s.add_argument("what", choices=slots + ["firmware", "settings"])

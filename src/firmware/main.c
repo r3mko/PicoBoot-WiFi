@@ -128,8 +128,9 @@ static injection_payload_t choose_payload(const bootctl_t *b, bool stored) {
 
 // Runs the injection and measures it into the report. Nothing slow may run before "PIO ready",
 // and nothing may write flash until the injection has ended (design C1, C6).
-static void inject(const injection_payload_t *payload) {
-    injection_prepare(payload);
+static void inject(const injection_payload_t *payload, bool by_length) {
+    report.injection_method = by_length ? INJECTION_METHOD_LENGTH : INJECTION_METHOD_STANDARD;
+    injection_prepare(payload, by_length);
     counters_init();
     counters_start();           // The counters run before the injection, so they see every edge
     injection_go();
@@ -322,7 +323,7 @@ int main(void) {
             sleep_ms(SKIPPED_IPL_WAIT_MS);
         } else {
             TRACE("payload %d, %lu words\n", report.payload, (unsigned long)report.payload_words);
-            inject(&payload);
+            inject(&payload, (bootctl.flags & BOOTCTL_FLAG_INJECTION_LENGTH) != 0);   // D48
             TRACE("injection result %d, margin %ld us, CS raw %lu clocked %lu\n", report.result,
                   (long)report.margin_raw_us, (unsigned long)report.cs_raw, (unsigned long)report.cs_clocked);
         }

@@ -19,9 +19,11 @@ typedef struct {
     bool byteswap;              // Flash payloads are stored big-endian; the built-in IPL is not
 } injection_payload_t;
 
-// Boosts the clock and sets up both state machines and the DMA, which starts filling the PIO FIFO.
-// The state machines don't run yet. CS keeps the pad's reset pull-down, as PicoBoot leaves it (D36).
-void injection_prepare(const injection_payload_t *payload);
+// Boosts the clock and sets up the chosen method's state machines and the DMA, which starts filling
+// the PIO FIFO (D48). Standard: D36's count of 224, on_transfer and clocked_output in pio0. By length
+// (D47): the detector in pio1 and clocked_output_length in pio0. The state machines don't run yet.
+// CS keeps the pad's reset pull-down, as PicoBoot leaves it (D36).
+void injection_prepare(const injection_payload_t *payload, bool by_length);
 
 // Starts the state machines ("PIO ready"); the console's first CS may come any time after that.
 void injection_go(void);

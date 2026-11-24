@@ -6,6 +6,7 @@
 
 #include "injection_pio.h"
 #include "injection.pio.h"
+#include "length.pio.h"
 
 // From PicoBoot-DX v0.10 (src/pio.c). Changed: the jump pin (design D36).
 // tests/test_pio_programs.py mirrors this state machine setup for its PIO simulator: keep both in sync
@@ -34,9 +35,9 @@ void on_transfer_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint 
     pio_sm_init(pio, sm, offset, &c);
 }
 
-void clocked_output_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin) {
-    pio_sm_config c = clocked_output_program_get_default_config(offset);
-
+// The output state machine's set-up, for clocked_output and its length-based copy (D47)
+static void output_program_init(PIO pio, uint sm, uint offset, pio_sm_config c, uint clk_pin, uint cs_pin,
+                                uint data_pin) {
     pio_gpio_init(pio, clk_pin);
     pio_gpio_init(pio, cs_pin);
     pio_gpio_init(pio, data_pin);
@@ -61,6 +62,29 @@ void clocked_output_program_init(PIO pio, uint sm, uint offset, uint clk_pin, ui
     sm_config_set_clkdiv(&c, 1.f);
 
     // Load configuration and jump to start of the program
+    pio_sm_init(pio, sm, offset, &c);
+}
+
+void clocked_output_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin) {
+    output_program_init(pio, sm, offset, clocked_output_program_get_default_config(offset), clk_pin, cs_pin, data_pin);
+}
+
+// Length-based injection (designs D47, D48). tests/test_length_injection.py mirrors these two
+// set-ups for its PIO simulator: keep both in sync
+
+void clocked_output_length_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin) {
+    // Starts at `first`, the program's first instruction
+    output_program_init(pio, sm, offset, clocked_output_length_program_get_default_config(offset), clk_pin, cs_pin,
+                        data_pin);
+}
+
+void length_detect_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin) {
+    pio_sm_config c = length_detect_program_get_default_config(offset);
+    sm_config_set_jmp_pin(&c, cs_pin);          // CS rising before a 97th clock: not a block
+    sm_config_set_in_pins(&c, clk_pin);         // mov y, pins reads CLK...
+    sm_config_set_in_pin_count(&c, 1);          // ...alone (RP2350: IN_COUNT masks the rest)
+    sm_config_set_clkdiv(&c, 1.f);              // Full system clock: it polls CLK every 3 cycles
+    // No pio_gpio_init(): it only reads CS and CLK, whose pads the output program's set-up turns on
     pio_sm_init(pio, sm, offset, &c);
 }
 

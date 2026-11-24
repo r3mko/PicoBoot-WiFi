@@ -29,7 +29,6 @@ MOV_X_OSR, MOV_Y_OSR = 0xA027, 0xA047
 OUT_NULL_32 = 0x6060
 
 SET_PINDIRS_0 = 0xE080          # set pindirs, 0
-MOV_Y_Y = 0xA042                # mov y, y (does nothing)
 
 
 def load_programs():
@@ -166,13 +165,22 @@ class NegativeTest(unittest.TestCase):
         problems = delivery_problems(words, simulate(words, lazy_autopull=True))
         self.assertTrue(any(p.startswith("transfer 1:") for p in problems), problems)
 
-    def test_releasing_the_line_before_cs_goes_high_is_detected(self):
-        """Without `wait 1 gpio CS_PIN` before `set pindirs 0`, the last bit is lost."""
+    def test_releasing_the_line_before_the_last_clock_is_detected(self):
+        """
+        Without the hold at the payload's end, the waits for the block's last clock (1.2.1) and then for
+        CS high before `set pindirs 0`, the last bit is lost. The waits are removed rather than replaced by
+        `mov y, y`, whose extra cycles would hide the loss (PicoBoot-DX's note on the block-waits handoff).
+        """
         def without_hold(instructions):
             i = instructions.index(SET_PINDIRS_0)
-            self.assertEqual(instructions[i - 1] & 0xFF80, 0x2080, "wait 1 gpio before set pindirs 0")
-            instructions[i - 1] = MOV_Y_Y
-            return instructions
+            j = i - 2                                                   # jmp !osre start
+            self.assertEqual(instructions[i - 1] & 0xFF80, 0x2080, "wait 1 gpio CS before set pindirs 0")
+            self.assertEqual(instructions[j] & 0xE0E0, 0x00E0, "jmp !osre before it")
+            self.assertEqual([w & 0xFF80 for w in instructions[j - 2:j]], [0x2000, 0x2080], "wait 0, wait 1 CLK")
+            drop = {j - 2, j - 1, i - 1}
+            shift = lambda a: a - sum(1 for d in drop if d < a)
+            return [(w & ~0x1F) | shift(w & 0x1F) if w >> 13 == 0 else w
+                    for k, w in enumerate(instructions) if k not in drop]
 
         words = random_words(2, seed=4)
         problems = delivery_problems(words, simulate(words, patch=without_hold))

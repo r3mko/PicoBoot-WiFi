@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.24, 2026-11-24 |
+| **Status** | Approved v1.25, 2026-11-24 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -38,6 +38,7 @@
 | v1.22 | 2026-11-23 | Approved by the owner. D47 after the length test build's code review (plan step L7): one CLK glitch during BS1 starts the length method's payload early, a risk the owner chose to weigh at L9; a failed boot may show a black screen; BS1's clock as measured. |
 | v1.23 | 2026-11-24 | Approved by the owner. D47 after its console series (plan step L8, the dev console only) and the owner's decision (L9): release 1.2.0, with the CS wait in today's injection and the length method as an opt-in, the count the default. |
 | v1.24 | 2026-11-24 | Approved by the owner. Release 1.2.0: D48, the injection switch, from D47's decision and the owner's design choices: standard or length-based, a persistent flag in boot control, the Payloads tab, the API and the CLI, the method in the diagnostics; the CS wait in both output programs. |
+| v1.25 | 2026-11-24 | Approved by the owner. D48 after release 1.2.0's code review (plan step R4): both output programs wait for a block's last clock before the wait for CS high, which closes the window the review found (the owner's choice); the instruction counts; what's left. |
 
 ## How to read the decisions
 
@@ -366,11 +367,14 @@ These follow from the research and bind every decision below.
   - **Older firmware:** 1.1.x doesn't check the flag bits and keeps them when it writes boot control back. So a slot switch to 1.1.x injects by count, and the choice holds on the way back.
   - **Not in the settings backup,** which holds the Wi-Fi settings only (D41), as with the payload choice.
 - **Loading:** at power-on, before "PIO ready", the firmware loads the chosen method's programs only.
-  - **Standard:** `on_transfer` and `clocked_output` in pio0, as before: 27 of its 32 instructions with the CS wait.
-  - **Length-based:** `clocked_output_length` in pio0 (26), and `length_detect` in pio1 beside the counters (24 of 32), raising pio0's IRQ 0.
+  - **Standard:** `on_transfer` and `clocked_output` in pio0, as before: 29 of its 32 instructions with the waits before each block.
+  - **Length-based:** `clocked_output_length` in pio0 (28), and `length_detect` in pio1 beside the counters (24 of 32), raising pio0's IRQ 0.
   - **The time to "PIO ready":** L8's length boots reached it 591–593 µs after `main()`, against the count's 601–606 µs in the same log, well inside the 10 ms rule.
   - **The clock:** the length method needs the injection's clock boost; a static assert keeps it at 200 MHz or more (L7).
-- **The CS wait (D47's L1 finding), in both output programs:** each later block waits for CS high before its IRQ. So a CS blip that splits a payload block no longer makes every later block one bit late. It's one instruction in `clocked_output`, as `clocked_output_length` has had since L1.
+- **The waits before each block (D47's L1 finding, and R4's), in both output programs:** each later block waits for the last clock of the block before, then for CS high, before its IRQ. So a CS blip that splits a payload block no longer makes every later block one bit late.
+  - **Why the clock first:** a block's last bit goes out at its second-to-last clock. With the wait for CS high alone, a blip that ended just before the last clock passed it, and that clock counted as the next block's first command clock (R4, simulated).
+  - **The cost:** three instructions in `clocked_output`, and two in `clocked_output_length`, which had the wait for CS high since L1.
+  - **What's left:** after a blip in a block, IRQ 0 comes one block early from then on. The output stays in step as long as CLK doesn't run while CS is high between blocks [inf].
 - **The page,** the Payloads tab:
   - an "Injection" row after "Original IPL once": "standard" or "length-based";
   - a button to switch, "Use length-based" or "Use standard";

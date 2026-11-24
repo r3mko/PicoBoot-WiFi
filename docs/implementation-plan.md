@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.33, 2026-11-24 |
-| **Design** | [architecture.md](architecture.md), Approved v1.24 |
+| **Status** | Approved v1.34, 2026-11-24 |
+| **Design** | [architecture.md](architecture.md), Approved v1.25 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -45,6 +45,7 @@
 | v1.31 | 2026-11-23 | Approved by the owner. D47's steps L6 and L7 as built: the length test build, and its code review's findings with the owner's choice to weigh the CLK glitch risk at L9. |
 | v1.32 | 2026-11-24 | Approved by the owner. D47's step L8 as built: the length test build booted all 13 power-ons on the dev console; the main console wasn't run (the owner's choice, recorded as a difference from the plan). L9, the owner's decision: release 1.2.0, with the CS wait in today's injection and the length method as an opt-in; the CS-wait item taken up by it. |
 | v1.33 | 2026-11-24 | Approved by the owner. Release 1.2.0: the injection switch (D48), with the owner's design choices; steps R1–R6. CI drops the crash and marked-blob test builds, whose options stay for local builds. |
+| v1.34 | 2026-11-24 | Approved by the owner. Release 1.2.0's steps R1–R4 as built, and its code review's findings with the owner's choices: the wait for each block's last clock, and no host test for `POST /api/boot`'s new field. |
 
 ## How this plan works
 
@@ -915,6 +916,35 @@ The other later-releases items aren't in 1.2.0.
 | R4 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | R5 | **Console test** on the build after R4, on clean wiring:<br>• the update over Wi-Fi from 1.1.2 on both consoles; a power-on keeps it; the method shows "standard";<br>• standard: 2 cold boots per console, the built-in and Swiss;<br>• length-based, on the main console: 5 cold boots, the built-in and Swiss, each boot's screen noted;<br>• the slot round trip on the main console, with length-based chosen: "Boot slot" to 1.1.2 and a cold boot (by count, the bit ignored), then back to 1.2.0 and a cold boot (length-based again);<br>• the page and the boot log's marks show the method;<br>• back to standard afterwards | Owner | Passed; results in `docs/research/release-1.2.0-results.md` |
 | R6 | **Merge and tag `v1.2.0`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R5's build, then published | Owner | Released |
+
+**Code review of release 1.2.0** (R4, a fresh Opus 5.5 reviewer, 2026-11-24, on `git diff c3503a4 ffa86d6` and `main..ffa86d6` for `src`):
+- **Overall:** no outright bug.
+  - **The standard method** is 1.1.2's, instruction for instruction, plus the new wait. Its set-up is 1.1.2's code word for word.
+  - **The run-time switch** holds up: the state machines, pio1 beside the counters, `disable_chip_pc` and a stalled injection's end.
+  - **The flag's whole life** holds up: every writer keeps bit 1, the loader never reads the flags, and 1.0.0–1.1.2 keep it on a round trip.
+  - **`POST /api/boot`** holds up, its error answers within the buffer.
+- **One real but narrow window** in the new wait, confirmed in the simulator.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Risk:** a block's last bit goes out at its second-to-last clock, so with the wait for CS high alone, a CS blip ending just before the last clock passed it, and that clock counted as the next block's first command clock. With the measured timing, one exact cycle at the end of a block whose last period is 10 cycles: 8 of 40 seeds failed. 1.1.2's window was the whole block | Fixed (the owner's choice): both programs wait for the block's last clock first (pio0: 29 and 28 of 32). A test sweeps 272 blips at a block's end with a 32, 40 and 64 ns clock; R1's program loses a bit in 32 of them, the fixed ones in none. With the measured timing: 0 of 40. R5 is the waits' first console run |
+| 2 | **Doc error:** the notes' "a USB install sets it back to standard" holds for the install UF2 only, which blanks boot control; a payload copied over USB keeps the method | Fixed in the notes; the README's recovery table names the method among what the install resets |
+| 3 | **Doc:** "Tested on two DOL-001s" and "Both boot on clean wiring" before any console has run a 1.2.0 build | Checked at R6 against R5's results |
+| 4 | **Doc (overstated):** "ignores such blips" and "ignores noise on CS". D36's count already ignores pulses without clocks; the length method has weak spots of its own | Fixed in the README, the API doc and the notes: the count breaks on a blip that splits a start-up read, and the README names the length method's weak spots. The page's note stays (the owner's wording) |
+| 5 | **Test gap:** the standard method's tests never checked how it ends after a blip | Fixed: the output at `disable_chip`, and the data line taken over once and released once, as for the length method |
+| 6 | **Test gap:** `POST /api/boot`'s `injection` has no host test (`api.c` has no harness) | Accepted (the owner's choice); R5 uses it through the page |
+| 7 | **Nit:** the dev console's L8 entries hold "length", against "entries logged before 1.2.0 read as standard" | Fixed in the API doc; R5's check of the boot log's marks expects them |
+| 8 | **Note:** a misaligned length boot still reports complete, so it can keep a trial (accepted at L7) | Accepted: it needs length-based chosen before the update's first power-on, and standard is the way back |
+
+**As built so far (2026-11-24):**
+- **R1** in `944d2ea`, after the merge of `length-injection` (`739e8c1`): the flag, the run-time switch, the wait for CS high in `clocked_output`, the method in every report, the API, host tests for the flag, and CI without the crash and marked-blob builds.
+- **R2** in `d8961a0`: the Payloads tab's row, "This boot" and the boot log's mark, the CLI's `injection`, `docs/api.md` and the README.
+- **R3** in `ffa86d6`: version 1.2.0, and the notes the owner approved. R4 changed two of their sentences (findings 2 and 4).
+- **R4** in `74c76f6`: the review's fixes. All 302 tests pass, and the release build and a `-dev` copy compile without warnings.
+
+**Differences from the plan:**
+- **No host test for `POST /api/boot`'s `injection`,** where R1 asked for host tests "for the flag and the API". The owner accepted it at R4.
+- **The wait for each block's last clock,** not in D48 v1.24: R4's finding, the owner's choice.
 
 ## Local builds and CI
 

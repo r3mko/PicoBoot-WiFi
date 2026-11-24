@@ -937,7 +937,7 @@ The other later-releases items aren't in 1.2.0.
 | 7 | **Nit:** the dev console's L8 entries hold "length", against "entries logged before 1.2.0 read as standard" | Fixed in the API doc; R5's check of the boot log's marks expects them |
 | 8 | **Note:** a misaligned length boot still reports complete, so it can keep a trial (accepted at L7) | Accepted: it needs length-based chosen before the update's first power-on, and standard is the way back |
 
-**As built so far (2026-11-24):**
+**As built (2026-11-24):**
 - **R1** in `944d2ea`, after the merge of `length-injection` (`739e8c1`): the flag, the run-time switch, the wait for CS high in `clocked_output`, the method in every report, the API, host tests for the flag, and CI without the crash and marked-blob builds.
 - **R2** in `d8961a0`: the Payloads tab's row, "This boot" and the boot log's mark, the CLI's `injection`, `docs/api.md` and the README.
 - **R3** in `ffa86d6`: version 1.2.0, and the notes the owner approved. R4 changed two of their sentences (findings 2 and 4).
@@ -951,6 +951,7 @@ The other later-releases items aren't in 1.2.0.
   - every power-on started its payload, with exact counts and the margins of 1.1.2, and the page showed the method as designed (the owner);
   - both consoles end on 1.2.0, standard.
 - **R4's finding 3,** checked against R5: the notes' "Both boot on clean wiring" and "Tested on two DOL-001s" hold. Standard ran on both consoles, and length-based on the main console with 1.2.0 and on the dev console with L8's test build.
+- **R6:** merged into `main` on 2026-11-24 (`ce9105c`); the owner had it pushed and tagged `v1.2.0`, and published the release. Its files are R5's byte for byte, and CI passed on the merge and the tag.
 
 **Differences from the plan:**
 - **No host test for `POST /api/boot`'s `injection`,** where R1 asked for host tests "for the flag and the API". The owner accepted it at R4.

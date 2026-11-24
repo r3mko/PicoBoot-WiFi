@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.34, 2026-11-24 |
+| **Status** | Approved v1.35, 2026-11-24 |
 | **Design** | [architecture.md](architecture.md), Approved v1.25 |
 | **Owner** | Remko Kleinjan |
 
@@ -46,6 +46,7 @@
 | v1.32 | 2026-11-24 | Approved by the owner. D47's step L8 as built: the length test build booted all 13 power-ons on the dev console; the main console wasn't run (the owner's choice, recorded as a difference from the plan). L9, the owner's decision: release 1.2.0, with the CS wait in today's injection and the length method as an opt-in; the CS-wait item taken up by it. |
 | v1.33 | 2026-11-24 | Approved by the owner. Release 1.2.0: the injection switch (D48), with the owner's design choices; steps R1–R6. CI drops the crash and marked-blob test builds, whose options stay for local builds. |
 | v1.34 | 2026-11-24 | Approved by the owner. Release 1.2.0's steps R1–R4 as built, and its code review's findings with the owner's choices: the wait for each block's last clock, and no host test for `POST /api/boot`'s new field. |
+| v1.35 | 2026-11-24 | Approved by the owner. Release 1.2.0's console test (R5) passed on R4's build, with its results note; R4's finding 3 checked against it. |
 
 ## How this plan works
 
@@ -941,10 +942,20 @@ The other later-releases items aren't in 1.2.0.
 - **R2** in `d8961a0`: the Payloads tab's row, "This boot" and the boot log's mark, the CLI's `injection`, `docs/api.md` and the README.
 - **R3** in `ffa86d6`: version 1.2.0, and the notes the owner approved. R4 changed two of their sentences (findings 2 and 4).
 - **R4** in `74c76f6`: the review's fixes. All 302 tests pass, and the release build and a `-dev` copy compile without warnings.
+- **CI passed** on the release branch's first push, `74c76f6`, the `-dev` compile included.
+- **R5 passed on R4's build** (`1.2.0` from `74c76f6`, [release-1.2.0-results.md](research/release-1.2.0-results.md)):
+  - the update over Wi-Fi from 1.1.2 on both consoles, kept by a power-on;
+  - standard, with the new waits: the built-in and Swiss on each console;
+  - length-based on the main console: 5 cold boots, the built-in and Swiss;
+  - the main console's round trip: 1.1.2 injected by count and kept the setting, and 1.2.0 ran length-based again;
+  - every power-on started its payload, with exact counts and the margins of 1.1.2, and the page showed the method as designed (the owner);
+  - both consoles end on 1.2.0, standard.
+- **R4's finding 3,** checked against R5: the notes' "Both boot on clean wiring" and "Tested on two DOL-001s" hold. Standard ran on both consoles, and length-based on the main console with 1.2.0 and on the dev console with L8's test build.
 
 **Differences from the plan:**
 - **No host test for `POST /api/boot`'s `injection`,** where R1 asked for host tests "for the flag and the API". The owner accepted it at R4.
 - **The wait for each block's last clock,** not in D48 v1.24: R4's finding, the owner's choice.
+- **The standard boots after the update:** the power-on that kept it was the built-in one, then one with Swiss, so 2 power-ons per console on 1.2.0 with standard.
 
 ## Local builds and CI
 

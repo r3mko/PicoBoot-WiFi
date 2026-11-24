@@ -1,8 +1,8 @@
 """
 Length-based injection (design D47), plan step L1: the detector and the output program in
 src/firmware/pio/length.pio, run in the PIO simulator (tests/pio_sim.py) against a simulated
-console, next to today's count of 224 (injection.pio) where the two differ. Test builds of this branch
-load the length programs (plan step L6). Needs a build's generated headers, so it is skipped unless
+console, next to the standard count of 224 (injection.pio) where the two differ. The firmware loads the
+length programs when boot control chooses them (D48). Needs a build's generated headers, so it is skipped unless
 PICOBOOT_BUILD_DIR is set:
 
     PICOBOOT_BUILD_DIR=build python3 -m unittest discover -s tests -p 'test_length_injection.py' -v
@@ -80,19 +80,17 @@ def blip(transfer, clock, phase, width=4):
     return lambda c: add_pulse(c, c.cs_pin, clock_time(c, transfer, clock) + phase, width=width, level=1)
 
 
-def with_cs_wait(words, cs_pin):
-    """clocked_output with `wait 1 gpio CS` after its first instruction; later jump targets move by one."""
-    out = []
-    for i, w in enumerate(words):
-        out.append(w + 1 if w >> 13 == 0 and (w & 0x1F) >= 1 else w)    # JMP: the address is the low 5 bits
-        if i == 0:
-            out.append(0x2080 | cs_pin)
-    return out
+def without_cs_wait(words, cs_pin):
+    """clocked_output as releases before 1.2.0 had it: without the `wait 1 gpio CS` after its first
+    instruction (D48), so later jump targets move back by one."""
+    assert words[1] == 0x2080 | cs_pin, "clocked_output's second instruction is the wait for CS high"
+    return [w - 1 if w >> 13 == 0 and (w & 0x1F) > 1 else w    # JMP: the address is the low 5 bits
+            for i, w in enumerate(words) if i != 1]
 
 
 def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
-    """Set up the two state machines as src/firmware/injection.c and injection_pio.c do in a length build
-    (D47, plan step L6), and let the console read. Keep both in sync. Returns the bits the console read,
+    """Set up the two state machines as src/firmware/injection.c and injection_pio.c do for length-based
+    injection (D47, D48), and let the console read. Keep both in sync. Returns the bits the console read,
     the data pin's direction changes and the output's final PC (injection_complete() wants disable_chip).
     With `counters` (counters.pio.h's programs), pio1 also runs D31's two CS counters, as the firmware
     does, and their counts come last. `sync`: pio0's and pio1's input synchroniser delays."""
@@ -119,12 +117,14 @@ def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
     return received, changes, out.pc
 
 
-def run_count(console, words, block_bits, fetches):
-    """Today's method (D36), with its count set to the console's number of BS1 fetches."""
+def run_count(console, words, block_bits, fetches, output=None):
+    """The standard method (D36), with its count set to the console's number of BS1 fetches. `output`:
+    another clocked_output's instructions."""
     _, count, defines = programs()
     pio = pio_sim.PIO(console.level)
     on_transfer = pio.add_sm(count["on_transfer"], jmp_pin=defines["CS_PIN"])
-    out = pio.add_sm(count["clocked_output"], autopull=True, threshold=32, shift_right=False,
+    program = dict(count["clocked_output"], instructions=output) if output else count["clocked_output"]
+    out = pio.add_sm(program, autopull=True, threshold=32, shift_right=False,
                      out_base=DATA_PIN, out_count=1, set_base=DATA_PIN, set_count=1, fifo_depth=8)
     prepare_transfer(on_transfer, fetches, MOV_X_OSR)
     prepare_transfer(out, block_bits - 1, MOV_Y_OSR)
@@ -227,12 +227,13 @@ class MeasuredConsole:
         return self._levels[gpio][i]
 
 
-def count_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bits"], prepare=None, **console):
+def count_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bits"], prepare=None, output=None,
+               **console):
     words = payload(blocks, block_bits)
     c = make_console(blocks, block_bits, fetches, **console)
     if prepare:
         prepare(c)
-    received = run_count(c, words, block_bits, fetches)
+    received = run_count(c, words, block_bits, fetches, output)
     return problems(words, received, c, blocks, block_bits, fetches, first_driven=0)
 
 
@@ -244,11 +245,11 @@ class LengthInjectionTest(unittest.TestCase):
         self.assertLessEqual(len(length["length_detect"]["instructions"]) + COUNTER_INSTRUCTIONS, 32)
         self.assertLessEqual(len(length["clocked_output_length"]["instructions"]), 32)
 
-    def test_the_output_program_is_clocked_output_with_the_cs_wait(self):
-        """From `start` on: clocked_output plus the wait for CS high, its jumps moved by the entry's length."""
-        length, count, defines = programs()
+    def test_the_output_program_is_clocked_output(self):
+        """From `start` on: clocked_output, with its wait for CS high (D48), its jumps moved by the entry's length."""
+        length, count, _ = programs()
         mine = length["clocked_output_length"]["instructions"]
-        theirs = with_cs_wait(count["clocked_output"]["instructions"], defines["CS_PIN"])
+        theirs = count["clocked_output"]["instructions"]
         entry = len(mine) - len(theirs)
         self.assertEqual(mine[entry:], [w + entry if w >> 13 == 0 else w for w in theirs])
 
@@ -260,7 +261,7 @@ class LengthInjectionTest(unittest.TestCase):
         self.assertEqual([d for _, d in changes], [1, 0], "the data line is taken over once and released once")
 
     def test_the_firmwares_set_up_with_the_counters(self):
-        """As a length build runs it (L6): the detector and D31's counters in pio1, the output in pio0, a real
+        """As the firmware runs it by length (L6, D48): the detector and D31's counters in pio1, the output in pio0, a real
         BS1 and two 1 KB blocks. The payload arrives, and the counters count every transfer."""
         with open(os.path.join(FIRMWARE_BUILD, "counters.pio.h")) as f:
             counters, _ = pio_sim.parse_pio_header(f.read())
@@ -282,7 +283,7 @@ class LengthInjectionTest(unittest.TestCase):
         A console with the measured timing (MeasuredConsole), a real BS1, two 1 KB blocks and transfers after
         the payload as long as a fetch and as long as half a block; with the pause in every block or only the
         first, and with pio0's and pio1's synchronisers a cycle apart (L7). The payload arrives, nothing is
-        driven after it, and the output ends at disable_chip.
+        driven after it, and the output ends at disable_chip. The standard method too, with its CS wait (D48).
         """
         _, _, defines = programs()
         transfers = [(64, "bs1")] * BS1_FETCHES + [(BLOCK_BITS, "block")] * 2 + [(64, "other"), (4096, "other")]
@@ -295,11 +296,15 @@ class LengthInjectionTest(unittest.TestCase):
                 self.assertEqual(problems(words, received, console, 2, BLOCK_BITS, BS1_FETCHES,
                                           first_driven=SWITCH_BIT), [])
                 self.assertEqual(pc, disable_chip())
+                console = MeasuredConsole(defines["CS_PIN"], defines["CLK_PIN"], transfers, random.Random(seed),
+                                          pause_in_every_block=every)
+                received = run_count(console, words, BLOCK_BITS, BS1_FETCHES)
+                self.assertEqual(problems(words, received, console, 2, BLOCK_BITS, BS1_FETCHES, first_driven=0), [])
 
     def test_a_clk_glitch_during_bs1(self):
         """
         L7's finding 1: one CLK pulse inside a BS1 fetch makes its 97th rising edge, so the length method starts
-        the payload in BS1. Today's count takes one clock per transfer and ignores it. A risk for noisy wiring,
+        the payload in BS1. The standard count takes one clock per transfer and ignores it. A risk for noisy wiring,
         weighed at L9; on clean wiring L4 saw no CLK phase under 16 ns.
         """
         pulse = lambda c: add_pulse(c, c.clk_pin, c.cs_falls[2] + 4, width=4, level=1)
@@ -335,15 +340,18 @@ class LengthInjectionTest(unittest.TestCase):
 
     def test_noise_during_the_payload(self):
         """
-        A CS blip in the middle of a block (L1's finding). Today's clocked_output then counts the block's
-        last clock as the next block's first command clock, so every later block is one bit late. With
-        the wait for CS high, the prototype's output program stays in step.
+        A CS blip in the middle of a block (L1's finding). clocked_output before 1.2.0 then counted the
+        block's last clock as the next block's first command clock, so every later block was one bit late.
+        With the wait for CS high, both methods' output programs stay in step (D48).
         """
+        _, count, defines = programs()
+        old = without_cs_wait(count["clocked_output"]["instructions"], defines["CS_PIN"])
         for phase in range(2, 8):
             with self.subTest(phase=phase):
-                self.assertNotEqual(count_case(prepare=blip(SMALL["fetches"] + 1, 150, phase)), [],
-                                    "today's clocked_output should lose a bit")
-                found, *_ = length_case(prepare=blip(SMALL["fetches"] + 1, 150, phase))
+                noise = blip(SMALL["fetches"] + 1, 150, phase)
+                self.assertNotEqual(count_case(prepare=noise, output=old), [], "1.1.2's clocked_output should lose a bit")
+                self.assertEqual(count_case(prepare=noise), [])
+                found, *_ = length_case(prepare=noise)
                 self.assertEqual(found, [])
 
     def test_a_blip_before_the_first_blocks_97th_clock(self):

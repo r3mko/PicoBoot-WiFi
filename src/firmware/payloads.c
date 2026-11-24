@@ -65,6 +65,7 @@ void payloads_status(json_out_t *j, bool usb_install) {
     json_string(j, "chosen", payloads_name(b.active_payload < 3 ? b.active_payload : BOOTCTL_PAYLOAD_1));
     json_string(j, "upload_target", payloads_name(payload_upload_target(b.active_payload)));
     json_bool(j, "original_ipl_once", b.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE);
+    json_string(j, "injection", (b.flags & BOOTCTL_FLAG_INJECTION_LENGTH) ? "length" : "standard");  // D48
     json_bool(j, "usb_install", usb_install);
     for (uint8_t s = BOOTCTL_PAYLOAD_1; s <= BOOTCTL_PAYLOAD_2; s++) {
         json_object_begin(j, payloads_name(s));

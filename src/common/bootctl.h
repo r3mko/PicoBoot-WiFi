@@ -33,6 +33,7 @@
 #define BOOTCTL_PAYLOAD_BUILTIN 2
 
 #define BOOTCTL_FLAG_ORIGINAL_IPL_ONCE  (1u << 0)   // Phase 4: skip the injection once
+#define BOOTCTL_FLAG_INJECTION_LENGTH   (1u << 1)   // 1.2.0: find the first IPL block by its length (D48)
 
 #define BOOTCTL_NAME_MAX        24              // Characters in a payload's name (D42)
 

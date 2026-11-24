@@ -152,9 +152,23 @@ static void test_usb_rule(void) {
     CHECK(!payload_record(&b, 555, false, true));                               // Nothing to store
 }
 
+// D48: the injection method is a flag the payload bookkeeping leaves alone, USB install or not
+static void test_the_injection_flag_is_kept(void) {
+    bootctl_t b;
+    memset(&b, 0, sizeof(b));
+    b.flags = BOOTCTL_FLAG_INJECTION_LENGTH;
+    b.active_payload = BOOTCTL_PAYLOAD_2;
+    b.payload1_fingerprint = 111;           // Recorded payload 1
+    bool usb;
+    CHECK(power_on(&b, true, 111, true, &usb) == BOOTCTL_PAYLOAD_2 && !usb);
+    CHECK(power_on(&b, true, 222, true, &usb) == BOOTCTL_PAYLOAD_1 && usb);     // A USB install of payload 1
+    CHECK(b.flags == BOOTCTL_FLAG_INJECTION_LENGTH);
+}
+
 int main(void) {
     test_fingerprint();
     test_usb_rule();
+    test_the_injection_flag_is_kept();
     test_upload_target();
     test_valid_payloads_are_rounded_up_to_whole_transfers();
     test_sizes_that_dont_fit_are_refused();

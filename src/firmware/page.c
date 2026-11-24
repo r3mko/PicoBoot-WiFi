@@ -256,7 +256,7 @@ size_t page_render(char *buf, size_t size) {
             (long)r->margin_raw_us, (long)r->margin_clocked_us);
         put(&o, "  Injection time     : %lu ms from the first CS\n", (unsigned long)(r->injection_us / 1000));
         put(&o, "  Injection method   : %s\n",
-            r->injection_method == INJECTION_METHOD_LENGTH ? "length-based (D47)" : "standard (D36's count)");
+            r->injection_method == INJECTION_METHOD_LENGTH ? "length-based (D47, D48)" : "standard (D36's count)");
         put_counts(&o, r);
     }
 
@@ -289,11 +289,12 @@ size_t page_render(char *buf, size_t size) {
     char name_html[2][6 * BOOTCTL_NAME_MAX + 8];           // Names are the user's: escaped (phase 4 review)
     html_escape(name_html[0], sizeof(name_html[0]), b.payload_name[0]);
     html_escape(name_html[1], sizeof(name_html[1]), b.payload_name[1]);
-    put(&o, "  Payloads           : 1 \"%s\" %s, 2 \"%s\" %s; chosen %s%s%s\n",
+    put(&o, "  Payloads           : 1 \"%s\" %s, 2 \"%s\" %s; chosen %s%s%s%s\n",
         name_html[0], payload_check(PAYLOAD_BASE(0), LAYOUT_PAYLOAD1_SIZE) ? "valid" : "none",
         name_html[1], payload_check(PAYLOAD_BASE(1), LAYOUT_PAYLOAD2_SIZE) ? "valid" : "none",
         b.active_payload == BOOTCTL_PAYLOAD_2 ? "2" : b.active_payload == BOOTCTL_PAYLOAD_BUILTIN ? "built-in" : "1",
         (b.flags & BOOTCTL_FLAG_ORIGINAL_IPL_ONCE) ? "; ORIGINAL IPL at the next power-on" : "",
+        (b.flags & BOOTCTL_FLAG_INJECTION_LENGTH) ? "; injection by length (D48)" : "",
         r->payload_usb_install && r->result != INJECTION_SKIPPED ? "; this power-on: payload 1 from a USB install (D17)" : "");
     static const char *const states[] = {"installed", "empty", "TRIAL", "kept", "FAILED"};
     put(&o, "  Slots              : A %s, B %s%s; running %c\n",

@@ -192,6 +192,26 @@ static void test_switch(void) {
     CHECK(memcmp(&b, &before, sizeof(b)) == 0);
 }
 
+// D48: the injection method is a flag the slot bookkeeping leaves alone, and the loader decides
+// without it, so 1.1.x (which knows only bit 0) and the loader boot as before
+static void test_the_injection_flag(void) {
+    pico_t p = {.b = updated_to_b()};
+    p.b.flags = BOOTCTL_FLAG_INJECTION_LENGTH;
+    bootctl_t without = p.b;
+    without.flags = 0;
+    boot_inputs_t in = {.had_por = true, .bootctl = &without};
+    const boot_decision_t d0 = boot_decide(&in);
+    in.bootctl = &p.b;
+    const boot_decision_t d1 = boot_decide(&in);
+    CHECK(memcmp(&d0, &d1, sizeof(d0)) == 0);
+    boot(&p, false, true);                  // The updater's reboot
+    boot(&p, true, false);                  // The console's next start, which keeps the update
+    CHECK(p.running == BOOTCTL_SLOT_B && slots_keep(&p.b, BOOTCTL_SLOT_B));
+    CHECK(slots_switch(&p.b, BOOTCTL_SLOT_B, BOOTCTL_SLOT_A) == SLOTS_SWITCHED);    // "Boot slot A"
+    boot(&p, false, true);
+    CHECK(p.running == BOOTCTL_SLOT_A && p.b.flags == BOOTCTL_FLAG_INJECTION_LENGTH);
+}
+
 // Phase 3 review finding 1: updates only from the active firmware, into the other slot
 static void test_update_target(void) {
     bootctl_t b = BOOTCTL_DEFAULT;
@@ -240,6 +260,7 @@ int main(void) {
     test_crash_loop_after_keeping();
     test_switch();
     test_a_new_trial_in_the_same_session();
+    test_the_injection_flag();
     test_update_target();
     test_running_in_place_of_the_active_slot();
     if (failures) {

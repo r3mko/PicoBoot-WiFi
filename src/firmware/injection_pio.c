@@ -69,7 +69,7 @@ void clocked_output_program_init(PIO pio, uint sm, uint offset, uint clk_pin, ui
     output_program_init(pio, sm, offset, clocked_output_program_get_default_config(offset), clk_pin, cs_pin, data_pin);
 }
 
-// Length-based injection (design D47, plan step L6). tests/test_length_injection.py mirrors these two
+// Length-based injection (designs D47, D48). tests/test_length_injection.py mirrors these two
 // set-ups for its PIO simulator: keep both in sync
 
 void clocked_output_length_program_init(PIO pio, uint sm, uint offset, uint clk_pin, uint cs_pin, uint data_pin) {

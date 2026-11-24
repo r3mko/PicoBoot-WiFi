@@ -3,8 +3,8 @@
 ;
 ; SPDX-License-Identifier: GPL-2.0-only
 ;
-; Length-based injection (design D47), plan steps L1 and L6: test builds of the length-injection
-; branch load these programs instead of injection.pio's (injection.c), and the PIO simulator runs them
+; Length-based injection (designs D47 and D48): with boot control's flag for it, the firmware loads
+; these programs instead of injection.pio's (injection.c), and the PIO simulator runs them
 ; (tests/test_length_injection.py). Instead of counting BS1's 224
 ; transfers (on_transfer, D36), the detector finds the first IPL block by its length: the first
 ; CS-low period with a 97th rising CLK edge. A BS1 fetch has 96 clocks (32 command, 64 data), a
@@ -46,8 +46,8 @@ high:
 ; In pio0, instead of on_transfer and clocked_output: clocked_output with an entry for the first
 ; block, started at `first`. Y = the bits per block - 1 (8191); ISR = the first block's bits after
 ; bit 66 (8125). Shift left, autopull at 32, joined TX FIFO, OUT and SET on the data pin, as
-; clocked_output. From `start` on, clocked_output's instructions plus one, the wait for CS high
-; before each later block's IRQ (L1's finding; a test checks the rest is the same).
+; clocked_output. From `start` on, clocked_output's instructions, with its wait for CS high before
+; each later block's IRQ (L1's finding, in clocked_output too since D48; a test checks they're the same).
 .program clocked_output_length
 
 public first:

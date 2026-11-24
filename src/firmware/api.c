@@ -226,9 +226,7 @@ static void put_report(json_out_t *j, const char *key, const boot_report_t *r, u
     json_int(j, "payload_words", (long)r->payload_words);
     json_int(j, "words_delivered", (long)r->words_delivered);
     json_string(j, "result", result_name(r->result));
-#if PICOBOOT_WIFI_TEST_BUILD
-    json_string(j, "injection", r->injection_method == INJECTION_METHOD_LENGTH ? "length" : "standard");   // D47
-#endif
+    json_string(j, "injection", r->injection_method == INJECTION_METHOD_LENGTH ? "length" : "standard");   // D48
     json_int(j, "main_to_ready_us", (long)r->main_to_ready_us);
     json_int(j, "margin_raw_us", (long)r->margin_raw_us);
     json_int(j, "margin_clocked_us", (long)r->margin_clocked_us);
@@ -318,7 +316,8 @@ static bool no_member(void *ctx, const char *key, const json_value_t *v) {
     return false;
 }
 
-// --- POST /api/boot (D12, D13): {"keep": true} or {"slot": "A" | "B"} -------------------------------
+// --- POST /api/boot (D12, D13): {"keep": true} or {"slot": "A" | "B"}; also the payload choice, "original
+// IPL once" and the injection method (D48) -----------------------------------------------------------
 
 typedef struct {
     int fields;
@@ -326,6 +325,7 @@ typedef struct {
     int slot;                           // BOOTCTL_SLOT_A / _B, or -1
     int payload;                        // BOOTCTL_PAYLOAD_*, or -1
     bool ipl_once;
+    int injection;                      // 1: by length, 0: standard (D48), or -1
     bool bad;
     char field[JSON_KEY_MAX + 1];
 } boot_body_t;
@@ -347,6 +347,10 @@ static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
         bb->ipl_once = v->type == JSON_BOOL;
         bb->bad = !bb->ipl_once;
         bb->ipl_once = bb->ipl_once && v->boolean;
+    } else if (strcmp(key, "injection") == 0) {
+        bb->injection = v->type != JSON_STRING ? -1 : strcmp(v->string, "length") == 0 ? 1
+                      : strcmp(v->string, "standard") == 0 ? 0 : -1;
+        bb->bad = bb->injection < 0;
     } else {
         return false;                   // Unknown field
     }
@@ -354,19 +358,22 @@ static bool on_boot_member(void *ctx, const char *key, const json_value_t *v) {
 }
 
 static int post_boot(const char *body, size_t body_len, char *out, size_t size, size_t *len) {
-    boot_body_t bb = {.slot = -1, .payload = -1};
+    boot_body_t bb = {.slot = -1, .payload = -1, .injection = -1};
     switch (json_parse_object(body, body_len, on_boot_member, &bb)) {
         case JSON_SYNTAX:
             return error(out, size, len, 400, "bad_json", "the body must be a flat JSON object", NULL);
         case JSON_STOPPED:
             return bb.bad ? error(out, size, len, 400, "bad_value", "keep must be true; slot \"A\" or \"B\"; payload "
-                                  "\"payload1\", \"payload2\" or \"builtin\"; original_ipl_once true or false", bb.field)
-                          : error(out, size, len, 400, "unknown_field", "boot takes keep, slot, payload or original_ipl_once", bb.field);
+                                  "\"payload1\", \"payload2\" or \"builtin\"; original_ipl_once true or false; "
+                                  "injection \"standard\" or \"length\"", bb.field)
+                          : error(out, size, len, 400, "unknown_field",
+                                  "boot takes keep, slot, payload, original_ipl_once or injection", bb.field);
         case JSON_OK:
             break;
     }
     if (bb.fields != 1) {
-        return error(out, size, len, 400, "bad_json", "send exactly one of keep, slot, payload and original_ipl_once", NULL);
+        return error(out, size, len, 400, "bad_json", "send exactly one of keep, slot, payload, original_ipl_once and injection",
+                     NULL);
     }
     if (bb.payload >= 0) {
         // The payload for the next power-ons (D15)
@@ -379,6 +386,22 @@ static int post_boot(const char *body, size_t body_len, char *out, size_t size, 
         json_init(&j, out, size);
         json_object_begin(&j, NULL);
         json_string(&j, "payload", payloads_name((uint8_t)bb.payload));
+        json_object_end(&j);
+        return finish(&j, out, size, len);
+    }
+    if (bb.injection >= 0) {
+        // The injection method from the next power-on (D48): kept until changed
+        bootctl_t b;
+        storage_bootctl_load(&b);
+        b.flags = bb.injection ? (uint8_t)(b.flags | BOOTCTL_FLAG_INJECTION_LENGTH)
+                               : (uint8_t)(b.flags & ~BOOTCTL_FLAG_INJECTION_LENGTH);
+        if (!storage_bootctl_store(&b)) {
+            return error(out, size, len, 500, "flash_write", "writing flash failed; nothing changed", NULL);
+        }
+        json_out_t j;
+        json_init(&j, out, size);
+        json_object_begin(&j, NULL);
+        json_string(&j, "injection", bb.injection ? "length" : "standard");
         json_object_end(&j);
         return finish(&j, out, size, len);
     }

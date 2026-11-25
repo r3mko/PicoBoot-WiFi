@@ -25,11 +25,14 @@
 .program length_detect
 start:
     wait 1 gpio LENGTH_CS_PIN          ; Between transfers
+restart:
     wait 0 gpio LENGTH_CS_PIN          ; A transfer starts
     mov x, isr                  ; The clocks of a BS1 fetch: 96
 low:
-    jmp pin start               ; CS rose before a 97th clock: not a block. Polled, not waited for,
-    mov y, pins                 ; so a short transfer can't carry its count into the next one
+    jmp pin restart             ; CS rose before a 97th clock: not a block. Polled, not waited for,
+    mov y, pins                 ; so a short transfer can't carry its count into the next one. CS is
+                                ; high now, so only its next fall is waited for: a glitch that ends
+                                ; just before a fall can't hide it from a `wait 1` (1.2.1's R3)
     jmp !y low                  ; CLK low: look again, every 3 cycles, inside CLK's high phase
     jmp x-- high                ; A rising edge: count it...
     wait 0 gpio LENGTH_CLK_PIN         ; ...the 97th, with CS still low: the first block. Signal after its
@@ -46,9 +49,9 @@ high:
 ; In pio0, instead of on_transfer and clocked_output: clocked_output with an entry for the first
 ; block, started at `first`. Y = the bits per block - 1 (8191); ISR = the first block's bits after
 ; bit 66 (8125). Shift left, autopull at 32, joined TX FIFO, OUT and SET on the data pin, as
-; clocked_output. From `start` on, clocked_output's instructions, with its waits for a block's last
-; clock and CS high before each later block's IRQ (L1's finding and R4's, in clocked_output too since
-; D48; a test checks they're the same).
+; clocked_output. From `start` on, clocked_output's instructions, with its waits for each block's last
+; clock, then CS high, and before a later block's IRQ the next transfer's CS fall (L1's finding, R4's
+; and 1.2.1's, in clocked_output too since D48; a test checks they're the same).
 .program clocked_output_length
 
 public first:
@@ -64,11 +67,11 @@ public first:
 
 start:
     set x, 31                   ; x - 32 bits we need to skip (address)
-    wait 0 gpio LENGTH_CLK_PIN         ; The block's last clock: its last bit went out at the clock before,
-    wait 1 gpio LENGTH_CLK_PIN         ; so a CS blip before this clock can't pass the wait below (R4)
     wait 1 gpio LENGTH_CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
                                 ; IRQ 0 set early, and without this wait its last clock would count
                                 ; as the next block's first command clock (L1, test_length_injection.py)
+    wait 0 gpio LENGTH_CS_PIN          ; ...and the next transfer has begun: after an IRQ set early, a clock
+                                ; while CS is high between blocks can't count (1.2.1)
     wait 1 irq 0                ; Hold until the detector in pio1 signals the next block
 
 wait_bit:
@@ -86,6 +89,9 @@ on_rising_edge:
 write_bit:
     out pins, 1                 ; Output single IPL bit
     jmp x-- on_rising_edge      ; Jump back to next clock pulse wait routine if there is more data to inject
+    wait 0 gpio LENGTH_CLK_PIN         ; The block's last clock: its last bit went out at the clock before, so
+    wait 1 gpio LENGTH_CLK_PIN         ; a CS blip before this clock can't pass the waits for CS high, before
+                                ; the next block (1.2.0's R4) or at the payload's end (1.2.1's R3)
     jmp !osre start             ; More payload data (autopull refilled OSR from the FIFO)? Then wait for the next transfer
     wait 1 gpio LENGTH_CS_PIN          ; Keep driving the last bit until the console ends the transfer (CS HIGH)
     set pindirs 0               ; Leave data line floating so RTC-DOL can take over and load fonts etc.

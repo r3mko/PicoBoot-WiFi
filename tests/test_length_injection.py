@@ -83,6 +83,7 @@ def blip(transfer, clock, phase, width=4):
 def without(program, drop):
     """`program` (as parse_pio_header() gives it) without the instructions at the indices in `drop`;
     jump targets and labels move back past them."""
+    assert program["wrap"] == len(program["instructions"]) - 1, "without() is for programs that wrap at their end"
     shift = lambda a: a - sum(1 for d in drop if d < a)
     words = [(w & ~0x1F) | shift(w & 0x1F) if w >> 13 == 0 else w     # JMP: the address is the low 5 bits
              for i, w in enumerate(program["instructions"]) if i not in drop]
@@ -90,30 +91,101 @@ def without(program, drop):
                 labels={name: shift(a) for name, a in program["labels"].items()})
 
 
-def older_outputs():
-    """clocked_output as 1.1.2 had it, with neither of the waits after `set x, 31`, and as plan step R1
-    had it, with the wait for CS high but not the one for the block's last clock (R4)."""
-    _, count, defines = programs()
-    out = count["clocked_output"]
+def insert(program, at, words):
+    """`program` with `words` inserted before the instruction at `at`; jump targets and labels move on."""
+    n = len(words)
+    shift = lambda a: a + n if a >= at else a
+    new = [(w & ~0x1F) | shift(w & 0x1F) if w >> 13 == 0 else w for w in program["instructions"]]
+    new[at:at] = words
+    return dict(program, instructions=new, wrap=len(new) - 1,
+                labels={name: shift(a) for name, a in program["labels"].items()})
+
+
+def rebuilt(out, version):
+    """An output program (clocked_output or clocked_output_length, from `start` on) as an earlier release
+    had it, rebuilt from today's by moving and removing its waits (D48):
+    - "1.1.2": none of the waits;
+    - "1.2.0 R1": the wait for CS high after `set x, 31` alone;
+    - "1.2.0": the waits for the block's last clock and for CS high after `set x, 31`.
+    Today's waits for the block's last clock come before `jmp !osre start`, and `start` waits for CS high,
+    then for CS low (1.2.1)."""
+    _, _, defines = programs()
     clk, cs = defines["CLK_PIN"], defines["CS_PIN"]
-    assert out["instructions"][1:4] == [0x2000 | clk, 0x2080 | clk, 0x2080 | cs], "wait 0 CLK, wait 1 CLK, wait 1 CS"
-    return without(out, {1, 2, 3}), without(out, {1, 2})
+    w = out["instructions"]
+    s = w.index(0xE03F)                                             # start: set x, 31
+    j = next(i for i, x in enumerate(w) if x >> 13 == 0 and (x >> 5) & 7 == 0b111)     # jmp !osre start
+    assert w[s + 1:s + 3] == [0x2080 | cs, 0x2000 | cs] and w[j - 2:j] == [0x2000 | clk, 0x2080 | clk], \
+        "start: wait 1 CS, wait 0 CS; wait 0 CLK, wait 1 CLK before jmp !osre"
+    if version == "1.1.2":
+        return without(out, {s + 1, s + 2, j - 2, j - 1})
+    older = without(out, {s + 2, j - 2, j - 1})
+    return older if version == "1.2.0 R1" else insert(older, s + 1, [0x2000 | clk, 0x2080 | clk])
 
 
-def run_length(console, words, block_bits, counters=None, sync=(2, 2)):
+def older_outputs():
+    """clocked_output as 1.1.2, 1.2.0's step R1 and 1.2.0 had it (rebuilt())."""
+    out = programs()[1]["clocked_output"]
+    return rebuilt(out, "1.1.2"), rebuilt(out, "1.2.0 R1"), rebuilt(out, "1.2.0")
+
+
+def length_output_1_2_0():
+    """clocked_output_length as 1.2.0 had it (rebuilt())."""
+    return rebuilt(programs()[0]["clocked_output_length"], "1.2.0")
+
+
+def detector_1_2_0():
+    """length_detect as 1.2.0 had it: `jmp pin` back to `start`, its `wait 1 gpio CS`, not to the wait for
+    the next CS fall (1.2.1's R3)."""
+    det = programs()[0]["length_detect"]
+    w = list(det["instructions"])
+    i = next(i for i, x in enumerate(w) if x >> 13 == 0 and (x >> 5) & 7 == 0b110)     # jmp pin
+    assert w[i] & 0x1F == 1, "jmp pin goes to the wait for CS low"
+    w[i] &= ~0x1F
+    return dict(det, instructions=w)
+
+
+def tail_blip(transfer, after_fall, width=2, block_bits=SMALL["block_bits"]):
+    """A CS-high blip `after_fall` cycles after the fall of a block's last clock, before CS rises."""
+    def prepare(c):
+        add_pulse(c, c.cs_pin, clock_time(c, transfer, 32 + block_bits - 1) + c.half_period + after_fall,
+                  width=width, level=1)
+    return prepare
+
+
+def glitch_after(transfer, at=3):
+    """A clockless CS-low glitch of 2 cycles, `at` cycles after a transfer's CS rise."""
+    return lambda c: add_pulse(c, c.cs_pin, c.cs_rises[transfer] + at, width=2, level=0)
+
+
+def stray_clock_after(transfer, at=8):
+    """A CLK pulse of 2 cycles while CS is high, `at` cycles after a transfer's CS rise: EXI channel 0's
+    clock is shared with other devices."""
+    return lambda c: add_pulse(c, c.clk_pin, c.cs_rises[transfer] + at, width=2, level=1)
+
+
+def both(*noise):
+    def prepare(c):
+        for n in noise:
+            n(c)
+    return prepare
+
+
+def run_length(console, words, block_bits, counters=None, sync=(2, 2), output=None, detector=None):
     """Set up the two state machines as src/firmware/injection.c and injection_pio.c do for length-based
     injection (D47, D48), and let the console read. Keep both in sync. Returns the bits the console read,
     the data pin's direction changes and the output's final PC (injection_complete() wants disable_chip).
     With `counters` (counters.pio.h's programs), pio1 also runs D31's two CS counters, as the firmware
-    does, and their counts come last. `sync`: pio0's and pio1's input synchroniser delays."""
+    does, and their counts come last. `sync`: pio0's and pio1's input synchroniser delays. `output`:
+    another clocked_output_length program (length_output_1_2_0()), `detector` another length_detect."""
     length, _, defines = programs()
     pio0, pio1 = pio_sim.PIO(console.level, sync_cycles=sync[0]), pio_sim.PIO(console.level, sync_cycles=sync[1])
     pio_sim.link(pio0, pio1)
     # clocked_output_length: as clocked_output (shift left, autopull at 32, joined TX FIFO, OUT and
     # SET on the data pin). length_detect: JMP PIN on CS, IN_BASE CLK with IN_COUNT 1
-    out = pio0.add_sm(length["clocked_output_length"], autopull=True, threshold=32, shift_right=False,
+    out = pio0.add_sm(output or length["clocked_output_length"], autopull=True, threshold=32, shift_right=False,
                       out_base=DATA_PIN, out_count=1, set_base=DATA_PIN, set_count=1, fifo_depth=8)
-    detect = pio1.add_sm(length["length_detect"], jmp_pin=defines["CS_PIN"], in_base=defines["CLK_PIN"], in_count=1)
+    detect = pio1.add_sm(detector or length["length_detect"], jmp_pin=defines["CS_PIN"], in_base=defines["CLK_PIN"],
+                         in_count=1)
     prepare_transfer(detect, BS1_CLOCKS, MOV_ISR_OSR)
     prepare_transfer(out, block_bits - 1, MOV_Y_OSR)
     prepare_transfer(out, block_bits - SWITCH_BIT - 1, MOV_ISR_OSR)
@@ -170,17 +242,24 @@ def problems(words, received, console, blocks, block_bits, fetches, *, first_dri
     return found
 
 
-def length_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bits"], prepare=None, **console):
+def length_case(*, blocks=3, fetches=SMALL["fetches"], block_bits=SMALL["block_bits"], prepare=None, output=None,
+                detector=None, **console):
     words = payload(blocks, block_bits)
     c = make_console(blocks, block_bits, fetches, **console)
     if prepare:
         prepare(c)
-    received, changes, pc = run_length(c, words, block_bits)
+    received, changes, pc = run_length(c, words, block_bits, output=output, detector=detector)
     return problems(words, received, c, blocks, block_bits, fetches, first_driven=SWITCH_BIT), received, changes, c, pc
 
 
 def disable_chip():
     return programs()[0]["clocked_output_length"]["labels"]["disable_chip"]
+
+
+def length_all_problems(**case):
+    """length_case()'s problems, with the end checked as count_case() does (ending_problems())."""
+    found, _, changes, _, pc = length_case(**case)
+    return found + ending_problems(changes, pc, case.get("output") or programs()[0]["clocked_output_length"])
 
 
 class MeasuredConsole:
@@ -273,13 +352,15 @@ def blip_fits(transfer, clock, phase, width, half_period):
 @unittest.skipUnless(os.environ.get("PICOBOOT_BUILD_DIR"), "PICOBOOT_BUILD_DIR not set")
 class LengthInjectionTest(unittest.TestCase):
     def test_the_programs_fit(self):
-        """The detector fits in pio1 next to the counters, the output program in pio0 on its own."""
-        length, _, _ = programs()
+        """The detector fits in pio1 next to the counters, the output program in pio0 on its own, and the
+        standard method's two programs in pio0 together."""
+        length, count, _ = programs()
         self.assertLessEqual(len(length["length_detect"]["instructions"]) + COUNTER_INSTRUCTIONS, 32)
         self.assertLessEqual(len(length["clocked_output_length"]["instructions"]), 32)
+        self.assertLessEqual(len(count["on_transfer"]["instructions"]) + len(count["clocked_output"]["instructions"]), 32)
 
     def test_the_output_program_is_clocked_output(self):
-        """From `start` on: clocked_output, with its wait for CS high (D48), its jumps moved by the entry's length."""
+        """From `start` on: clocked_output, with its waits (D48), its jumps moved by the entry's length."""
         length, count, _ = programs()
         mine = length["clocked_output_length"]["instructions"]
         theirs = count["clocked_output"]["instructions"]
@@ -378,7 +459,7 @@ class LengthInjectionTest(unittest.TestCase):
         block's last clock as the next block's first command clock, so every later block was shifted, by one more bit each.
         With the wait for CS high, both methods' output programs stay in step (D48).
         """
-        old, _ = older_outputs()
+        old = older_outputs()[0]
         for phase in range(2, 8):
             with self.subTest(phase=phase):
                 noise = blip(SMALL["fetches"] + 1, 150, phase)
@@ -389,13 +470,13 @@ class LengthInjectionTest(unittest.TestCase):
 
     def test_a_blip_at_a_blocks_end(self):
         """
-        R4's finding: a block's last bit goes out at its second-to-last clock. With only the wait for CS high
-        (R1), a blip that ended just before the last clock passed it, and that clock counted as the next
+        1.2.0's R4 finding: a block's last bit goes out at its second-to-last clock. With only the wait for CS
+        high (1.2.0's R1), a blip that ended just before the last clock passed it, and that clock counted as the next
         block's first command clock: every later block shifted. Waiting for the block's last clock
         first closes the window. Blips of 1-4 cycles at every phase of the first block's last two clocks,
         with a 32, 40 and 64 ns clock: both methods stay in step and end cleanly; R1's output loses a bit.
         """
-        _, r1 = older_outputs()
+        r1 = older_outputs()[1]
         r1_lost = []
         for half_period in (4, 5, 8):
             for clock in (32 + SMALL["block_bits"] - 2, 32 + SMALL["block_bits"] - 1):
@@ -410,6 +491,125 @@ class LengthInjectionTest(unittest.TestCase):
                         if count_case(blocks=2, prepare=noise, half_period=half_period, output=r1):
                             r1_lost.append((half_period, clock, phase, width))
         self.assertTrue(r1_lost, "R1's clocked_output should lose a bit in this window")
+
+    def test_an_early_irq_then_a_stray_clock(self):
+        """
+        1.2.1 (docs/research/block-noise.md, from PicoBoot-DX's review of the block-waits handoff): a clockless
+        CS glitch between transfers, or a CS blip in a block, sets IRQ 0 one block early, and a clock while CS
+        is high before a later block then counted as that block's first command clock. With the wait for the
+        next transfer's CS fall, both methods stay in step. 1.2.0's output programs get these wrong.
+        """
+        F = SMALL["fetches"]
+        cases = {
+            "glitch after block 0, stray clock after block 1": both(glitch_after(F), stray_clock_after(F + 1)),
+            "glitch before the first block, stray clock after block 0": both(glitch_after(F - 1), stray_clock_after(F)),
+            "blip in block 0, stray clock after block 1": both(blip(F, 150, 4), stray_clock_after(F + 1)),
+        }
+        alone = [glitch_after(F), glitch_after(F - 1), blip(F, 150, 4), stray_clock_after(F), stray_clock_after(F + 1)]
+        for noise in alone:
+            self.assertEqual(count_case(prepare=noise, output=older_outputs()[2]), [], "one event alone is fine on 1.2.0")
+        for name, noise in cases.items():
+            with self.subTest(name):
+                self.assertEqual(count_case(prepare=noise), [])
+                self.assertEqual(length_all_problems(prepare=noise), [])
+                self.assertNotEqual(count_case(prepare=noise, output=older_outputs()[2]), [], "1.2.0's clocked_output")
+        # 1.2.0's length output, where its IRQ comes early (it finds the first block by its length, so a glitch
+        # before it doesn't matter)
+        for name in ("glitch after block 0, stray clock after block 1", "blip in block 0, stray clock after block 1"):
+            with self.subTest(name, method="length, 1.2.0"):
+                self.assertNotEqual(length_case(prepare=cases[name], output=length_output_1_2_0())[0], [])
+
+    def test_a_clockless_glitch_between_payload_transfers(self):
+        """
+        PicoBoot-DX's known case (its on_transfer's "Not covered" note): a CS-low glitch without clocks between
+        two payload transfers. 1.1.2's clocked_output then counted a later block's last clock as the block
+        after's first command clock, whenever another block followed. The waits keep both methods in step.
+        """
+        F = SMALL["fetches"]
+        for half_period in (4, 5, 8):
+            for after in (0, 1):
+                for at in (2, 4, 8, 12):
+                    noise = glitch_after(F + after, at)
+                    with self.subTest(half_period=half_period, after=after, at=at):
+                        self.assertEqual(count_case(prepare=noise, half_period=half_period), [])
+                        self.assertEqual(length_all_problems(prepare=noise, half_period=half_period), [])
+                        if after == 0:
+                            self.assertNotEqual(count_case(prepare=noise, half_period=half_period,
+                                                           output=older_outputs()[0]), [], "1.1.2's clocked_output")
+
+    def test_the_old_shift_grows_a_bit_a_block(self):
+        """
+        A negative test, from PicoBoot-DX's note: after a CS blip in the first of five blocks, 1.1.2's
+        clocked_output sent every later block early, by one more bit each. In the k-th block after the blip,
+        the console read bit i+k at position i.
+        """
+        F, B = SMALL["fetches"], SMALL["block_bits"]
+        words = payload(5, B)
+        c = make_console(5, B, F)
+        blip(F, 150, 4)(c)
+        received, _, _ = run_count(c, words, B, F, older_outputs()[0])
+        bits = bits_of(words)
+        for k in range(5):
+            self.assertEqual(received[F + k][16:B - 16], bits[k * B + k + 16:(k + 1) * B + k - 16], f"block {k}")
+
+    def test_what_is_left(self):
+        """
+        What 1.2.1 leaves (docs/research/block-noise.md §5), with both methods still wrong. This documents the
+        limits; a later fix would turn the test around. In both cases a CS fall that isn't a transfer passes
+        the output's waits, and a clock while CS is high then counts:
+        - a clockless glitch, then a clock right after it, before the next transfer;
+        - a CS blip after a block's last clock, before CS rises, then a clock in the gap that follows (R3).
+        """
+        F = SMALL["fetches"]
+        for name, noise in (("glitch, then a clock right after it", both(glitch_after(F, 3), stray_clock_after(F, 9))),
+                            ("blip after a block's last clock, then a clock", both(tail_blip(F, 2), stray_clock_after(F, 8)))):
+            with self.subTest(name):
+                self.assertNotEqual(count_case(prepare=noise), [])
+                self.assertNotEqual(length_case(prepare=noise)[0], [])
+
+    def test_a_blip_at_the_payloads_end(self):
+        """
+        1.2.1's R3 finding: at the payload's end the output waited only for CS high before releasing the data
+        line, so a blip before the last clock passed it, and the console read U10's bit, not the payload's
+        last. With the wait for the block's last clock before that, both methods hold the line to the end.
+        Blips of 1-4 cycles at every phase of the last block's last two clocks, with a 32, 40 and 64 ns clock;
+        1.2.0's programs lose the last bit in some.
+        """
+        F, B = SMALL["fetches"], SMALL["block_bits"]
+        lost = {"standard": 0, "length": 0}
+        for half_period in (4, 5, 8):
+            for clock in (32 + B - 2, 32 + B - 1):
+                for phase in range(2 * half_period):
+                    for width in (1, 2, 3, 4):
+                        if not blip_fits(F + 1, clock, phase, width, half_period):
+                            continue
+                        noise = blip(F + 1, clock, phase, width)
+                        with self.subTest(half_period=half_period, clock=clock, phase=phase, width=width):
+                            self.assertEqual(count_case(blocks=2, prepare=noise, half_period=half_period), [])
+                            self.assertEqual(length_all_problems(blocks=2, prepare=noise, half_period=half_period), [])
+                        lost["standard"] += bool(count_case(blocks=2, prepare=noise, half_period=half_period,
+                                                            output=older_outputs()[2]))
+                        lost["length"] += bool(length_case(blocks=2, prepare=noise, half_period=half_period,
+                                                           output=length_output_1_2_0())[0])
+        self.assertTrue(all(lost.values()), f"1.2.0's programs should lose the last bit in this window: {lost}")
+
+    def test_a_glitch_just_before_the_first_block(self):
+        """
+        1.2.1's R3 finding: a clockless glitch that ended just before the first block's CS fall could hide that
+        fall from the detector's `wait 1 gpio CS`, so the length method started a block late. `jmp pin` now
+        goes to the wait for the next CS fall. Glitches ending 1-12 cycles before the fall, both methods, at
+        two clock speeds; 1.2.0's detector misses the first block in some.
+        """
+        F = SMALL["fetches"]
+        missed = 0
+        for half_period in (4, 5):
+            for end_before in range(1, 13):
+                noise = (lambda e: lambda c: add_pulse(c, c.cs_pin, c.cs_falls[F] - e - 2, width=2, level=0))(end_before)
+                with self.subTest(half_period=half_period, end_before=end_before):
+                    self.assertEqual(count_case(prepare=noise, half_period=half_period), [])
+                    self.assertEqual(length_all_problems(prepare=noise, half_period=half_period), [])
+                missed += bool(length_case(prepare=noise, half_period=half_period, detector=detector_1_2_0())[0])
+        self.assertTrue(missed, "1.2.0's detector should miss the first block after some of these glitches")
 
     def test_a_blip_before_the_first_blocks_97th_clock(self):
         """

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.38, 2026-11-25 |
+| **Status** | Approved v1.39, 2026-11-25 |
 | **Design** | [architecture.md](architecture.md), Approved v1.27 |
 | **Owner** | Remko Kleinjan |
 
@@ -50,6 +50,7 @@
 | v1.36 | 2026-11-25 | Approved by the owner. Release 1.2.1: the output programs wait for the next transfer's CS fall (D48, option B), with the owner's design choices; steps R1–R5. |
 | v1.37 | 2026-11-25 | Approved by the owner. Release 1.2.1's steps R1–R3 as built, and its code review's findings with the owner's choices: the payload's last clock and the length detector's restart fixed in 1.2.1. |
 | v1.38 | 2026-11-25 | Approved by the owner. Release 1.2.1's console test (R4) passed on R3's build, on the dev console, with its results note. |
+| v1.39 | 2026-11-25 | Approved by the owner. The state machines review after release 1.2.1: its findings, the comment and pin-check fixes in `e442fcc`, and three later-releases items, verified counter snapshots, a debounced CS check in `length_detect`, and builds that match on any day (the owner's choices). |
 
 ## How this plan works
 
@@ -453,6 +454,17 @@ docs/                       design, plan, research, API, update-file format
 
   The first step is a passive build that records the commands and their timing.
 - **A wait for CS high in `clocked_output`,** L1's finding (D47), the owner's choice: one instruction before each block's IRQ, so a CS blip that splits a payload block no longer shifts every later block. A release of its own, with its own design questions, code review and console test. **Taken up by release 1.2.0** (D47's L9, D48).
+- **Verified counter snapshots,** the state machines review's finding 3 (below), the owner's choice.
+  - **The weakness:** `counters_snapshot()` keeps its last, unchecked counts when CS is never high for the few µs a consistent read needs, as in a burst of transfers ~150 ns apart. A read inside a transfer's first ~300 ns would then show raw = clocked + 1, a false glitch.
+  - **Seen so far:** in no logged boot.
+  - **The idea:** the snapshot reports whether its read was consistent, and the boot report marks unverified counts in its padding, with the format unchanged, so the page doesn't call them a glitch. Design questions when a release takes it.
+- **A debounced CS check in `length_detect`,** the state machines review's finding 1, the owner's choice.
+  - **The weak spot:** a CS blip in the first ~97 clocks of the first block restarts the detector's count, so the length method's payload lands misaligned. It's known (D47, the README) and tested.
+  - **The idea, to research:** re-check CS a few cycles after the poll sees it high, and go back to counting if it's low again.
+  - **The risk:** the re-check must not miss a CLK edge.
+- **Builds that match on any day,** seen in the state machines review's check, the owner's choice.
+  - **Why:** the SDK puts the build date in the firmware, so a console-tested build and the tag's build match byte for byte only when both are made on the same day.
+  - **The idea:** a date taken from the commit (`SOURCE_DATE_EPOCH`), or none, in local builds, CI and the release workflow.
 
 ## Release 1.0.1: a tidy end to the injection
 
@@ -1022,6 +1034,29 @@ The other later-releases items aren't in 1.2.1.
 **Differences from the plan:**
 - **Two fixes older than 1.2.1 came in at R3,** the owner's choice: the payload's last clock, and the length detector's restart.
 - **The update came from 1.1.2,** not 1.2.0: the owner booted slot A first, so the update replaced 1.2.0 in slot B. The standard boots after it were the power-on that kept it, with the built-in, and one with Swiss.
+
+## State machines review (2026-11-25)
+
+**What it covered:** all six PIO state machines and their set-up, after release 1.2.1:
+- `on_transfer` and `clocked_output`;
+- `length_detect` and `clocked_output_length`;
+- the counters `cs_raw` and `cs_clocked`;
+- `injection.c`, `injection_pio.c` and `counters.c`.
+
+**The result:** no bug in 1.2.1's changes. They hold up through clean blocks, the payload's end, an IRQ set early, and the IRQ from pio1.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Older:** a CS blip in the first ~97 clocks of the first block misaligns the length method's payload | Already known (D47, the README) and tested. A debounced check is a later-releases idea (the owner's choice) |
+| 2 | **Older:** a CS fall made by noise lets a clock while CS is high count, after a clockless glitch or a blip at a block's end. The `.pio` comments said such a clock "can't count" | Already in D48's "what's left". The comments are reworded |
+| 3 | **Older:** `counters_snapshot()` keeps unchecked counts after 16 failed tries, which could show a false glitch | A later-releases item (the owner's choice) |
+| 4 | **Nit:** only `length.pio`'s pins were checked against `injection.h` | Fixed: `counters.pio`'s pin defines are PUBLIC, and `injection.c` and `counters.c` check `injection.pio`'s and `counters.pio`'s pins |
+| 5 | **Nit:** `injection.c` said "Wait for 224 CS pulses"; the count takes only transfers that clock while CS is low (D36) | Fixed |
+
+**As built:** findings 2, 4 and 5 in `e442fcc`, with no release.
+- **The firmware is unchanged:** a clean clone of it builds files byte for byte the published 1.2.1's.
+- **All 308 tests pass.**
+- **Also seen in that check:** the SDK puts the build date in the firmware. So a build matches another byte for byte only when both are made on the same day, as R4's build and the release workflow's were. Fixing that is a later-releases item (the owner's choice).
 
 ## Local builds and CI
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.37, 2026-11-25 |
+| **Status** | Approved v1.38, 2026-11-25 |
 | **Design** | [architecture.md](architecture.md), Approved v1.27 |
 | **Owner** | Remko Kleinjan |
 
@@ -49,6 +49,7 @@
 | v1.35 | 2026-11-24 | Approved by the owner. Release 1.2.0's console test (R5) passed on R4's build, with its results note; R4's finding 3 checked against it. |
 | v1.36 | 2026-11-25 | Approved by the owner. Release 1.2.1: the output programs wait for the next transfer's CS fall (D48, option B), with the owner's design choices; steps R1–R5. |
 | v1.37 | 2026-11-25 | Approved by the owner. Release 1.2.1's steps R1–R3 as built, and its code review's findings with the owner's choices: the payload's last clock and the length detector's restart fixed in 1.2.1. |
+| v1.38 | 2026-11-25 | Approved by the owner. Release 1.2.1's console test (R4) passed on R3's build, on the dev console, with its results note. |
 
 ## How this plan works
 
@@ -1009,9 +1010,17 @@ The other later-releases items aren't in 1.2.1.
   - **The end-of-payload negative test** now removes the whole hold rather than padding it with `mov y, y`.
   - **The rebuilt older programs** are identical to pioasm's output for `v1.1.2`, `944d2ea` and `v1.2.0`: 1.1.2's, 1.2.0's R1 and 1.2.0's, and 1.2.0's detector.
   - **The result:** all 308 tests pass, and the release build and a `-dev` copy compile without warnings.
+- **CI passed** on the release branch's first push, `9f90fa1`.
+- **R4 passed on R3's build** (`1.2.1` from `9f90fa1`, [release-1.2.1-results.md](research/release-1.2.1-results.md)), on the dev console:
+  - the update over Wi-Fi, kept by a power-on;
+  - standard and length-based, the built-in and Swiss each: complete, with exact counts and 1.2.0's margins and injection times;
+  - every power-on started its payload (the owner);
+  - back to standard.
+- **R3's finding 10,** checked against R4: the notes' "Tested on a DOL-001" holds.
 
 **Differences from the plan:**
 - **Two fixes older than 1.2.1 came in at R3,** the owner's choice: the payload's last clock, and the length detector's restart.
+- **The update came from 1.1.2,** not 1.2.0: the owner booted slot A first, so the update replaced 1.2.0 in slot B. The standard boots after it were the power-on that kept it, with the built-in, and one with Swiss.
 
 ## Local builds and CI
 

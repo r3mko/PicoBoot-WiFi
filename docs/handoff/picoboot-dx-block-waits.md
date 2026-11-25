@@ -13,6 +13,7 @@
   - **Shown so far:** simulated, code-reviewed, and booted on two DOL-001s with Pico 2 Ws (RP2350).
   - **Not yet:** an RP2040.
   - **PicoBoot-DX:** nothing has changed. Whether and how to take it is up to the owner.
+- **Revision 2026-11-25, a fourth one:** PicoBoot-WiFi 1.2.1, with §7's and §8's changes, is released and booted on a console (the status lines of §7 and §8).
 - **Revision 2026-11-25, a third one:** PicoBoot-DX has B alone now (§7). PicoBoot-WiFi 1.2.1's code review found the payload's end open to the same blip as the block ends, and moved the wait for the last clock, with no instruction more: §8.
 - **Revision 2026-11-24, a second one:** after PicoBoot-DX's `0a84825`, one more wait in `clocked_output` closes the stray-clock case it leaves open: §7.
 - **Revision 2026-11-24, from PicoBoot-DX's note:** the shift isn't one bit. The later blocks come early, by one more bit each block: in the k-th block after the noise, the console reads bit i+k at position i. Confirmed in PicoBoot-WiFi's simulator.
@@ -152,7 +153,7 @@ PicoBoot-DX took the three waits (`45d8805`) and its own change to `on_transfer`
 - **A + B covers what B alone covers** in the simulator. PicoBoot-DX now has B alone.
 - **Still open with any of them:** a clock right after a clockless glitch, before the next transfer. To the output it looks like a transfer starting. Counting a command clock only while CS is low might close it; that's not simulated.
 
-**Status:** simulator only. PicoBoot-WiFi 1.2.1's code review and console test follow, on its dev console, an RP2350.
+**Status:** in PicoBoot-WiFi 1.2.1, released 2026-11-25. Simulated, code-reviewed, and booted on its dev console, a Pico 2 W (RP2350): 4 power-ons with both methods, every payload started ([release-1.2.1-results.md](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/release-1.2.1-results.md)). Not on an RP2040 yet, and not with noise: clean wiring only.
 
 ## 8. 1.2.1's code review: the payload's last clock
 
@@ -197,5 +198,5 @@ write_bit:
 - **A second open case:** a CS blip after a block's last clock, before CS rises, then a clock in the gap after the block. The waits pass on the blip's own rise and fall, so that clock counts. PicoBoot-DX has it too.
 - **The length detector's fix** doesn't apply: PicoBoot-DX has no detector.
 
-**Status:** simulator and code review. PicoBoot-WiFi 1.2.1's console test follows, on its dev console, an RP2350.
+**Status:** in PicoBoot-WiFi 1.2.1, released 2026-11-25. Simulated, code-reviewed, and booted on its dev console, a Pico 2 W (RP2350), with both methods ([release-1.2.1-results.md](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/release-1.2.1-results.md)). Not on an RP2040 yet.
 

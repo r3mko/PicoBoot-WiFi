@@ -1003,7 +1003,7 @@ The other later-releases items aren't in 1.2.1.
 | 9 | **Test gap:** the glitch test's length half didn't check the end; the negative halves didn't show each event alone passes on 1.2.0 | Fixed: both |
 | 10 | **Notes nits:** users from 1.1.x or 1.0.x need 1.2.0's CLI for `injection`; "Tested on a DOL-001" holds only after R4 | Fixed: a sentence for them; the line checked at R5 against R4's results |
 
-**As built so far (2026-11-25):**
+**As built (2026-11-25):**
 - **R1** in `dbaa7a2`: the wait for CS low in both output programs, and the research note's cases as tests.
 - **R2** in `306b6ef`: version 1.2.1 and the notes the owner approved. The README has nothing on the waits, so it didn't change.
 - **R3** in `9f90fa1`: the review's fixes, and the notes with the two new fixes and the second open case, which the owner approved.
@@ -1017,6 +1017,7 @@ The other later-releases items aren't in 1.2.1.
   - every power-on started its payload (the owner);
   - back to standard.
 - **R3's finding 10,** checked against R4: the notes' "Tested on a DOL-001" holds.
+- **R5:** merged into `main` on 2026-11-25 (`8138614`); the owner had it pushed and tagged `v1.2.1`, and published the release. Its files are R4's byte for byte, and CI passed on the merge and the tag.
 
 **Differences from the plan:**
 - **Two fixes older than 1.2.1 came in at R3,** the owner's choice: the payload's last clock, and the length detector's restart.

@@ -38,6 +38,8 @@ static uint transfer_start_sm;
 // LENGTH_SWITCH_BIT come from pio/length.pio
 _Static_assert(LENGTH_CS_PIN == INJECTION_PIN_CS && LENGTH_CLK_PIN == INJECTION_PIN_CLK,
                "pio/length.pio waits on the injection's CS and CLK");
+_Static_assert(CS_PIN == INJECTION_PIN_CS && CLK_PIN == INJECTION_PIN_CLK,
+               "pio/injection.pio waits on the injection's CS and CLK");
 // The detector polls CLK every 3 PIO cycles, which must fall inside CLK's high phase: 16-24 ns
 // measured (docs/research/length-injection-results.md). That holds down to about 200 MHz.
 _Static_assert(PICOBOOT_WIFI_INJECTION_KHZ >= 200000, "the length detector needs the injection's clock boost");
@@ -88,7 +90,7 @@ void injection_prepare(const injection_payload_t *payload, bool by_length) {
         uint transfer_start_offset = pio_add_program(pio, &on_transfer_program);
 
         on_transfer_program_init(pio, transfer_start_sm, transfer_start_offset, INJECTION_PIN_CLK, INJECTION_PIN_CS);
-        // Wait for 224 CS pulses before firing the IRQ
+        // Skip 224 transfers before firing the IRQ, counting only those that clock while CS is low (D36):
         // this marks the boundary where the first 1 kB (1024 bytes) transfer is about to start
         pio_prepare_transfer(pio, transfer_start_sm, 224, pio_x);
 

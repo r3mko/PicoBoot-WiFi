@@ -35,8 +35,9 @@ start:
     wait 1 gpio CS_PIN          ; The block is over only when CS rises: noise that splits it leaves
                                 ; IRQ 0 set early, and without this wait its last clock would count
                                 ; as the next block's first command clock (D47's L1, D48)
-    wait 0 gpio CS_PIN          ; ...and the next transfer has begun: after an IRQ set early, a clock
-                                ; while CS is high between blocks can't count (1.2.1)
+    wait 0 gpio CS_PIN          ; ...and CS has fallen again: after an IRQ set early, a clock while CS
+                                ; is high between blocks doesn't count. Unless noise made that fall:
+                                ; a clockless glitch, or a blip after the block's last clock (D48, 1.2.1)
     wait 1 irq 0                ; Hold until SM0 tells us to start injecting
 
 wait_bit:

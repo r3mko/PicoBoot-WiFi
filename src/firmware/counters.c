@@ -16,6 +16,9 @@
 #define FLAG_CLOCKED 3          // irq set 3 in cs_clocked
 #define SNAPSHOT_TRIES 16
 
+_Static_assert(CS_GPIO == INJECTION_PIN_CS && CLK_GPIO == INJECTION_PIN_CLK,
+               "pio/counters.pio reads the injection's CS and CLK");
+
 static const PIO counter_pio = pio1;
 static uint raw_sm, clocked_sm;
 

@@ -7,8 +7,8 @@
 ; with exec'd `mov isr, x` and `push` (counters.c). They use PIO IRQ flags 2 and 3, which the
 ; injection doesn't use, so they would stay harmless even in the injection's PIO block.
 
-.define CS_GPIO 4               ; U10 chip select, the same pin as CS_PIN in injection.pio
-.define CLK_GPIO 5              ; EXI clock, the same pin as CLK_PIN in injection.pio
+.define PUBLIC CS_GPIO 4        ; U10 chip select and the EXI clock, the injection's pins: counters.c
+.define PUBLIC CLK_GPIO 5       ; checks them against injection.h
 
 ; Every CS falling edge, as PicoBoot-DX counted them. IRQ flag 2 marks the first one.
 .program cs_raw

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved v1.36, 2026-11-25 |
-| **Design** | [architecture.md](architecture.md), Approved v1.26 |
+| **Status** | Approved v1.37, 2026-11-25 |
+| **Design** | [architecture.md](architecture.md), Approved v1.27 |
 | **Owner** | Remko Kleinjan |
 
 ## Status
@@ -48,6 +48,7 @@
 | v1.34 | 2026-11-24 | Approved by the owner. Release 1.2.0's steps R1–R4 as built, and its code review's findings with the owner's choices: the wait for each block's last clock, and no host test for `POST /api/boot`'s new field. |
 | v1.35 | 2026-11-24 | Approved by the owner. Release 1.2.0's console test (R5) passed on R4's build, with its results note; R4's finding 3 checked against it. |
 | v1.36 | 2026-11-25 | Approved by the owner. Release 1.2.1: the output programs wait for the next transfer's CS fall (D48, option B), with the owner's design choices; steps R1–R5. |
+| v1.37 | 2026-11-25 | Approved by the owner. Release 1.2.1's steps R1–R3 as built, and its code review's findings with the owner's choices: the payload's last clock and the length detector's restart fixed in 1.2.1. |
 
 ## How this plan works
 
@@ -979,6 +980,38 @@ The other later-releases items aren't in 1.2.1.
 | R3 | **Code review** of the branch | Fresh Opus 5.5 reviewer | Findings fixed, or accepted by the owner |
 | R4 | **Console test** on the dev console, on the build after R3, on clean wiring:<br>• the update over Wi-Fi from 1.2.0; a power-on keeps it;<br>• 2 cold boots standard and 2 length-based, the built-in and Swiss, each boot's screen noted;<br>• back to standard.<br>The main console isn't in the test (the owner's choice); it can take the release afterwards | Owner | Passed; results in `docs/research/release-1.2.1-results.md` |
 | R5 | **Merge and tag `v1.2.1`:** a merge commit into `main`; the push and the tag on the owner's word; the workflow's draft checked against R4's build, then published | Owner | Released |
+
+**Code review of release 1.2.1** (R3, a fresh Opus 5.5 reviewer, 2026-11-25, on `git diff v1.2.0 306b6ef`):
+- **Overall:** no bug in `src` or `tests`.
+- **The new wait for CS low:**
+  - it can't stall an injection;
+  - it keeps a clean block's timing;
+  - it broke no case 1.2.0 got right in about 13,000 simulator runs.
+- **The tests' rebuilt older programs** match pioasm's output.
+
+| # | Finding | Where it's handled |
+|---|---|---|
+| 1 | **Doc error:** a second case is still open, a CS blip after a block's last clock and then a stray clock in the gap. "However many IRQs are pending" claimed too much: IRQ 0 is one flag | Fixed in D48, the research note and the handoff. A test records the case beside the glitch-then-clock one |
+| 2 | **Risk, older than 1.2.1:** at the payload's end the output waited only for CS high, so a CS blip before the last clock passed it. The line went before the console read the last bit: 70 of 272 simulated blips, both methods | Fixed in 1.2.1 (the owner's choice): the waits for the block's last clock move to just before `jmp !osre start`, so both paths pass them. No instruction more. A new test covers the payload's last clocks |
+| 3 | **Risk, older than 1.2.1:** a clockless glitch ending just before the first block's CS fall could hide it from the length detector, so the payload started a block late | Fixed in 1.2.1 (the owner's choice): `jmp pin` goes to the wait for the next CS fall. No instruction more. A new test covers glitches 1–12 cycles before the first block |
+| 4 | **Doc nit:** "IRQ 0 comes one block early from then on" depends on how the chip handles a set and a clear in the same cycle | Fixed: D48 says IRQ 0 is set before the next transfer starts |
+| 5 | **Doc:** the handoff's §7 was out of date. PicoBoot-DX reverted `0a84825` (`971ef1d`) and took B alone (`4f7207d`) | Fixed: §7's status, and a §8 for finding 2, which applies to PicoBoot-DX too |
+| 6 | **Doc nit:** the research index had no row for `block-noise.md` | Fixed |
+| 7 | **Doc nit:** `block-noise.md` §4 said the whole suite wasn't run yet, with 3 seeds | Fixed: a status line |
+| 8 | **Test nits:** `without()` assumed a program wraps at its end; a docstring said "its wait for CS high" | Fixed: an assert; "its waits" |
+| 9 | **Test gap:** the glitch test's length half didn't check the end; the negative halves didn't show each event alone passes on 1.2.0 | Fixed: both |
+| 10 | **Notes nits:** users from 1.1.x or 1.0.x need 1.2.0's CLI for `injection`; "Tested on a DOL-001" holds only after R4 | Fixed: a sentence for them; the line checked at R5 against R4's results |
+
+**As built so far (2026-11-25):**
+- **R1** in `dbaa7a2`: the wait for CS low in both output programs, and the research note's cases as tests.
+- **R2** in `306b6ef`: version 1.2.1 and the notes the owner approved. The README has nothing on the waits, so it didn't change.
+- **R3** in `9f90fa1`: the review's fixes, and the notes with the two new fixes and the second open case, which the owner approved.
+  - **The end-of-payload negative test** now removes the whole hold rather than padding it with `mov y, y`.
+  - **The rebuilt older programs** are identical to pioasm's output for `v1.1.2`, `944d2ea` and `v1.2.0`: 1.1.2's, 1.2.0's R1 and 1.2.0's, and 1.2.0's detector.
+  - **The result:** all 308 tests pass, and the release build and a `-dev` copy compile without warnings.
+
+**Differences from the plan:**
+- **Two fixes older than 1.2.1 came in at R3,** the owner's choice: the payload's last clock, and the length detector's restart.
 
 ## Local builds and CI
 

@@ -13,6 +13,7 @@
   - **Shown so far:** simulated, code-reviewed, and booted on two DOL-001s with Pico 2 Ws (RP2350).
   - **Not yet:** an RP2040.
   - **PicoBoot-DX:** nothing has changed. Whether and how to take it is up to the owner.
+- **Revision 2026-11-25, a third one:** PicoBoot-DX has B alone now (§7). PicoBoot-WiFi 1.2.1's code review found the payload's end open to the same blip as the block ends, and moved the wait for the last clock, with no instruction more: §8.
 - **Revision 2026-11-24, a second one:** after PicoBoot-DX's `0a84825`, one more wait in `clocked_output` closes the stray-clock case it leaves open: §7.
 - **Revision 2026-11-24, from PicoBoot-DX's note:** the shift isn't one bit. The later blocks come early, by one more bit each block: in the k-th block after the noise, the console reads bit i+k at position i. Confirmed in PicoBoot-WiFi's simulator.
 
@@ -119,6 +120,8 @@ From [length-injection-results.md](https://github.com/r3mko/PicoBoot-WiFi/blob/m
 
 ## 7. After PicoBoot-DX's note: a wait for CS low
 
+**Since then (2026-11-25):** PicoBoot-DX reverted `0a84825` (`971ef1d`) and took B alone (`4f7207d`). Its `clocked_output` is now PicoBoot-WiFi 1.2.1's step R1, instruction for instruction.
+
 PicoBoot-DX took the three waits (`45d8805`) and its own change to `on_transfer` (`0a84825`). PicoBoot-WiFi checked both in its simulator ([block-noise.md](https://github.com/r3mko/PicoBoot-WiFi/blob/main/docs/research/block-noise.md)) and takes a different change for its 1.2.1 (the owner's choice). PicoBoot-WiFi's `on_transfer` and `clocked_output` are PicoBoot-DX's, so the results carry over.
 
 **The case `0a84825` leaves open,** the one PicoBoot-DX's own "Not covered" comment names:
@@ -146,7 +149,53 @@ PicoBoot-DX took the three waits (`45d8805`) and its own change to `on_transfer`
 | A glitch after block 0, a stray clock right after it | wrong | wrong | wrong | wrong |
 
 - **The 1.2.0 cases stay right with B:** the clean and single-noise cases, the 272 blips at a block's end, CS low at the start, and the measured EXI timing at full size.
-- **For PicoBoot-DX, with A already in, adding B gives A + B.** In the simulator that's the same coverage as B alone, and it's what the last column shows.
+- **A + B covers what B alone covers** in the simulator. PicoBoot-DX now has B alone.
 - **Still open with any of them:** a clock right after a clockless glitch, before the next transfer. To the output it looks like a transfer starting. Counting a command clock only while CS is low might close it; that's not simulated.
 
 **Status:** simulator only. PicoBoot-WiFi 1.2.1's code review and console test follow, on its dev console, an RP2350.
+
+## 8. 1.2.1's code review: the payload's last clock
+
+PicoBoot-WiFi 1.2.1's code review (its step R3) found the payload's end open to the blip that 1.2.0's wait for the last clock closed at the block ends. It applies to PicoBoot-DX's `clocked_output`, which is the same program.
+
+**The weakness:**
+- at the end, the output waits only for CS high before `set pindirs 0`;
+- a CS blip after the last bit goes out, before the last clock, passes that wait;
+- the line is released before the console reads the payload's last bit, so the console gets U10's bit there.
+
+**The simulator:** 70 of 272 blips at the last block's last two clocks go wrong, at 32, 40 and 64 ns clocks.
+
+**The change, at no instruction cost:** move the two waits for the block's last clock from `start` to just before `jmp !osre start`. Then the next block and the payload's end both pass them:
+
+```
+start:
+    set x, 31                   ; x - 32 bits we need to skip (address)
+    wait 1 gpio CS_PIN          ; The block is over only when CS rises ...
+    wait 0 gpio CS_PIN          ; ...and the next transfer has begun ...
+    wait 1 irq 0                ; Hold until SM0 tells us to start injecting
+    ...
+write_bit:
+    out pins, 1                 ; Output single IPL bit
+    jmp x-- on_rising_edge      ; Jump back to next clock pulse wait routine if there is more data to inject
+    wait 0 gpio CLK_PIN         ; The block's last clock: its last bit went out at the clock before, so
+    wait 1 gpio CLK_PIN         ; a CS blip before this clock can't pass the waits for CS high
+    jmp !osre start             ; More payload data? Then wait for the next transfer
+    wait 1 gpio CS_PIN          ; Keep driving the last bit until the console ends the transfer (CS HIGH)
+    set pindirs 0               ; Leave data line floating
+```
+
+**The first block:** it no longer waits for a BS1 clock before the CS waits, which it never needed.
+
+**The evidence:**
+- **The simulator:** the 272 end blips are all right now. So are every earlier case: the block-end blips, the glitches and the stray clocks, CS low at the start, and the measured timing at full size.
+- **The test suite:** all 308 tests pass.
+- **The tests' rebuilt older programs** are identical to pioasm's output.
+
+**A negative test to change:** one that patches the end's `wait 1 gpio CS` out stops failing, because the console has read the bit at the last clock by then. Remove the whole hold, the two clock waits and the CS wait, rather than padding it with `mov y, y` (§4's trap). PicoBoot-WiFi's `test_releasing_the_line_before_the_last_clock_is_detected` does this.
+
+**Also from the review:**
+- **A second open case:** a CS blip after a block's last clock, before CS rises, then a clock in the gap after the block. The waits pass on the blip's own rise and fall, so that clock counts. PicoBoot-DX has it too.
+- **The length detector's fix** doesn't apply: PicoBoot-DX has no detector.
+
+**Status:** simulator and code review. PicoBoot-WiFi 1.2.1's console test follows, on its dev console, an RP2350.
+

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Project** | PicoBoot-WiFi: PicoBoot-DX for the Pico 2 W, with over-the-air firmware and payload updates |
-| **Status** | Approved v1.26, 2026-11-25 |
+| **Status** | Approved v1.27, 2026-11-25 |
 | **Owner** | Remko Kleinjan |
 | **Research** | [docs/research/](research/README.md) |
 
@@ -40,6 +40,7 @@
 | v1.24 | 2026-11-24 | Approved by the owner. Release 1.2.0: D48, the injection switch, from D47's decision and the owner's design choices: standard or length-based, a persistent flag in boot control, the Payloads tab, the API and the CLI, the method in the diagnostics; the CS wait in both output programs. |
 | v1.25 | 2026-11-24 | Approved by the owner. D48 after release 1.2.0's code review (plan step R4): both output programs wait for a block's last clock before the wait for CS high, which closes the window the review found (the owner's choice); the instruction counts; what's left. |
 | v1.26 | 2026-11-25 | Approved by the owner. Release 1.2.1: D48's output programs also wait for the next transfer's CS fall before a block's IRQ (option B of [block-noise.md](research/block-noise.md), the owner's choice), so a clock while CS is high between blocks can't count; the counts and what's left. |
+| v1.27 | 2026-11-25 | Approved by the owner. D48 after release 1.2.1's code review (R3): the wait for a block's last clock moves to where the payload's end passes it too, and the length detector's restart waits for the next CS fall only (both the owner's choice); a second case left; the wording no longer depends on how the chip handles an IRQ set and cleared in the same cycle. |
 
 ## How to read the decisions
 
@@ -341,7 +342,7 @@ These follow from the research and bind every decision below.
   - **The detector,** in pio1 next to D31's counters, 14 instructions (pio1 then holds 24 of its 32). It polls CS (`JMP_PIN`) and CLK (`IN_BASE`, `IN_COUNT` 1) at every clock. After the fall of the 97th clock with CS still low, it raises IRQ 0 in pio0 (`irq prev`), and then one at every CS fall, as `on_transfer` does after its count.
   - **The output program,** in pio0, 26 instructions: `clocked_output` with an entry for the first block. It drops the first block's data bits 0–65, which U10 sends, puts bit 66 on the pin while it's still an input, and drives it one instruction after clock 97, the timing of every other bit.
   - **The switch point (L1): bit 66.** In the simulator, both methods work from a 32 ns clock up and fail at 24 ns, the output loop's own limit; BS1's clock is 37.04 ns (L4).
-  - **Each later block waits for CS high before its IRQ** (L1's finding, the owner's choice). A CS blip that splits a payload block leaves IRQ 0 set early. Without the wait, the output program takes that block's last clock as the next block's first command clock, and every later block arrives shifted, by one more bit each block. No clock runs between blocks, so after the wait it stays in step.
+  - **Each later block waits for CS high before its IRQ** (L1's finding, the owner's choice). A CS blip that splits a payload block leaves IRQ 0 set early. Without the wait, the output program takes that block's last clock as the next block's first command clock, and every later block arrives shifted, by one more bit each block. No clock runs between blocks, so after the wait it stays in step [inf]. 1.2.1 covers a clock that does (D48).
 - **Today's injection has that weakness too** (L1, in the simulator): `clocked_output` has no CS wait. The owner's choice: the wait goes into today's `clocked_output` in a release of its own, with its own design questions (the plan's later releases).
 - **The name:** "Injection: standard / length-based". Standard is D36's count, and stays the default.
 - **The feasibility stage** (the owner's choices):
@@ -372,14 +373,23 @@ These follow from the research and bind every decision below.
   - **Length-based:** `clocked_output_length` in pio0 (29; 28 in 1.2.0), and `length_detect` in pio1 beside the counters (24 of 32), raising pio0's IRQ 0.
   - **The time to "PIO ready":** L8's length boots reached it 591–593 µs after `main()`, against the count's 601–606 µs in the same log, well inside the 10 ms rule.
   - **The clock:** the length method needs the injection's clock boost; a static assert keeps it at 200 MHz or more (L7).
-- **The waits before each block (D47's L1 finding, and R4's), in both output programs:** each later block waits for the last clock of the block before, then for CS high, then for the next transfer's CS fall (1.2.1), before its IRQ. So a CS blip that splits a payload block no longer shifts every later block.
-  - **Why the clock first:** a block's last bit goes out at its second-to-last clock. With the wait for CS high alone, a blip that ended just before the last clock passed it, and that clock counted as the next block's first command clock (R4, simulated).
-  - **Why CS low last (1.2.1):** after a clockless glitch between transfers or a blip in a block, IRQ 0 comes one block early from then on.
+- **The waits after each block (D47's L1 finding, 1.2.0's R4 and 1.2.1), in both output programs:** after a block's last bit, the output waits for the block's last clock.
+  - **Then, before the next block:** it waits for CS high, then for a CS fall, before the IRQ. So a CS blip that splits a payload block no longer shifts every later block.
+  - **At the payload's end:** it waits for CS high before it releases the data line.
+  - **Why the clock first:** a block's last bit goes out at its second-to-last clock. With the wait for CS high alone, a blip that ended just before the last clock passed it (simulated).
+    - **Before the next block (1.2.0's R4):** that clock counted as the next block's first command clock.
+    - **At the payload's end (1.2.1's R3):** the line went before the console read the last bit. 1.2.1 moved the wait to where both paths pass it, with no instruction more.
+  - **Why CS low last (1.2.1):** a clockless glitch between transfers, or a blip in a block, sets IRQ 0 before the next transfer starts.
     - **Without the wait:** a clock while CS was high between blocks counted as the next block's first command clock. That breaks both methods (simulated; PicoBoot-DX's review of the handoff, [block-noise.md](research/block-noise.md)).
-    - **With it:** a block's command clocks count only once the next transfer has begun, however many IRQs are pending.
-    - **Over PicoBoot-DX's change:** this covers more than its fix in `on_transfer`, the owner's choice of option B.
+    - **With it:** a block's command clocks count only after a CS fall that follows CS high, with an IRQ already set or not.
+    - **Over PicoBoot-DX's first change:** this covers more than its fix in `on_transfer`, the owner's choice of option B. PicoBoot-DX has since taken B too.
   - **The cost:** four instructions in `clocked_output`, and three in `clocked_output_length`, which had the wait for CS high since L1.
-  - **What's left:** a clock right after a clockless glitch, before the next transfer. To the output that looks like a transfer starting (simulated).
+  - **What's left:** a CS fall that isn't a transfer passes these waits, so a clock while CS is high after it still counts (simulated). Two cases:
+    - a clock right after a clockless glitch, before the next transfer;
+    - a CS blip after a block's last clock, before CS rises, then a clock in the gap that follows (1.2.1's R3).
+- **The detector's restart (1.2.1's R3):** when CS rises before a 97th clock, `length_detect`'s `jmp pin` goes to the wait for the next CS fall, not to `start`'s wait for CS high.
+  - **Before:** a clockless glitch that ended just before a transfer's CS fall could hide that fall from the `wait 1`. If the transfer was the first block, the payload started a block late (simulated).
+  - **The cost:** no instruction more.
 - **The page,** the Payloads tab:
   - an "Injection" row after "Original IPL once": "standard" or "length-based";
   - a button to switch, "Use length-based" or "Use standard";

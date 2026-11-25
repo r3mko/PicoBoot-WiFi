@@ -2,7 +2,7 @@
 
 What still breaks 1.2.0's payload once its blocks are under way, from PicoBoot-DX's review of the block-waits handoff ([picoboot-dx-block-waits.md](../handoff/picoboot-dx-block-waits.md)), checked and extended in PicoBoot-WiFi's PIO simulator. For release 1.2.1's design questions. **[inf]** marks a conclusion rather than a measured or sourced fact. Every result here is the simulator's (`tests/pio_sim.py`); none is from a console.
 
-**Status:** research, approved by the owner on 2026-11-24, for 1.2.1's design questions.
+**Status:** research, approved by the owner on 2026-11-24. Release 1.2.1 took option B (D48); its code review added two older fixes and a second open case (§7).
 
 **Short answer:**
 - **Two noise events together still break 1.2.0, with either method.** First something that sets IRQ 0 early:
@@ -11,7 +11,7 @@ What still breaks 1.2.0's payload once its blocks are under way, from PicoBoot-D
 
   Then a clock while CS is high, before a later block. D48 named this as "what's left" [inf]; it is now simulated.
 - **One instruction in each output program closes most of it:** a wait for the next transfer's CS fall, after the wait for CS high (option B, §4). PicoBoot-DX's fix, in `on_transfer`, closes less (option A).
-- **Still open with any option:** a stray clock right after a glitch, before the next transfer.
+- **Still open with any option:** a stray clock right after a glitch, before the next transfer, and one after a CS blip at a block's very end (§5, §7).
 - **The shift itself was described wrongly:** later blocks come early, by one more bit each block, not "one bit late" (§2). The docs are corrected.
 
 ## 1. Where this comes from
@@ -71,7 +71,7 @@ The docs said "every later block one bit late". They now say shifted, by one mor
 - CS low at the start, for the standard method;
 - the measured EXI timing at full size, 3 seeds, for both methods.
 
-**Not checked yet:** the whole test suite with B in the programs. That is the release's first step.
+**Checked since:** the whole test suite passes with B in the programs (1.2.1's R1), with the measured timing at 4 seeds there.
 
 ## 5. What's left with every option
 
@@ -82,6 +82,8 @@ The docs said "every later block one bit late". They now say shifted, by one mor
 - After a stray clock it would have to go back to the CS waits without waiting for a "last clock" again, so it means more than one instruction [inf].
 - It's for the design questions, not a recommendation.
 
+**A CS blip after a block's last clock** (found by 1.2.1's code review): it comes before CS rises, and a clock follows in the gap after the block. B's waits pass on the blip's own rise and fall, so that clock counts too.
+
 ## 6. What a 1.2.1 would take
 
 - **The PIO change:** B, or A, or both. B touches only the two output programs, which stay alike from `start` on.
@@ -89,3 +91,18 @@ The docs said "every later block one bit late". They now say shifted, by one mor
 - **Docs:** D48's "what's left", the README's lines on the waits if any, and the release notes.
 - **A console test:** both consoles, as 1.2.0's R5. Clean wiring can show only that nothing broke.
 - **PicoBoot-DX:** B covers more than its `0a84825`, which is worth a note back. Its `on_transfer` is PicoBoot-WiFi's.
+
+## 7. 1.2.1's code review (R3)
+
+**No bug in B.** The new wait can't stall an injection, keeps a clean block's timing, and broke no case 1.2.0 got right, in about 13,000 simulator runs. The review also found two older weak spots, both fixed in 1.2.1 at no instruction cost (the owner's choice):
+
+| Weak spot | 1.2.0 | The fix |
+|---|---|---|
+| A CS blip just before the payload's last clock passed the end's wait for CS high, so the data line went before the console read the last bit | 70 of 272 simulated blips wrong, both methods | The waits for the block's last clock move from `start` to just before `jmp !osre start`, so the payload's end passes them too: 0 wrong |
+| A clockless glitch ending just before the first block's CS fall could hide that fall from the length detector's `wait 1 gpio CS`, so the payload started a block late | wrong at some offsets | `jmp pin` goes to the wait for the next CS fall: 0 wrong |
+
+**Also from the review:**
+- **IRQ 0 is one flag,** so at most one IRQ is pending.
+- **The PIO simulator lets a set beat a clear in the same cycle.** Whether the chip does the same doesn't change the results.
+- **PicoBoot-DX has since reverted `0a84825` (`971ef1d`) and taken B alone (`4f7207d`).**
+
